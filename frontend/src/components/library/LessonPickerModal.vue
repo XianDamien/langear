@@ -63,16 +63,13 @@ function save() {
           <h3 class="text-xl font-bold text-brand-accent">
             {{ title }}
           </h3>
-          <p class="text-sm text-slate-500">
-            选择要加入“我的课程”的 lesson。按 lesson id 升序排列。
-          </p>
         </div>
         <RetroButton
           variant="secondary"
           size="sm"
           @click="toggleAll"
         >
-          {{ allSelected ? '取消全选' : '全选' }}
+          {{ allSelected ? '清空' : '全选' }}
         </RetroButton>
       </div>
 
@@ -105,7 +102,7 @@ function save() {
           size="sm"
           @click="emit('close')"
         >
-          取消
+          关闭
         </RetroButton>
         <RetroButton
           variant="primary"
@@ -113,7 +110,7 @@ function save() {
           :disabled="saving"
           @click="save"
         >
-          保存选择
+          确定
         </RetroButton>
       </div>
     </RetroCard>

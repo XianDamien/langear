@@ -66,14 +66,14 @@ function handlePlayDeck(deckId: string) {
       class="border-2 border-dashed border-slate-200 p-8 text-center"
     >
       <p class="mb-4 text-slate-500">
-        你还没有加入任何课程。去题库挑选一些 lesson 吧。
+        还没有课程
       </p>
       <RetroButton
         variant="primary"
         size="sm"
         @click="router.push('/library')"
       >
-        去题库添加课程
+        去题库添加
       </RetroButton>
     </div>
 

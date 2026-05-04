@@ -110,7 +110,7 @@ async function handlePickerSave(lessonIds: number[]) {
 
     <LessonPickerModal
       :open="!!pickerDeck"
-      :title="pickerDeck ? `${pickerDeck.name} · 选择 lessons` : ''"
+      :title="pickerDeck ? pickerDeck.name : ''"
       :lessons="pickerLessons"
       :selected-lesson-ids="pickerSelectedLessonIds"
       :saving="saving"

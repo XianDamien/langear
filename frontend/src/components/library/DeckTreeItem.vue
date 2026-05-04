@@ -110,9 +110,9 @@ function handlePlayClick() {
             v-if="deck.type === 'lesson'"
             class="text-sm text-slate-500"
           >
-            <span class="font-pixel text-brand-accent">{{ deck.newCards }}</span> 新卡 •
-            <span class="font-pixel text-brand-accent">{{ deck.reviewCards }}</span> 复习 •
-            <span class="text-green-600">{{ deck.completedCards }}</span> 已完成
+            <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·
+            <span class="font-pixel text-brand-accent">复习 {{ deck.reviewCards }}</span> ·
+            <span class="text-green-600">完成 {{ deck.completedCards }}</span>
           </div>
 
           <div
@@ -120,12 +120,11 @@ function handlePlayClick() {
             class="text-xs text-slate-500 uppercase"
           >
             <template v-if="mode === 'library' && selectionStatus !== 'none'">
-              已加入 {{ selectedLessonCount }}/{{ totalLessonCount }} lessons •
+              {{ selectionStatus === 'full' ? '已选' : '' }}{{ selectedLessonCount }}/{{ totalLessonCount }}
             </template>
             <template v-if="mode === 'my-courses'">
-              {{ totalLessonCount }} lessons •
+              {{ totalLessonCount }} 节
             </template>
-            {{ deck.totalCards }} 句
           </div>
         </div>
       </div>
@@ -138,7 +137,7 @@ function handlePlayClick() {
             :icon="selectionStatus === 'full' ? Check : Plus"
             @click.stop="emit('toggleDeckSelection', deck.id)"
           >
-            {{ selectionStatus === 'full' ? '已加入' : '加入' }}
+            {{ selectionStatus === 'full' ? '已选' : '加入' }}
           </RetroButton>
         </template>
         <template v-else>

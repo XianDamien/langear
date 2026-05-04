@@ -99,6 +99,24 @@ Use the default triage label vocabulary: `needs-triage`, `needs-info`, `ready-fo
 
 Use a single-context layout rooted at the repository root. See `docs/agents/domain.md`.
 
+### Product language
+
+- Treat `CONTEXT.md` as the canonical glossary for learner-facing agent terminology
+- Use `Study Session` for retelling practice and card-level feedback
+- Use `Dialogue Session` for post-lesson scenario dialogue practice; do not treat it as a `Study Session`
+- In the first version, the default `Dialogue Entry Point` is the explicit button shown after all cards in a lesson are completed
+
+### Learner agents
+
+- Build learner-facing agents in this priority order:
+  - `P0`: shared foundations — multi-user context, business tools, card/lesson context assembly, Markdown RAG, citations/jump targets
+  - `P1`: Q&A / summary agent — lesson/card answering, lesson summary, fixed pronunciation follow-up resource
+  - `P2`: dialogue agent — end-to-end scenario conversation after lesson completion
+  - `P3`: unified card system + AI card mutations
+- Keep `P0` and `P1` as the first executable slice unless the user explicitly reprioritizes
+- The Q&A agent must answer from current card context, current lesson feedback history, and internal knowledge-base snippets before relying on general model priors
+- External follow-up resources are currently restricted to the single approved Bilibili pronunciation link recorded in `docs/plans/2026-05-01-adk-coach-agent-todo.md`
+
 ### Tech stack skills
 
 When working in this repo, prefer these local Codex skills under `~/.codex/skills`:
