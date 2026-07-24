@@ -1,0 +1,5 @@
+interface:
+  display_name: "Managing LanGear"
+  short_description: "Manage LanGear Linear LAN issues"
+policy:
+  allow_implicit_invocation: true
