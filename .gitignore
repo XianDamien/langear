@@ -23,6 +23,10 @@ playwright-cli.json
 docs/*
 !docs/prd_versions/
 !docs/prd_versions/**
+!docs/adr/
+!docs/adr/**
+!docs/architecture/
+!docs/architecture/**
 
 # Old output directories
 2_processed_output.old/

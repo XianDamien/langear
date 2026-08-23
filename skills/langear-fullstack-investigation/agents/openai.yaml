@@ -1,4 +1,0 @@
-interface:
-  display_name: "LanGear Fullstack Investigation"
-  short_description: "Investigate LanGear frontend and production backend"
-  default_prompt: "Use $langear-fullstack-investigation to inspect LanGear frontend/backend logic and production backend behavior."

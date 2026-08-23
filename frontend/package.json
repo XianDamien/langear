@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "dev:mock": "sh -c 'vite --mode mock --host \"${HOST:-localhost}\" --port \"${PORT:-3002}\"'",
     "build": "vue-tsc -b && vite build",
+    "build:staging": "vue-tsc -b && vite build --mode staging",
     "build:mock": "vue-tsc -b && vite build --mode mock",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
