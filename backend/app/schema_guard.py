@@ -56,6 +56,7 @@ REQUIRED_TABLE_COLUMNS = {
         "origin_deck_id",
         "scope_type",
         "title_snapshot",
+        "status",
         "created_at",
         "updated_at",
     },
@@ -89,6 +90,25 @@ REQUIRED_TABLE_COLUMNS = {
     },
     "fsrs_review_log": set(),
 }
+REQUIRED_INDEX_COLUMNS = {
+    "review_log": {
+        ("ai_status",),
+        ("user_deck_id",),
+        ("user_id",),
+    },
+    "user_decks": {
+        ("id",),
+        ("origin_deck_id",),
+        ("user_id",),
+        ("user_id", "status"),
+    },
+    "user_card_fsrs": {
+        ("card_id",),
+        ("due",),
+        ("user_id",),
+        ("user_id", "state", "due"),
+    },
+}
 SUGGESTED_FIX_COMMAND = "cd backend && uv run alembic upgrade head"
 
 
@@ -104,6 +124,7 @@ class SchemaValidationResult:
     expected_revision: str
     missing_tables: list[str]
     missing_columns: dict[str, list[str]]
+    missing_indexes: dict[str, list[tuple[str, ...]]]
 
 
 def should_validate_runtime_schema(db_engine: Engine) -> bool:
@@ -156,6 +177,27 @@ def collect_missing_schema(db_engine: Engine) -> tuple[list[str], dict[str, list
     return missing_tables, missing_columns
 
 
+def collect_missing_indexes(db_engine: Engine) -> dict[str, list[tuple[str, ...]]]:
+    """Collect missing required indexes by column tuple."""
+    inspector = inspect(db_engine)
+    table_names = set(inspector.get_table_names())
+    missing_indexes: dict[str, list[tuple[str, ...]]] = {}
+
+    for table_name, required_indexes in REQUIRED_INDEX_COLUMNS.items():
+        if table_name not in table_names:
+            continue
+
+        existing_indexes = {
+            tuple(index["column_names"] or [])
+            for index in inspector.get_indexes(table_name)
+        }
+        missing = sorted(required_indexes - existing_indexes)
+        if missing:
+            missing_indexes[table_name] = missing
+
+    return missing_indexes
+
+
 def inspect_runtime_schema(db_engine: Engine | None = None) -> SchemaValidationResult | None:
     """Inspect schema state for the configured runtime database."""
     runtime_engine = db_engine or engine
@@ -165,11 +207,13 @@ def inspect_runtime_schema(db_engine: Engine | None = None) -> SchemaValidationR
     expected_revision = get_expected_revision()
     current_revision = get_current_revision(runtime_engine)
     missing_tables, missing_columns = collect_missing_schema(runtime_engine)
+    missing_indexes = collect_missing_indexes(runtime_engine)
     return SchemaValidationResult(
         current_revision=current_revision,
         expected_revision=expected_revision,
         missing_tables=missing_tables,
         missing_columns=missing_columns,
+        missing_indexes=missing_indexes,
     )
 
 
@@ -193,6 +237,14 @@ def format_schema_validation_error(result: SchemaValidationResult) -> str:
         )
         lines.append(f"Missing columns: {formatted_columns}")
 
+    if result.missing_indexes:
+        formatted_indexes = ", ".join(
+            f"{table}({', '.join(columns)})"
+            for table, indexes in sorted(result.missing_indexes.items())
+            for columns in indexes
+        )
+        lines.append(f"Missing indexes: {formatted_indexes}")
+
     lines.append(f"Suggested fix: {SUGGESTED_FIX_COMMAND}")
     return "\n".join(lines)
 
@@ -207,5 +259,6 @@ def validate_runtime_schema(db_engine: Engine | None = None) -> None:
         result.current_revision != result.expected_revision
         or result.missing_tables
         or result.missing_columns
+        or result.missing_indexes
     ):
         raise SchemaValidationError(format_schema_validation_error(result))

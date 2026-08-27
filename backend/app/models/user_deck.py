@@ -1,6 +1,15 @@
 """User-owned study deck instances."""
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -13,6 +22,8 @@ class UserDeck(Base):
     __tablename__ = "user_decks"
     __table_args__ = (
         UniqueConstraint("user_id", "origin_deck_id", name="uq_user_decks_user_origin"),
+        CheckConstraint("status in ('active', 'inactive')", name="ck_user_decks_status"),
+        Index("ix_user_decks_user_id_status", "user_id", "status"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -20,6 +31,7 @@ class UserDeck(Base):
     origin_deck_id = Column(Integer, ForeignKey("decks.id"), nullable=False, index=True)
     scope_type = Column(String(20), nullable=False)
     title_snapshot = Column(String(200), nullable=False)
+    status = Column(String(20), nullable=False, default="active")
     created_at = Column(DateTime, default=storage_now, nullable=False)
     updated_at = Column(DateTime, default=storage_now, onupdate=storage_now, nullable=False)
 

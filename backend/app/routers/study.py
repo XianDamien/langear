@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.current_user import get_current_user_id
 from app.services.review_service import ReviewService
 
 router = APIRouter(prefix="/api/v1/study", tags=["Study"])
@@ -21,6 +22,7 @@ class SubmissionRequest(BaseModel):
     card_id: int
     oss_audio_path: str
     realtime_session_id: str
+    user_deck_id: int | None = None
 
 
 class RatingRequest(BaseModel):
@@ -59,6 +61,7 @@ def _normalize_rating(rating: int | str) -> str:
 def submit_review(
     request: SubmissionRequest,
     db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """Submit a card feedback job (asynchronous - returns immediately).
 
@@ -86,10 +89,12 @@ def submit_review(
     try:
         review_service = ReviewService(db)
         result = review_service.submit_card_review(
+            user_id=user_id,
             lesson_id=request.lesson_id,
             card_id=request.card_id,
             oss_audio_path=request.oss_audio_path,
             realtime_session_id=request.realtime_session_id,
+            user_deck_id=request.user_deck_id,
             request_id=request_id,
         )
 
@@ -132,6 +137,7 @@ def submit_rating(
     submission_id: int,
     request: RatingRequest,
     db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """Submit rating for a submission.
 
@@ -149,6 +155,7 @@ def submit_rating(
         result = review_service.submit_submission_rating(
             submission_id=submission_id,
             rating=_normalize_rating(request.rating),
+            user_id=user_id,
         )
         return {
             "request_id": request_id,
@@ -180,18 +187,48 @@ def submit_rating(
 
 @router.get("/submissions")
 def get_submission_history(
-    lesson_id: int = Query(...),
+    lesson_id: int | None = Query(default=None),
+    user_deck_id: int | None = Query(default=None),
     card_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """List recent submissions for a lesson/card."""
     request_id = str(uuid.uuid4())
+    if lesson_id is None and user_deck_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "request_id": request_id,
+                "error": {
+                    "code": "INVALID_REQUEST",
+                    "message": "lesson_id or user_deck_id is required",
+                },
+            },
+        )
+    if lesson_id is not None and user_deck_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "request_id": request_id,
+                "error": {
+                    "code": "INVALID_REQUEST",
+                    "message": "lesson_id and user_deck_id cannot be combined",
+                },
+            },
+        )
     review_service = ReviewService(db)
-    result = review_service.list_submissions(lesson_id=lesson_id, card_id=card_id)
+    result = review_service.list_submissions(
+        user_id=user_id,
+        lesson_id=lesson_id,
+        user_deck_id=user_deck_id,
+        card_id=card_id,
+    )
     logger.info(
-        "Listed %s submissions for lesson=%s card=%s request_id=%s",
+        "Listed %s submissions for lesson=%s user_deck=%s card=%s request_id=%s",
         len(result),
         lesson_id,
+        user_deck_id,
         card_id,
         request_id,
     )

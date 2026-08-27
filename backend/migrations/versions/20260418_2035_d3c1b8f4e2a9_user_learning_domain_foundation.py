@@ -176,7 +176,12 @@ def upgrade() -> None:
                 WHERE deck_id IS NOT NULL
             ) AS traced
             JOIN decks ON decks.id = traced.origin_deck_id
-            ON CONFLICT (user_id, origin_deck_id) DO NOTHING
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM user_decks
+                WHERE user_decks.user_id = 1
+                  AND user_decks.origin_deck_id = traced.origin_deck_id
+            )
             """
         ),
         {"now": business_now},
@@ -208,7 +213,12 @@ def upgrade() -> None:
                 JOIN cards ON cards.deck_id = user_decks.origin_deck_id
                 WHERE user_decks.user_id = 1
             ) AS ordered_cards
-            ON CONFLICT (user_deck_id, card_id) DO NOTHING
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM user_deck_cards
+                WHERE user_deck_cards.user_deck_id = ordered_cards.user_deck_id
+                  AND user_deck_cards.card_id = ordered_cards.card_id
+            )
             """
         ),
         {"now": business_now},
@@ -250,7 +260,12 @@ def upgrade() -> None:
                 s.updated_at
             FROM user_card_srs AS s
             WHERE s.last_review IS NOT NULL
-            ON CONFLICT (user_id, card_id) DO NOTHING
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM user_card_fsrs
+                  WHERE user_card_fsrs.user_id = 1
+                    AND user_card_fsrs.card_id = s.card_id
+              )
             """
         )
     )

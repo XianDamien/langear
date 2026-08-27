@@ -61,12 +61,14 @@ class CoachContextService:
         card_id: int | None = None,
     ) -> dict[str, Any]:
         """Return the strongest current-card context available for a lesson."""
-        _ = user_id
         lesson = self._get_lesson(lesson_id)
 
         resolved_card_id = card_id
         if resolved_card_id is None:
-            recent_submissions = self.review_log_repo.list_single_submissions(lesson_id=lesson_id)
+            recent_submissions = self.review_log_repo.list_single_submissions(
+                user_id=user_id,
+                lesson_id=lesson_id,
+            )
             if recent_submissions and recent_submissions[0].card_id is not None:
                 resolved_card_id = recent_submissions[0].card_id
 
@@ -77,6 +79,7 @@ class CoachContextService:
             if card is None or card.deck_id != lesson_id:
                 raise ValueError(f"Card {resolved_card_id} does not belong to lesson {lesson_id}")
             submissions = self.review_log_repo.list_single_submissions(
+                user_id=user_id,
                 lesson_id=lesson_id,
                 card_id=resolved_card_id,
             )
@@ -105,9 +108,9 @@ class CoachContextService:
         limit: int = 5,
     ) -> list[dict[str, Any]]:
         """Return recent lesson feedback history with card metadata."""
-        _ = user_id
         self._get_lesson(lesson_id)
         submissions = self.review_log_repo.list_single_submissions(
+            user_id=user_id,
             lesson_id=lesson_id,
             card_id=card_id,
         )[:limit]
@@ -161,4 +164,3 @@ class CoachContextService:
         """
         _ = user_id, limit
         return []
-

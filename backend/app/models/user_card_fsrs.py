@@ -1,6 +1,6 @@
 """Current FSRS snapshot for a user-card pair."""
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -16,6 +16,10 @@ class UserCardFSRS(Base):
             "state in ('learning', 'review', 'relearning')",
             name="ck_user_card_fsrs_state",
         ),
+        Index("ix_user_card_fsrs_card_id", "card_id"),
+        Index("ix_user_card_fsrs_due", "due"),
+        Index("ix_user_card_fsrs_user_id", "user_id"),
+        Index("ix_user_card_fsrs_user_id_state_due", "user_id", "state", "due"),
     )
 
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)

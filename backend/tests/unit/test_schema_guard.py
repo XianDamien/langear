@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, text
 from app.database import Base
 from app.schema_guard import (
     SchemaValidationError,
+    collect_missing_indexes,
     collect_missing_schema,
     get_expected_revision,
     inspect_runtime_schema,
@@ -118,6 +119,9 @@ def test_validate_runtime_schema_rejects_stale_revision_and_missing_columns(tmp_
     assert "Missing columns:" in error_message
     assert "review_log(ai_status, rated_at, submitted_rating, user_deck_id, user_id)" in error_message
     assert "user_card_srs(step)" in error_message
+    assert "Missing indexes:" in error_message
+    assert "review_log(user_deck_id)" in error_message
+    assert "review_log(user_id)" in error_message
     assert "uv run alembic upgrade head" in error_message
 
 
@@ -182,4 +186,77 @@ def test_collect_missing_schema_reports_only_required_drift(tmp_path: Path):
     assert missing_columns == {
         "review_log": ["ai_status", "rated_at", "submitted_rating", "user_deck_id", "user_id"],
         "user_card_srs": ["difficulty", "stability"],
+    }
+
+
+@pytest.mark.unit
+def test_collect_missing_indexes_reports_required_composite_indexes(tmp_path: Path):
+    db_path = tmp_path / "schema_indexes.db"
+    engine = _create_file_engine(db_path)
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE user_decks (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    origin_deck_id INTEGER NOT NULL,
+                    scope_type VARCHAR(20) NOT NULL,
+                    title_snapshot VARCHAR(200) NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX ix_user_decks_id ON user_decks (id)"))
+        connection.execute(text("CREATE INDEX ix_user_decks_user_id ON user_decks (user_id)"))
+        connection.execute(
+            text("CREATE INDEX ix_user_decks_origin_deck_id ON user_decks (origin_deck_id)")
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE user_card_fsrs (
+                    user_id INTEGER NOT NULL,
+                    card_id INTEGER NOT NULL,
+                    state VARCHAR(20) NOT NULL,
+                    step INTEGER,
+                    stability FLOAT,
+                    difficulty FLOAT,
+                    due DATETIME NOT NULL,
+                    last_review DATETIME,
+                    last_rating VARCHAR(20),
+                    updated_at DATETIME NOT NULL,
+                    PRIMARY KEY (user_id, card_id)
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX ix_user_card_fsrs_card_id ON user_card_fsrs (card_id)"))
+        connection.execute(text("CREATE INDEX ix_user_card_fsrs_due ON user_card_fsrs (due)"))
+        connection.execute(text("CREATE INDEX ix_user_card_fsrs_user_id ON user_card_fsrs (user_id)"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE review_log (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    user_deck_id INTEGER,
+                    ai_status VARCHAR(20) NOT NULL
+                )
+                """
+            )
+        )
+        connection.execute(text("CREATE INDEX ix_review_log_ai_status ON review_log (ai_status)"))
+        connection.execute(text("CREATE INDEX ix_review_log_user_deck_id ON review_log (user_deck_id)"))
+        connection.execute(text("CREATE INDEX ix_review_log_user_id ON review_log (user_id)"))
+
+    missing_indexes = collect_missing_indexes(engine)
+
+    assert missing_indexes == {
+        "user_card_fsrs": [("user_id", "state", "due")],
+        "user_decks": [("user_id", "status")],
     }

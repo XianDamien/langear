@@ -49,10 +49,19 @@ export function submitReviewAsync(
 }
 
 export function fetchStudySession(params?: { sourceScope?: number[]; lessonId?: number }) {
+  return fetchStudySessionWithScope(params)
+}
+
+export function fetchStudySessionWithScope(params?: {
+  sourceScope?: number[]
+  lessonId?: number
+  userDeckId?: number
+}) {
   return http.get<StudySessionResponse>('/study/session', {
     params: {
       ...(params?.sourceScope?.length ? { source_scope: params.sourceScope.join(',') } : {}),
       ...(params?.lessonId ? { lesson_id: params.lessonId } : {}),
+      ...(params?.userDeckId ? { user_deck_id: params.userDeckId } : {}),
     },
   })
 }
@@ -65,6 +74,6 @@ export function pollSubmissionResult(submissionId: number) {
   return http.get<PollingResponse>(`/study/submissions/${submissionId}`)
 }
 
-export function listStudySubmissions(params: { lesson_id: number; card_id?: number }) {
+export function listStudySubmissions(params: { lesson_id?: number; user_deck_id?: number; card_id?: number }) {
   return http.get<StudySubmissionListItem[]>('/study/submissions', { params })
 }

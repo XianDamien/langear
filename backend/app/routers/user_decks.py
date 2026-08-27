@@ -21,6 +21,14 @@ class UserDeckImportRequest(BaseModel):
     origin_deck_id: int
 
 
+class UserDeckSelectionRequest(BaseModel):
+    """Request payload for final user deck selection sync."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    origin_deck_ids: list[int]
+
+
 @router.post("/import")
 def import_user_deck(
     request: UserDeckImportRequest,
@@ -65,3 +73,33 @@ def list_user_decks(
             "user_decks": user_decks,
         },
     }
+
+
+@router.put("/selection")
+def sync_user_deck_selection(
+    request: UserDeckSelectionRequest,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
+    """Replace the current user's active public-deck selection."""
+    request_id = str(uuid.uuid4())
+    try:
+        data = UserDeckService(db).sync_selection(
+            user_id=user_id,
+            origin_deck_ids=request.origin_deck_ids,
+        )
+        return {
+            "request_id": request_id,
+            "data": data,
+        }
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "request_id": request_id,
+                "error": {
+                    "code": "USER_DECK_SELECTION_INVALID",
+                    "message": str(exc),
+                },
+            },
+        )

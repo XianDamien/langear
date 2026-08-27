@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.current_user import get_current_user_id
 from app.services.study_session_service import StudySessionService
 
 router = APIRouter(prefix="/api/v1/study", tags=["Study"])
@@ -30,7 +31,9 @@ def _parse_source_scope(value: str | None) -> list[int] | None:
 def get_study_session(
     source_scope: str | None = None,
     lesson_id: int | None = None,
+    user_deck_id: int | None = None,
     db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
 ):
     """Return the scheduled study session for the current Beijing business day.
 
@@ -45,22 +48,28 @@ def get_study_session(
     request_id = str(uuid.uuid4())
 
     try:
+        if lesson_id is not None and user_deck_id is not None:
+            raise ValueError("lesson_id and user_deck_id cannot be combined")
+
         scope_ids = _parse_source_scope(source_scope)
         session_data = StudySessionService(db).get_session(
+            user_id=user_id,
             source_scope=scope_ids,
             lesson_id=lesson_id,
+            user_deck_id=user_deck_id,
         )
         return {
             "request_id": request_id,
             "data": session_data,
         }
     except LookupError as exc:
+        error_code = "USER_DECK_NOT_FOUND" if "User deck" in str(exc) else "LESSON_NOT_FOUND"
         raise HTTPException(
             status_code=404,
             detail={
                 "request_id": request_id,
                 "error": {
-                    "code": "LESSON_NOT_FOUND",
+                    "code": error_code,
                     "message": str(exc),
                 },
             },

@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.review_log import ReviewLog
+from app.models.user_card_fsrs import UserCardFSRS
 from app.models.user_card_srs import UserCardSRS
 from app.services.realtime_session_service import get_realtime_session_store
 from app.utils.timezone import storage_now
@@ -310,6 +311,68 @@ class TestStudyRouter:
         review_log = test_db.query(ReviewLog).filter(ReviewLog.id == submission_id).one()
         assert review_log.ai_feedback_json["study_session"]["quota_bucket"] == "review"
         assert review_log.ai_feedback_json["study_session"]["scheduled_state"] == "review"
+
+    def test_submit_submission_with_user_deck_persists_user_deck_id(
+        self,
+        client: TestClient,
+        test_db: Session,
+        sample_deck_tree,
+        monkeypatch,
+    ):
+        class _FakeThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self.target = target
+                self.args = args
+                self.daemon = daemon
+
+            def start(self):
+                return None
+
+        monkeypatch.setattr("app.services.review_service.threading.Thread", _FakeThread)
+
+        store = get_realtime_session_store()
+        store.clear()
+
+        lesson_id = sample_deck_tree["lesson"].id
+        card_id = sample_deck_tree["cards"][0].id
+        selection = client.put(
+            "/api/v1/user-decks/selection",
+            json={"origin_deck_ids": [lesson_id]},
+        )
+        assert selection.status_code == 200
+        user_deck_id = selection.json()["data"]["user_decks"][0]["id"]
+
+        now = storage_now()
+        test_db.add(
+            UserCardFSRS(
+                user_id=1,
+                card_id=card_id,
+                state="review",
+                step=None,
+                due=now - timedelta(minutes=10),
+                last_review=now - timedelta(days=1),
+            )
+        )
+        test_db.commit()
+
+        realtime_session_id = _make_ready_realtime_session(lesson_id, card_id)
+        resp = client.post(
+            "/api/v1/study/submissions",
+            json={
+                "lesson_id": lesson_id,
+                "card_id": card_id,
+                "user_deck_id": user_deck_id,
+                "oss_audio_path": "recordings/20260209/test.webm",
+                "realtime_session_id": realtime_session_id,
+            },
+        )
+
+        assert resp.status_code == 200
+        submission_id = resp.json()["data"]["submission_id"]
+        review_log = test_db.query(ReviewLog).filter(ReviewLog.id == submission_id).one()
+        assert review_log.user_deck_id == user_deck_id
+        assert review_log.deck_id == lesson_id
+        assert review_log.ai_feedback_json["study_session"]["quota_bucket"] == "review"
 
     def test_submit_rating_updates_srs(
         self,

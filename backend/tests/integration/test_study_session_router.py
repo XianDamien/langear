@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import Card, Deck, ReviewLog, Setting, UserCardSRS
+from app.models import Card, Deck, ReviewLog, Setting, UserCardFSRS, UserCardSRS
 from app.utils.timezone import storage_now
 
 
@@ -57,6 +57,56 @@ def _create_scoped_source(
 
 @pytest.mark.integration
 class TestStudySessionRouter:
+    def test_get_study_session_by_user_deck_returns_only_active_user_deck_cards(
+        self,
+        client: TestClient,
+        test_db: Session,
+        sample_deck_tree,
+    ):
+        lesson = sample_deck_tree["lesson"]
+        cards = sample_deck_tree["cards"]
+
+        selection = client.put(
+            "/api/v1/user-decks/selection",
+            json={"origin_deck_ids": [lesson.id]},
+        )
+        assert selection.status_code == 200
+        user_deck_id = selection.json()["data"]["user_decks"][0]["id"]
+
+        now = storage_now()
+        test_db.add(
+            UserCardFSRS(
+                user_id=1,
+                card_id=cards[0].id,
+                state="learning",
+                step=0,
+                due=now - timedelta(minutes=30),
+                last_review=now - timedelta(hours=1),
+            )
+        )
+        test_db.add(
+            UserCardFSRS(
+                user_id=1,
+                card_id=cards[1].id,
+                state="review",
+                step=None,
+                due=now - timedelta(minutes=5),
+                last_review=now - timedelta(days=1),
+            )
+        )
+        test_db.commit()
+
+        response = client.get(f"/api/v1/study/session?user_deck_id={user_deck_id}")
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["scope"]["user_deck_id"] == user_deck_id
+        assert data["scope"]["lesson_id"] is None
+        assert len(data["cards"]) == 5
+        assert [card["id"] for card in data["cards"][:2]] == [cards[0].id, cards[1].id]
+        assert data["cards"][0]["card_state"] == "learning"
+        assert data["cards"][1]["card_state"] == "review"
+
     def test_get_study_session_uses_beijing_timezone_offset(
         self,
         client: TestClient,
