@@ -2,7 +2,7 @@
 
 状态：已达成共识，2026-08-23
 
-本文将产品讨论中的关键决策整理为可执行的架构边界。它是设计基线，不是当前数据库的迁移方案；由于目前没有用户数据，现有数据库可以直接废弃并按新模型重建。
+本文将产品讨论中的关键决策整理为可执行的架构边界。它是设计基线，不是当前数据库的迁移方案；由于目前没有用户数据，现有数据库可以直接废弃并按新模型重建。非 AI 实现以 `2026-08-non-ai-core-contract.zh-CN.md` 为准，AI 处理以 `2026-08-attempt-processing-contract.zh-CN.md` 为准。
 
 ## 一、产品方向
 
@@ -15,7 +15,7 @@ LanGear 是一个在线的、Anki-like 的英语口语练习与间隔重复系�
 3. Vocabulary 和 Sentence 两种系统 NoteType。
 4. FSRS 调度、运行时复习队列、兄弟卡埋藏和 Filtered Deck。
 5. 保存 Attempt 快照，并独立处理 ASR、AI 反馈和用户 Rating。
-6. 系统 Library 复制导入，以及 LanGear 自有 JSON/ZIP 导入导出。
+6. 系统 Library 复制导入，以及 LanGear 自有 JSON/ZIP 导入。
 
 暂不做：教师工作流、作业系统、用户自定义模板、Library 自动同步、APKG、离线模式、PostgreSQL RLS、Dialogue Session 和开放式 Q&A。
 
@@ -76,9 +76,12 @@ Card Template：
 ```text
 Sentence Retelling
 Sentence Translation
+Sentence Dictation
 ```
 
-`Sentence Retelling` 优先使用参考音频或语义提示；没有参考音频时退化为文字提示。`Sentence Translation` 使用中文作为正面题面，英文作为答案。
+`Sentence Retelling` 优先使用参考音频或语义提示；没有参考音频时退化为文字提示，并且 flip 前必须提交用户录音。`Sentence Translation` 使用中文作为正面题面，并要求学习者提交英文文本；它跳过 ASR，但通过 AI 评估可接受的多种译法。`Sentence Dictation` 使用 `reference_audio` 作为题面，要求学习者提交英文文本且不接受用户录音；它使用确定性的规范化文本比对，并跳过 ASR 和 AI。两个 Vocabulary Template 允许直接翻面评分，不要求提交输入。
+
+Retelling 和 Translation 的 AI Feedback 使用不同的 evaluator、提示词和 mode-specific 结果结构；只共用稳定的外层响应 envelope。每条 AI 结果记录自己的 `feedback_kind`、prompt、模型和 schema 版本，便于两条评估链路独立演进。
 
 默认情况下，NoteType 中所有有效 Card Template 都会为每条 Note 生成持久化 Card。模板和字段的变化属于受控结构操作；普通 Note 字段修改则是受乐观锁保护的直接更新。
 
@@ -89,7 +92,7 @@ Sentence Translation
 → 动态读取 Note + Card Template 并渲染题面
 → 用户可以多次试录临时音频
 → 翻面
-→ 同一事务创建 Attempt + 两条 Outbox 任务
+→ 同一事务创建 Attempt + 当前 Card Template 适用的 Outbox 任务
 → Rating API 可以立即更新 Attempt 与 Card 的 FSRS 状态
 → ASR 和 AI 任务独立更新同一条 Attempt
 → 从运行时队列取下一张 Card
@@ -110,6 +113,12 @@ ASR、AI Feedback 和 Rating 三条流程互不依赖：
 
 复习队列是运行时状态，不建立持久化 Study Session 或队列表。队列可以保存在进程内存或 Redis 中，丢失后按当前 Card 状态重新生成，不影响已经保存的学习事实。
 
+Filtered Deck 保存 Anki 风格的 `search_terms`，每项包含查询、数量上限和排序规则。v1 的排序规则只支持 `added`、`retrievability_ascending` 和 `retrievability_descending`。`added` 按 Card 首次创建顺序；retrievability 在 rebuild 时按当前 FSRS 状态计算，没有 memory state 的 Card 排在有状态 Card 之后并按 `added` 保持稳定。
+
+Rebuild 时按 term 顺序查询、排序和截取 Card，并生成运行时有序 Card ID 主队列；本次 build 后主顺序保持稳定，只有分钟级 learning Card 按 `due_at` 动态插回。排序位置不写入 Card，队列丢失或显式 rebuild 时重新计算。
+
+v1 Filtered Deck 固定影响正式调度，不提供 `reschedule=false` Preview 模式或 `preview_repeat` queue。
+
 ## 五、数据库 Schema 草案
 
 以下是持久化表的边界。具体 SQLAlchemy 模型、字段类型、索引和 Alembic 迁移属于后续实现工作。
@@ -124,7 +133,7 @@ card_templates
 notes(guid, fields_json, tags, revision)
 cards(note_id, deck_id, card_template_id, type, queue,
       due_at, due_day, fsrs_state_json,
-      original_deck_id, original_due)
+      original_deck_id)
 card_review_attempts(card_id, note_id, snapshots,
                     audio_asset_id, ASR fields,
                     feedback fields, rating)
@@ -161,19 +170,30 @@ Library 导入保留原始 `guid`，但不覆盖用户已经修改的 Note。重
 
 ### 5.3 Card 与调度
 
-Note 不保存 `deck_id`；Card 才保存当前 Deck。Card 使用 Anki 式 `type + queue`：
+Note 不保存 `deck_id`；Card 才保存当前 Deck。Card 使用 Anki 式 `type + queue`。`type` 表示长期学习阶段：
 
 ```text
 new = 0
 learning = 1
 review = 2
 relearning = 3
-suspended = -1
-buried_user = -2
-buried_sibling = -3
 ```
 
-应用代码使用枚举，不直接散落魔法数字。Filtered Deck 临时修改 `deck_id`，同时保存 `original_deck_id` 和 `original_due`；一张 Card 同时最多属于一个 Filtered Deck。删除 Filtered Deck 前先归还 Card。
+`queue` 表示当前调度队列：
+
+```text
+new = 0
+learning = 1
+review = 2
+day_learning = 3
+suspended = -1
+buried_sibling = -2
+buried_user = -3
+```
+
+`relearning` 不是 queue；Relearning Card 使用 `learning` 或 `day_learning` queue。API 只暴露字符串枚举，不暴露这些内部数值。Collection 默认学习步骤和重新学习步骤均为单个 15 分钟 step，默认目标记忆保留率为 `0.90`，最大复习间隔为 `36500` 天。Card 响应展示后端计算的 Again/Hard/Good/Easy 预计间隔，Rating 时由后端重新校验并应用 FSRS 结果。
+
+应用代码使用枚举，不直接散落魔法数字。Filtered Deck 临时修改 `deck_id`，同时保存 `original_deck_id`；它不覆盖 `new_position`、`due_at` 或 `due_day`，也不持久化排序位置。一张 Card 同时最多属于一个 Filtered Deck。删除 Filtered Deck 前先归还 Card。
 
 Card 的当前 FSRS 状态直接保存在 `cards`。`user_card_srs` 不再单独存在。Attempt 保存用户 Rating、算法版本和配置版本，但不保存 FSRS 前后状态快照。
 
@@ -196,7 +216,7 @@ Attempt 创建后，题面和输入快照不可变。ASR、AI Feedback 和 Ratin
 
 ### 5.5 Outbox 与异步任务
 
-创建 Attempt 时，同一个 PostgreSQL 事务写入：
+创建 Attempt 时，同一个 PostgreSQL 事务写入 Attempt 与当前 Card Template/输入模式适用的任务。例如 Sentence Retelling 写入：
 
 ```text
 Attempt
@@ -204,7 +224,7 @@ Attempt
 + task_outbox(evaluate_attempt)
 ```
 
-Outbox Publisher 将两条任务分别投递到 Celery。投递语义是至少一次，因此 Worker 必须以 `attempt_id` 幂等：重复任务只能更新同一条 Attempt，不能创建新 Attempt 或重复推进 FSRS。
+不适用的任务不创建 Outbox，对应 Attempt processing status 直接写为 `skipped`。Outbox Publisher 将适用任务分别投递到 Celery。投递语义是至少一次，因此 Worker 必须以 `attempt_id` 幂等：重复任务只能更新同一条 Attempt，不能创建新 Attempt 或重复推进 FSRS。
 
 Celery 只负责可靠投递和执行；Attempt 才是 ASR、AI 和 Rating 的业务事实来源。
 
@@ -273,7 +293,7 @@ Celery 只负责可靠投递和执行；Attempt 才是 ASR、AI 和 Rating 的�
 - 系统 Library 只读展示。
 - Deck 子树和 Note 复制导入。
 - 按 guid 幂等导入与缺失 Card 补齐。
-- LanGear JSON/ZIP 导出和再次导入。
+- LanGear JSON/ZIP 导入；两种格式共用版本化 manifest，ZIP 可额外携带媒体。
 
 ### P3：后续产品能力
 
@@ -283,3 +303,4 @@ Celery 只负责可靠投递和执行；Attempt 才是 ASR、AI 和 Rating 的�
 - 教师、学生、作业计划和 AI 学习报告。
 - 用户自定义 NoteType/CardTemplate。
 - APKG、离线复习和多 Collection。
+- LanGear JSON/ZIP 导出。

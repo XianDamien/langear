@@ -32,6 +32,18 @@ _Avoid_: Note, question type
 The smallest review/practice item, rendered from one Note through one Card Template and independently scheduled by FSRS.
 _Avoid_: Question, line
 
+**Sentence Retelling**:
+A Sentence Card Template where the learner responds to a reference prompt with a required recording.
+_Avoid_: Sentence Dictation, optional-audio practice
+
+**Sentence Translation**:
+A Sentence Card Template where the learner translates the Chinese prompt into required English text.
+_Avoid_: Sentence Retelling, direct reveal
+
+**Sentence Dictation**:
+A Sentence Card Template where the learner listens to reference audio and enters required English text without submitting a learner recording.
+_Avoid_: Sentence Retelling, silent Attempt
+
 **Attempt**:
 One submitted practice input created when the learner flips a Card. It stores the immutable practice snapshot and the independently completed ASR, AI feedback, and learner Rating results.
 _Avoid_: Trial recording, Study Session
@@ -39,6 +51,10 @@ _Avoid_: Trial recording, Study Session
 **Rating**:
 The learner's Again, Hard, Good, or Easy choice that advances the Card's FSRS schedule. AI feedback does not silently choose a Rating.
 _Avoid_: AI score, feedback score
+
+**AI Feedback**:
+Personalized guidance produced for one Attempt according to its Card Template's evaluation mode. It is independent from learner Rating and distinct from pre-authored Card content.
+_Avoid_: Rating, AI Explanation, automatic grade
 
 **Card Deletion**:
 The irreversible permanent removal of exactly one rendered Card and its associated Attempts, without implicitly deleting its underlying Note or sibling Cards.
@@ -54,7 +70,7 @@ _Avoid_: Permanent Card ownership, saved study history
 
 **AI Explanation**:
 A pre-authored, Card-level explanation that tells the learner how to understand and practice one sentence or expression. It is learning content, not personalized submission advice.
-_Avoid_: Chat answer, agent reply
+_Avoid_: AI Feedback, Chat answer, agent reply
 
 **Study Session**:
 A future learner-facing concept for a bounded practice flow. It is not required as a persistent container in the first version; the current review queue is runtime state.
@@ -96,7 +112,7 @@ _Avoid_: Review unit, submission
 - A Card belongs to exactly one Note, one Card Template, and one current Deck.
 - A NoteType defines one or more Card Templates; valid templates generate persistent Cards by default.
 - Vocabulary provides English-to-Chinese and Chinese-to-English Cards.
-- Sentence provides Retelling and Translation Cards.
+- Sentence provides Retelling, Translation, and Dictation Cards.
 - A Card Deletion removes only that Card and its Attempts; it does not delete the Note or sibling Cards.
 - A Note may remain in a Collection with no Cards and can later be used to explicitly generate missing Cards.
 - A Dialogue Session is deferred; it will be anchored to a learner-facing Lesson/Deck slice, not to the current runtime review queue.
@@ -122,6 +138,8 @@ _Avoid_: Review unit, submission
 - "Study Session" was ambiguous between a persistent session record and a runtime review queue — resolved: the first version does not persist a Study Session container.
 - "复习记录" was ambiguous between a practice submission and an FSRS transition — resolved: one Attempt is created on Card flip; its Rating is a separate field on the same Attempt.
 - "试录" was ambiguous between a persisted practice event and temporary input — resolved: pre-flip recordings are temporary; only the recording submitted on flip becomes Attempt input.
+- "不录音听音频" was ambiguous with a silent Retelling Attempt — resolved: it is Sentence Dictation, while Sentence Retelling requires a learner recording before flip.
+- "Translation 输入" was ambiguous between optional reflection and a submitted answer — resolved: Sentence Translation requires English text before flip and does not accept learner audio.
 - "Library 导入" was ambiguous between shared references and copies — resolved: Library Decks and Notes are copied into the user's Collection; copied Notes retain the Library guid for idempotent re-import, but local edits are never overwritten.
 - "删除卡片" was ambiguous between deleting one rendered Card and deleting its Note — resolved: Card Deletion removes only one Card and its Attempts.
 - "对话练习" was ambiguous between retelling and scenario use — resolved: retelling belongs to Card review; scenario use belongs to Dialogue Session, which is deferred.
