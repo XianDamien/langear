@@ -12,11 +12,35 @@
 | --- | --- | --- | --- | --- | --- |
 | Vocabulary English-to-Chinese | `word` | 无，可直接翻面 | `none` | `skipped` | `skipped` |
 | Vocabulary Chinese-to-English | `meaning` | 无，可直接翻面 | `none` | `skipped` | `skipped` |
-| Sentence Retelling | `reference_audio`，缺失时使用语义文字提示 | 必须提交一段最终录音 | `audio` | `pending` | `pending` |
-| Sentence Translation | `chinese` | 必须提交英文文本 | `text` | `skipped` | `pending` |
-| Sentence Dictation | `reference_audio` | 必须提交英文文本；不接受用户录音 | `text` | `skipped` | `skipped` |
+| Retelling Card（来自 Sentence Note） | 仅 `reference_audio` | 必须提交一段最终录音 | `audio` | `pending` | `pending` |
+| Translation Card（来自 Sentence Note） | `chinese` | 必须提交英文文本 | `text` | `skipped` | `pending` |
+| Dictation Card（来自 Sentence Note） | `reference_audio` | 必须提交英文文本；不接受用户录音 | `text` | `skipped` | `skipped` |
 
 Translation 使用 AI Feedback，因为正确译文可能有多种表达。Dictation 使用同步的确定性书写比对，不创建 ASR 或 AI Outbox 任务。单词、大小写、标点和空格都参与正确性判断；只允许不改变书写语义的技术规范化，例如 Unicode NFKC、换行编码统一，以及弯引号/直引号等明确列入 evaluator version 的排版等价字符。不得 lowercase、trim、折叠连续空格或删除标点。无输入或不适用的处理分支在 Attempt 上明确保存为 `skipped`，不能伪装成 `completed`。
+
+## Sentence Card Template 渲染
+
+三个 Card Template 复用同一条 Sentence Note，但分别生成持久化 Card 和独立 FSRS 状态：
+
+| Card Template | 生成条件 | 正面 | 用户输入 | 背面 Note 内容 | Attempt 反馈 |
+| --- | --- | --- | --- | --- | --- |
+| Retelling | `english + reference_audio` | 仅参考音频 | 必须录音 | 参考音频、英文原文、中文翻译、笔记 | Retelling AI Feedback |
+| Translation | `english + chinese` | 仅中文翻译 | 必须输入英文文本 | 英文原文、中文翻译、可选参考音频、笔记 | Translation AI Feedback |
+| Dictation | `english + reference_audio` | 仅参考音频 | 必须输入英文文本 | 英文原文、中文翻译、笔记 | 同步 deterministic diff；AI Feedback 可为空 |
+
+`chinese`、`note` 或 Translation 背面的 `reference_audio` 缺失时，对应可选槽位不渲染，不用空字符串占位。正面“仅音频/仅中文”意味着不能提前泄露英文原文、笔记或其他答案字段。
+
+这里的“背面”是 Review API/View 的组合结果，不是把 AI 结果写进 Card Template：
+
+```text
+back view
+= Card Template 从当前 Sentence Note 渲染的 Note 内容
++ 当前 Attempt 的 deterministic/AI processing result
+```
+
+Card/Note 不保存个性化反馈。Attempt 保存 flip 时的 immutable back snapshot，反馈结果继续保存在同一 Attempt 的独立 processing 字段中。
+
+AI Feedback 是背面上的可选增强槽位，不是 Card 完整性的必需字段。Retelling/Translation 在 `ai_status=pending|failed` 时 `ai_feedback=null`；只有 `completed` 时结果非空。Dictation v1 固定 `ai_status=skipped`、`ai_feedback=null`，使用同步 deterministic diff。反馈为空不阻塞 flip、Rating 或 next。
 
 Dictation flip 同步返回 `deterministic_result`：
 

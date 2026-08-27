@@ -16,7 +16,112 @@ relearning_steps = [15 minutes]
 desired_retention = 0.90
 maximum_review_interval = 36500 days
 sibling_burying = true
+study_day_rollover_hour = 4
+new_limit = 20
+review_limit = 200
+new_card_gather_order = random_cards
+new_card_sort_order = order_gathered
+new_review_order = after_reviews
+interday_learning_review_order = before_reviews
+review_sort_order = retrievability_descending
 ```
+
+`study_day_rollover_hour` 是 Collection 级规则，v1 固定为本地 04:00，不允许 Deck 覆盖。Daily limits、`due_day` 和 buried Card 自动恢复都使用同一个 Study Day。
+
+## Standard Deck 高级设置
+
+Standard Deck 可以覆盖以下配置：
+
+```text
+new_limit
+review_limit
+desired_retention
+sibling_burying
+new_card_gather_order
+new_card_sort_order
+new_review_order
+interday_learning_review_order
+review_sort_order
+```
+
+`learning_steps`、`relearning_steps`、`maximum_review_interval` 和 `study_day_rollover_hour` 在 v1 保持 Collection 级配置，Deck 不能覆盖。Filtered Deck 使用 Card 原 Standard Deck 的有效调度配置和自身 build sort，不保存上述 Standard Deck 顺序覆盖。
+
+除每日限额外，可覆盖字段使用逐项 nullable override：当前 Deck 有显式值时使用当前值，否则使用最近祖先 Standard Deck 的显式值，最后回退 Collection 默认值。“恢复默认”是清空 override，不是复制当前默认值。每日限额仍按层级 capacity 规则执行：各 Deck 的本地 limit 与所有祖先/Collection limit 共同约束子树，不能被子 Deck 的较大值放宽。
+
+五个 Display Order 设置保留为高级设置，API 使用以下字符串枚举：
+
+### New Card Gather Order
+
+决定先从哪些 Deck/Note 收集 New Card：
+
+```text
+deck
+deck_then_random_notes
+lowest_position
+highest_position
+random_notes
+random_cards
+```
+
+默认 `random_cards`。随机顺序使用 Collection、Study Day 和 Card ID 生成的稳定 seed；同一 Queue build 内稳定，rebuild 或跨 Study Day 可以重排。
+
+### New Card Sort Order
+
+决定 gather 后 New Card 的二次排序：
+
+```text
+template
+order_gathered
+template_then_random
+random_note_then_template
+random_card
+```
+
+默认 `order_gathered`，即不改变 `random_cards` gather 得到的顺序。
+
+### New/Review Order
+
+决定 New Card 与 Review Card 的混排位置：
+
+```text
+mix_with_reviews
+before_reviews
+after_reviews
+```
+
+默认 `after_reviews`。
+
+### Interday Learning/Review Order
+
+决定 `day_learning` Card 相对 Review Card 的位置：
+
+```text
+mix_with_reviews
+before_reviews
+after_reviews
+```
+
+默认 `before_reviews`。已经到期的 intraday `learning` Card 仍优先于此主队列设置，不受该选项控制。
+
+### Review Sort Order
+
+```text
+due_day
+due_day_then_deck
+deck_then_due_day
+interval_ascending
+interval_descending
+retrievability_ascending
+retrievability_descending
+relative_overdueness
+random
+added
+reverse_added
+```
+
+默认 `retrievability_descending`，即当前计算的 retrievability 较高、最可能记住的 Review Card 先出现。相同排序键使用 Card ID 的稳定 tie-breaker。LanGear 不保存 Anki SM-2 ease factor，因此 v1 不提供 `ease_ascending/ease_descending`。
+
+Display Order 修改只改变之后构建的运行时 Queue，不改写 Card type/queue/due/FSRS 或历史 Attempt。更新配置后当前 Collection 的活跃 `queue_id` 失效，下一次访问按新配置 rebuild。
 
 ## Type 与 Queue
 
@@ -55,7 +160,7 @@ LanGear 不复用 Anki 单个 `due` 字段的多单位编码：
 | `review` | `due_day`，Collection 时区下的学习日编号 |
 | suspended/buried | 保留暂停或埋藏前的调度字段，不改变正式到期信息 |
 
-恢复 suspended/buried Card 时，根据 `type` 和已保留的 due 字段恢复其有效 queue。数据库约束必须拒绝会造成歧义的字段组合。
+Study Day 在 Collection IANA timezone 下从本地 04:00 开始；早于 04:00 的本地时间仍属于前一学习日。`due_day` 使用该学习日起始日期的明确日期序号，不复用 Anki 单个 `due` 字段的多单位编码。恢复 suspended/buried Card 时，根据 `type` 和已保留的 due 字段恢复其有效 queue。数据库约束必须拒绝会造成歧义的字段组合。
 
 ## Rating 转换
 

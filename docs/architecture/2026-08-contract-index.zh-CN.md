@@ -60,6 +60,7 @@ OpenAPI 和 fixtures 是两边共同维护的第一个交付物，不是开工�
 
 - OpenAPI 中的 UUID/string enum、错误 envelope 和 input discriminated union；
 - `CardFront`、`AttemptSnapshot`、`RatingOption`、`AttemptProcessing` DTO；
+- NoteType change preview、field mapping 和 impact DTO；
 - `review_token`、`card_schedule_revision` 和 Idempotency-Key 行为；
 - 一套由后端生成、前端消费的 contract fixtures。
 

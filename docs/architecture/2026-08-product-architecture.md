@@ -46,15 +46,15 @@ Fields: `word`, `meaning`, `phonetic`, `note`, `reference_audio`, `image`.
 
 Templates: English-to-Chinese and Chinese-to-English.
 
-### Sentence
+### Sentence NoteType
 
 Fields: `english`, `chinese`, `note`, `reference_audio`.
 
-Templates: Sentence Retelling, Sentence Translation, and Sentence Dictation. Retelling uses reference audio or a semantic prompt when audio is absent and requires a learner recording before flip. Translation uses the Chinese prompt and requires an English text answer; it skips ASR and uses AI feedback because multiple translations may be valid. Dictation uses `reference_audio` as its prompt, requires an English text answer, does not accept a learner recording, and synchronously compares words, capitalization, punctuation, and spacing without ASR or AI. Both Vocabulary templates allow direct reveal and Rating without submitted input.
+Sentence is the shared content type, not a fourth practice mode. One Sentence Note may generate Retelling, Translation, and Dictation Cards with independent Deck and FSRS state. Retelling requires `english + reference_audio`; its front is audio-only, it requires a learner recording, and its back shows reference audio, English, Chinese, optional Attempt AI feedback, and notes. Translation requires `english + chinese`; its front is Chinese-only, it requires an English text answer, and its back shows English, Chinese, optional reference audio, optional Attempt AI feedback, and notes. Dictation requires `english + reference_audio`; its front is audio-only, it requires English text, and its back shows English, Chinese, deterministic writing feedback, an optional empty AI-feedback slot, and notes. Dictation does not invoke AI in v1. Both Vocabulary templates allow direct reveal and Rating without submitted input.
 
 Retelling and Translation use separate evaluators, prompts, and mode-specific result schemas. They share only a stable AI Feedback response envelope. Each result records its `feedback_kind`, prompt, model, and schema versions so the two evaluation paths can evolve independently.
 
-All active templates generate persistent Cards by default. Template and field changes are controlled structural operations; ordinary Note field edits are direct edits protected by optimistic locking.
+All active templates generate persistent Cards by default. Template and field changes are controlled structural operations; ordinary Note field edits are direct edits protected by optimistic locking. A NoteType change uses an Anki-style, user-confirmed old-field-to-new-field mapping. It preserves Note identity/guid but replaces Cards, Attempts, and FSRS state; Card Templates and scheduling state are not mapped.
 
 ## Review flow
 
@@ -76,6 +76,8 @@ Filtered Decks store at most two `search_terms`, each with a structured filter, 
 A rebuild evaluates terms in order and creates an ordered runtime Card ID queue in memory or Redis. The main order stays stable for that build, while intraday learning Cards may be reinserted by `due_at`. No filtered position is written to a Card; loss of the runtime queue or an explicit rebuild recalculates it.
 
 Version 1 Filtered Decks always reschedule Cards. There is no `reschedule=false` preview mode or `preview_repeat` queue. Card types follow Anki's `new`, `learning`, `review`, and `relearning` phases; queues are separately modeled as `new`, `learning`, `day_learning`, `review`, `suspended`, `buried_sibling`, and `buried_user`. The default learning and relearning steps are each a single 15-minute step, desired retention is `0.90`, and the maximum review interval is `36500` days. Card responses expose backend-computed Again/Hard/Good/Easy interval previews; the backend revalidates and applies the selected Rating.
+
+Standard Deck advanced settings retain Anki-style New gather, New sort, New/Review order, Interday Learning/Review order, and Review sort controls. LanGear defaults are `random_cards`, `order_gathered`, `after_reviews`, `before_reviews`, and `retrievability_descending`. Decks may override these controls together with new/review limits, desired retention, and sibling burying; unset values inherit from the nearest ancestor and then the Collection default. Display-order changes rebuild runtime queues without rewriting Card due or FSRS state.
 
 ## Schema sketch
 

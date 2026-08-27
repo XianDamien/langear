@@ -9,7 +9,7 @@
 ### 身份、时间和环境
 
 - User、Session、Collection、Deck、Note、NoteType、CardTemplate、Card、Attempt、MediaAsset、MediaReference、TaskOutbox、IdempotencyRecord 的核心 ID 均由应用生成 UUIDv7。
-- 所有绝对时间使用 PostgreSQL `timestamptz`，写入 UTC。Collection 保存一个 IANA timezone，用于学习日边界和 `due_day` 计算。
+- 所有绝对时间使用 PostgreSQL `timestamptz`，写入 UTC。Collection 保存一个 IANA timezone；学习日沿用 Anki 的本地 `04:00` 切换边界，用于 `due_day`、每日额度和自动 unbury。
 - 开发、Staging、Production 使用独立 PostgreSQL、Redis、Celery worker 和 OSS namespace。生产 schema 通过显式 release job 重建/迁移，不在 Web 或 Worker 启动时自动执行。
 
 ### Collection 隔离
@@ -70,11 +70,44 @@ Note 不保存 `deck_id`。创建 Note 时可以指定目标 Standard Deck，仅
 
 ### NoteType 切换
 
-NoteType 切换是显式的破坏性结构操作：接口先返回受影响的 Card/Attempt 数量，确认后在一个事务中删除旧 Card 及其 Attempts，再按新 NoteType 的有效模板生成新 Card。旧 FSRS、Rating 和历史 Attempt 不迁移。
+NoteType 切换是显式的破坏性结构操作，但字段转换采用 Anki 风格的用户确认映射：
+
+1. preview 接口返回旧/新 NoteType 字段、新 Card Template、建议 field mapping，以及将删除/创建的 Card、Attempt 和媒体引用影响；
+2. 每个目标字段必须由用户选择一个旧字段或 `null`，也可以在确认前直接填写目标字段值；系统不能静默应用建议映射；
+3. 同一个旧字段可以映射到多个目标字段；每个目标字段最多有一个来源。未映射旧字段不会进入目标 `fields`，但在执行确认前仍显示给用户；
+4. 文本字段只能映射到文本字段；`reference_audio`/`image` 只能映射到兼容媒体字段。目标 required field 在映射和显式输入后仍为空时返回 `422 NOTETYPE_FIELD_MAPPING_INVALID`；
+5. execute 携带 Note 当前 `revision`、目标 NoteType、完整已确认 mapping/override values 和 preview `confirmation_token`。Note 或影响范围已变化时返回 `409 NOTETYPE_CHANGE_CONFLICT`；
+6. 一个事务内保留原 Note `id`、`guid`、Collection 和 tags，替换 `note_type_id` 与 `fields`，递增 revision，删除旧 Cards/Attempts，再按目标 NoteType 的有效模板生成新 Card；
+7. 新 Cards 默认进入请求指定的目标 Standard Deck；未指定时，只有当所有旧 Card 原本都在同一 Standard Deck 才可复用该 Deck，否则 execute 必须要求用户选择目标 Deck；
+8. 旧 FSRS、Rating 和 Attempt 历史不迁移。LanGear 不执行 Anki 的 Card Template mapping，因为目标 Cards 是新的练习与调度单位。
+
+最小 preview 响应示意：
+
+```json
+{
+  "note_id": "019...",
+  "source_note_type": "vocabulary",
+  "target_note_type": "sentence",
+  "source_fields": ["word", "meaning", "phonetic", "note", "reference_audio", "image"],
+  "target_fields": ["english", "chinese", "note", "reference_audio"],
+  "suggested_field_mapping": {
+    "english": "word",
+    "chinese": "meaning",
+    "note": "note",
+    "reference_audio": "reference_audio"
+  },
+  "impact": { "cards_deleted": 2, "attempts_deleted": 8, "cards_created": 3 },
+  "confirmation_token": "..."
+}
+```
+
+建议 mapping 只用于预填 UI；execute 的 mapping 是用户确认后的业务事实。
 
 ### Card 生成和删除
 
 - v1 每个有效 Card Template 默认生成一张持久化 Card；缺少模板 required fields 时不生成，并在 API 返回可修复原因。
+- Sentence Note 的 Retelling/Dictation Template 都要求 `english + reference_audio`；Translation Template 要求 `english + chinese`。三个生成出的 Card 共享 Note 内容，但分别拥有 Card ID、Deck 和 FSRS 状态。
+- AI Feedback 是可空的 Attempt 增强字段，不属于 Card 生成条件。Dictation v1 使用同步 deterministic result，固定 `ai_status=skipped`、`ai_feedback=null`。
 - 删除一张 Card 只删除该 Card 和其 Attempts，保留 Note、同 Note 的 sibling Card 和其他 Deck 中的 Card。
 - 删除 Note 会删除该 Note 的全部 Cards、Attempts 以及不再被引用的私有媒体；删除前必须显式确认影响范围。
 
@@ -106,7 +139,7 @@ queue: new | learning | day_learning | review |
 | `review` | `due_day` | Collection 学习日整数 |
 | suspended/buried | 保留原 type 对应字段 | 不改变正式 due |
 
-`due_day` 定义为 Collection timezone 下的本地日期距 `1970-01-01` 的天数；“当前学习日”使用同一公式。这样值不依赖部署时区，也不因进程重启改变。数据库约束拒绝同时存在互相矛盾的 due 字段。Filtered Deck 不覆盖 `new_position`、`due_at` 或 `due_day`。
+Study Day 按 Collection timezone 的本地 `04:00` 切换：`04:00:00` 至次日 `03:59:59.999...` 属于同一学习日。`due_day` 保存该学习日起始本地日期距 `1970-01-01` 的天数；当前本地时间早于 04:00 时使用前一自然日。计算必须使用 IANA timezone 的真实本地时间和 DST 规则，不能依赖服务器时区或固定 UTC offset。数据库约束拒绝同时存在互相矛盾的 due 字段。Filtered Deck 不覆盖 `new_position`、`due_at` 或 `due_day`。
 
 ### 默认配置和 Rating
 
@@ -118,9 +151,19 @@ relearning_steps = [15 minutes]
 desired_retention = 0.90
 maximum_review_interval = 36500 days
 sibling_burying = true
+study_day_rollover_hour = 4
+new_limit = 20
+review_limit = 200
+new_card_gather_order = random_cards
+new_card_sort_order = order_gathered
+new_review_order = after_reviews
+interday_learning_review_order = before_reviews
+review_sort_order = retrievability_descending
 ```
 
-Standard Deck 可覆盖允许的配置；配置变化只影响之后发生的 Rating。每张 Card 返回由同一调度器计算的 Again/Hard/Good/Easy 预计间隔。Rating API 在事务中锁定 Card、重新计算并写入 Attempt Rating 与 Card FSRS；候选已过期返回 `409 CARD_SCHEDULE_CONFLICT`。
+Standard Deck 可覆盖 `new_limit`、`review_limit`、`desired_retention`、`sibling_burying` 和五个 Display Order 设置。普通 override 按当前 Deck → 最近祖先 → Collection 逐项回退；每日限额按完整祖先路径共同 cap。`learning_steps`、`relearning_steps`、`maximum_review_interval` 和 04:00 Study Day 在 v1 不允许 Deck 覆盖。完整枚举见 Card 调度契约。
+
+Display Order 配置变化使当前 Runtime Queue 失效并 rebuild，只影响之后的出卡顺序，不改写 Card 调度事实或历史 Attempt。调度参数变化只影响之后发生的 Rating。每张 Card 返回由同一调度器计算的 Again/Hard/Good/Easy 预计间隔。Rating API 在事务中锁定 Card、重新计算并写入 Attempt Rating 与 Card FSRS；候选已过期返回 `409 CARD_SCHEDULE_CONFLICT`。
 
 Card 保存单调递增的 `schedule_revision`。Rating、Undo、Suspend/Unsuspend、Bury/Unbury 和任何调度字段修改都递增它；Undo 恢复业务状态但不回退 revision。前端只能回传已读 revision，不能指定新值。
 
@@ -242,6 +285,8 @@ MediaAsset lifecycle 为 `temporary|permanent|pending_delete|deleted`。flip 的
 
 ```text
 NOTE_REVISION_CONFLICT
+NOTETYPE_FIELD_MAPPING_INVALID
+NOTETYPE_CHANGE_CONFLICT
 CARD_SCHEDULE_CONFLICT
 QUEUE_EXPIRED
 IDEMPOTENCY_KEY_REUSED
@@ -273,13 +318,14 @@ Web、Outbox Publisher、Worker 和导入流程都必须透传 `request_id`/`cor
 ### 内容与删除
 
 - Vocabulary/Sentence Note 按有效模板生成唯一 Card；重复生成只补缺失项。
-- Note revision 冲突、必填字段校验、NoteType 切换影响预览、过期 confirmation token、Card/Note/Deck 删除级联均覆盖。
+- Note revision 冲突、必填字段校验、NoteType 切换建议/自定义/空字段/媒体字段映射、影响预览、过期 confirmation token、Card/Note/Deck 删除级联均覆盖。
 - 普通 Note 编辑改变未来渲染，但已有 Attempt 的 front/back/answer/note snapshot 保持不变。
 
 ### 调度与 Queue
 
 - 用锁定调度器覆盖 new、learning、review、relearning 的四按钮转换、15 分钟步骤、interval preview、reps/lapses 和最大间隔。
-- 覆盖 Collection timezone 的 UTC 跨日、DST 前进/回退和 timezone 修改；相同 `due_day` 在不同部署时区得到一致学习日。
+- 对五个 Display Order 的全部枚举使用固定 fixtures；默认验证 `random_cards + order_gathered + after_reviews + before_reviews + retrievability_descending`。验证稳定随机 seed、相同键 tie-breaker、Deck override 继承/清空和配置变化后的 Queue 失效。
+- 覆盖 Collection timezone 的 04:00 边界、UTC 跨日、DST 前进/回退和 timezone 修改；相同 `due_day` 在不同部署时区得到一致学习日。03:59:59 与 04:00:00 必须落入相邻 Study Day。
 - 覆盖父/子 Deck 每日限额、并发 Rating 不突破配额、Undo 释放配额，以及 sibling bury 次日恢复。
 - 覆盖 Queue 丢失重建、旧 queue_id 失效、相同 next 稳定返回、intraday learning 动态插回和一个未 Rating Attempt 的跨重启恢复。
 - 对 flip/Rating 并发发送相同 key、不同 key、相同/不同 payload，验证只创建一个 Attempt、FSRS 只推进一次，旧 key 在 Undo 后不重新应用。

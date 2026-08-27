@@ -62,6 +62,8 @@ Chinese to English
 
 ### 3.2 Sentence NoteType
 
+`Sentence` 在这里表示内容类型，不是第四种练习模式。一条 Sentence Note 保存一条句子的共享内容，并通过三个 Card Template 生成三种 sentence-level Card：
+
 字段：
 
 ```text
@@ -71,19 +73,22 @@ note
 reference_audio
 ```
 
-Card Template：
+Card Templates：
 
 ```text
-Sentence Retelling
-Sentence Translation
-Sentence Dictation
+Sentence Note
+├── Retelling Card
+├── Translation Card
+└── Dictation Card
 ```
 
-`Sentence Retelling` 优先使用参考音频或语义提示；没有参考音频时退化为文字提示，并且 flip 前必须提交用户录音。`Sentence Translation` 使用中文作为正面题面，并要求学习者提交英文文本；它跳过 ASR，但通过 AI 评估可接受的多种译法。`Sentence Dictation` 使用 `reference_audio` 作为题面，要求学习者提交英文文本且不接受用户录音；它同步执行确定性书写比对，单词、大小写、标点和空格均计入结果，并跳过 ASR 和 AI。两个 Vocabulary Template 允许直接翻面评分，不要求提交输入。
+`Retelling Card` 的正面只有参考音频，并且 flip 前必须提交用户录音；背面展示参考音频、英文原文、中文翻译、可选 AI Feedback 和笔记。`Translation Card` 的正面只有中文翻译，并要求学习者提交英文文本；背面展示英文原文、中文翻译、可选参考音频、可选 AI Feedback 和笔记。`Dictation Card` 的正面只有参考音频，并要求学习者提交英文文本；背面展示英文原文、中文翻译、同步书写 diff、可为空的 AI Feedback 槽位和笔记。Dictation v1 不调用 AI。两个 Vocabulary Template 允许直接翻面评分，不要求提交输入。
+
+Retelling 和 Dictation Card 只在 `english + reference_audio` 存在时生成；Translation Card 只在 `english + chinese` 存在时生成。三个 Card 共享 Sentence Note 的内容，但拥有独立 Card ID、Deck 和 FSRS 状态。背面把 Card Template 从 Sentence Note 渲染的内容与当前 Attempt 的反馈组合展示；个性化反馈不写回 Note 或 Card。
 
 Retelling 和 Translation 的 AI Feedback 使用不同的 evaluator、提示词和 mode-specific 结果结构；只共用稳定的外层响应 envelope。每条 AI 结果记录自己的 `feedback_kind`、prompt、模型和 schema 版本，便于两条评估链路独立演进。
 
-默认情况下，NoteType 中所有有效 Card Template 都会为每条 Note 生成持久化 Card。模板和字段的变化属于受控结构操作；普通 Note 字段修改则是受乐观锁保护的直接更新。
+默认情况下，NoteType 中所有有效 Card Template 都会为每条 Note 生成持久化 Card。模板和字段的变化属于受控结构操作；普通 Note 字段修改则是受乐观锁保护的直接更新。NoteType 切换采用 Anki 风格的字段映射确认：系统可以建议旧字段到新字段的映射，但用户必须逐项确认或覆盖。Note identity/guid 保留，旧 Cards、Attempts 和 FSRS 删除，目标 Cards 重新生成；Card Template 和调度状态不做映射。
 
 ## 四、核心复习流程
 
@@ -118,6 +123,8 @@ Filtered Deck 保存最多两个 `search_terms`，每项包含结构化 filter�
 Rebuild 时按 term 顺序查询、排序和截取 Card，并生成运行时有序 Card ID 主队列；本次 build 后主顺序保持稳定，只有分钟级 learning Card 按 `due_at` 动态插回。排序位置不写入 Card，队列丢失或显式 rebuild 时重新计算。
 
 v1 Filtered Deck 固定影响正式调度，不提供 `reschedule=false` Preview 模式或 `preview_repeat` queue。
+
+Standard Deck 高级设置保留 Anki 风格的 New gather、New sort、New/Review order、Interday Learning/Review order 和 Review sort 五类 Display Order。LanGear 默认依次为 `random_cards`、`order_gathered`、`after_reviews`、`before_reviews`、`retrievability_descending`。这些设置与 `new_limit`、`review_limit`、`desired_retention`、`sibling_burying` 一起允许 Deck 覆盖；未设置时按最近祖先 Deck 再回退 Collection 默认。修改 Display Order 只触发运行时 Queue rebuild，不改写 Card due 或 FSRS。
 
 ## 五、数据库 Schema 草案
 
@@ -197,7 +204,7 @@ buried_user = -3
 
 Card 的当前 FSRS 状态直接保存在 `cards`。`user_card_srs` 不再单独存在。Attempt 保存用户 Rating、算法版本和配置版本，但不保存 FSRS 前后状态快照。
 
-所有时间点使用 PostgreSQL `timestamptz`，统一保存 UTC；Collection 保存 IANA 时区，用于计算学习日和“今天到期”的边界。
+所有时间点使用 PostgreSQL `timestamptz`，统一保存 UTC；Collection 保存 IANA 时区。学习日沿用 Anki 的本地 04:00 切换边界，统一用于 `due_day`、“今天到期”、每日额度和自动 unbury。
 
 ### 5.4 Attempt
 
@@ -216,7 +223,7 @@ Attempt 创建后，题面和输入快照不可变。ASR、AI Feedback 和 Ratin
 
 ### 5.5 Outbox 与异步任务
 
-创建 Attempt 时，同一个 PostgreSQL 事务写入 Attempt 与当前 Card Template/输入模式适用的任务。例如 Sentence Retelling 写入：
+创建 Attempt 时，同一个 PostgreSQL 事务写入 Attempt 与当前 Card Template/输入模式适用的任务。例如 Retelling Card 写入：
 
 ```text
 Attempt

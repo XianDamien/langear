@@ -9,8 +9,8 @@
 `input_type` 仅允许：
 
 - `none`：Vocabulary 直接翻面；
-- `audio`：Sentence Retelling 的最终录音媒体；
-- `text`：Sentence Translation 或 Sentence Dictation 的原始用户文本。
+- `audio`：Retelling Card 的最终录音媒体；
+- `text`：Translation Card 或 Dictation Card 的原始用户文本。
 
 Attempt 创建时保存原始 `input_snapshot`、完整 `note_snapshot`、`front_snapshot`、`back_snapshot` 和 `answer_snapshot`。这些快照创建后不可变；规范化文本、ASR 和 AI 结果必须另存，不能覆盖学习者原始输入。
 
@@ -33,6 +33,8 @@ failed
 - `failed` 保存稳定的 provider-independent error code 和可展示消息，并允许幂等重试同一 Attempt。
 
 ASR、AI Feedback 与 Rating 各自补写独立字段。任一处理失败都不能回滚 Attempt 或 Rating，也不能创建第二条 Attempt。
+
+结果字段与状态满足：`completed` 时对应 result 必须非空；`skipped|pending|processing|failed` 时 result 为 `null`。因此 `ai_feedback=null` 本身不表达处理原因，调用方必须同时读取 `ai_status`。AI Feedback 是可选增强，空值不影响背面 Note 内容、Rating 或 Queue 推进。
 
 ## AI Feedback 外层 Envelope
 
@@ -68,7 +70,7 @@ AI Feedback 使用中文说明；被评价的英文片段、修改后的英文�
 
 ## 独立 Evaluator 与 Prompt
 
-### Sentence Retelling
+### Retelling Card
 
 - `feedback_kind=retelling`
 - `prompt_key=sentence_retelling_feedback`
@@ -76,7 +78,7 @@ AI Feedback 使用中文说明；被评价的英文片段、修改后的英文�
 - 允许音频时间点定位；
 - mode-specific `details` 可包含各维度的文字总结和建议复述，不包含数值总分。
 
-### Sentence Translation
+### Translation Card
 
 - `feedback_kind=translation`
 - `prompt_key=sentence_translation_feedback`
@@ -89,7 +91,7 @@ AI Feedback 使用中文说明；被评价的英文片段、修改后的英文�
 
 ## 非 AI Evaluator
 
-Sentence Dictation 使用独立的同步确定性文本 evaluator。它保存 `deterministic_result` 和 evaluator version，但 `asr_status=skipped`、`ai_status=skipped`，不伪装为 AI Feedback。
+Dictation Card 使用独立的同步确定性文本 evaluator。它保存 `deterministic_result` 和 evaluator version，但 `asr_status=skipped`、`ai_status=skipped`、`ai_feedback=null`，不伪装为 AI Feedback。以后若增加 Dictation AI evaluator，必须通过新的 prompt/schema version 修改 contract；v1 不预创建空任务。
 
 正确性比对包含单词、大小写、标点和空格。Evaluator 只执行版本化的 Unicode/排版等价规范化，不 lowercase、不 trim、不折叠连续空格、不删除标点。结果返回 `exact_match` 以及分类为 `word|capitalization|punctuation|spacing` 的 diff；该结果只辅助学习者自行 Rating，不自动推进 FSRS。
 

@@ -15,7 +15,7 @@
 
 | Anki 字段/概念 | LanGear 字段 | 决定 |
 | --- | --- | --- |
-| collection 配置 | `collection.timezone` | 复用“Collection 保存配置”的边界；值为 IANA timezone，绝对时间仍使用 UTC |
+| collection 配置 | `collection.timezone` | 复用“Collection 保存配置”的边界；值为 IANA timezone，Study Day 沿用本地 04:00 rollover，绝对时间仍使用 UTC |
 | `crt`、`mod`、`scm`、`ver` | `created_at`、`updated_at`、`schema_version` | 复用审计/版本语义，但不用 Anki 的 Unix 秒和同步版本混合字段 |
 | collection 内模型/牌组配置 | `note_types`、`decks` | 拆成受约束的领域实体，不使用 Anki JSON 大对象 |
 
@@ -42,7 +42,7 @@
 v1 系统 NoteType 的字段 key 固定为：
 
 - Vocabulary：`word`、`meaning`、`phonetic`、`note`、`reference_audio`、`image`
-- Sentence：`english`、`chinese`、`note`、`reference_audio`；模板为 Retelling、Translation、Dictation，其中 Dictation 仅在 `reference_audio` 有效时生成
+- Sentence NoteType：`english`、`chinese`、`note`、`reference_audio`；Retelling 和 Dictation 的 required fields 为 `english + reference_audio`，Translation 为 `english + chinese`
 
 ## Deck
 
@@ -53,6 +53,7 @@ v1 系统 NoteType 的字段 key 固定为：
 | normal/filtered deck | `decks.kind` | 复用两种容器概念；Filtered Deck 仍是临时容器 |
 | filtered search terms | `decks.filter_config.search_terms[]` | 复用 term、limit、sort order 的组合边界；v1 使用结构化 filter，不接受任意 Anki search string，且固定参与正式重新调度 |
 | deck daily limits | `decks.new_limit`、`review_limit` | 复用新卡/复习配额语义；父级和子树的有效配额取最小值 |
+| display order | `decks.scheduling_config` 中五个 order override | 复用 gather、sort、New/Review mix、Interday/Review mix、Review sort 五类设置；默认值按 LanGear contract 固定 |
 | Anki deck config preset | `decks.scheduling_config` | 只复用当前需要的配置字段；v1 不做可复用 DeckConfig preset |
 
 Filtered Deck v1 的 `sort_order` 只允许：
@@ -84,7 +85,7 @@ v1 最多保存两个 `search_terms`，与固定参考的 Anki 实现上限一�
 
 | Anki 字段 | LanGear 字段 | 原因 |
 | --- | --- | --- |
-| `due` | `due_at`、`due_day`、`new_position` | Anki 中 `due` 对 new/learning/review 是不同单位；LanGear 需要明确 UTC 时间和 Collection 学习日 |
+| `due` | `due_at`、`due_day`、`new_position` | Anki 中 `due` 对 new/learning/review 是不同单位；LanGear 拆分字段，但 `due_day` 使用同样的本地 04:00 Study Day 边界 |
 | `ivl` | `interval_days` | v1 FSRS 以天为主要间隔；学习中的短时到期由 `due_at` 表达，不使用负秒编码 |
 | `factor` | `fsrs_state.difficulty` / `fsrs_state.stability` | `factor` 是 SM-2 ease factor，不是 FSRS 的完整状态；不把它误命名成 FSRS 字段 |
 | `odue` | 不复用 | Filtered Deck 不覆盖正式调度字段，因此无需保存原始 due |
