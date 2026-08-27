@@ -16,7 +16,28 @@
 | Sentence Translation | `chinese` | 必须提交英文文本 | `text` | `skipped` | `pending` |
 | Sentence Dictation | `reference_audio` | 必须提交英文文本；不接受用户录音 | `text` | `skipped` | `skipped` |
 
-Translation 使用 AI Feedback，因为正确译文可能有多种表达。Dictation 使用确定性的规范化文本比对，不创建 ASR 或 AI Outbox 任务；规范化至少统一 Unicode、大小写、首尾空白和连续空白，标点规则由独立 evaluator 版本固定。无输入或不适用的处理分支在 Attempt 上明确保存为 `skipped`，不能伪装成 `completed`。
+Translation 使用 AI Feedback，因为正确译文可能有多种表达。Dictation 使用同步的确定性书写比对，不创建 ASR 或 AI Outbox 任务。单词、大小写、标点和空格都参与正确性判断；只允许不改变书写语义的技术规范化，例如 Unicode NFKC、换行编码统一，以及弯引号/直引号等明确列入 evaluator version 的排版等价字符。不得 lowercase、trim、折叠连续空格或删除标点。无输入或不适用的处理分支在 Attempt 上明确保存为 `skipped`，不能伪装成 `completed`。
+
+Dictation flip 同步返回 `deterministic_result`：
+
+```json
+{
+  "kind": "dictation_text_diff",
+  "evaluator_version": "1",
+  "exact_match": false,
+  "differences": [
+    {
+      "category": "capitalization",
+      "expected": "I",
+      "actual": "i",
+      "expected_range": { "start": 0, "end": 1 },
+      "actual_range": { "start": 0, "end": 1 }
+    }
+  ]
+}
+```
+
+`category` 只允许 `word|capitalization|punctuation|spacing`。range 使用规范化字符串的 Unicode code-point offset。`exact_match` 和 diff 只提供反馈，不自动选择 Rating，也不改变 FSRS。
 
 Retelling 与 Translation 只共用 AI Feedback 的外层响应 envelope，不共用 evaluator 或提示词。两者分别保存独立的 `feedback_kind`、`prompt_key`、`prompt_version` 和结果 schema 版本；prompt 变化不能改变 Rating，也不能直接推进 FSRS。详细结构见 `2026-08-attempt-processing-contract.zh-CN.md`。
 
@@ -55,6 +76,7 @@ Rating 响应不夹带下一张 Card。当前 Card 已 flip 但尚未 Rating 时
 - `next`、`flip`、`rating` 和 `undo` 都携带 `queue_id`；已被替换或失效的 Queue 返回 `409 QUEUE_EXPIRED`，客户端重新创建 Queue。
 - Filtered Deck 的主排序在 Queue 构建时确定；到期的 intraday learning Card 可以按 `due_at` 在运行时重新插入。
 - 一个 Collection 最多有一条已 flip、未 Rating 的活跃 Attempt。创建/rebuild Queue 时必须先恢复它并返回已翻面状态；Rating 前不能选择另一张 Card。
+- v1 不提供 abandon 未 Rating Attempt。重新进入后恢复该 Attempt，用户完成 Rating 才能继续；ASR/AI 成败不影响此规则。
 
 ## HTTP 操作
 

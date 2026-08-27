@@ -50,7 +50,7 @@ Templates: English-to-Chinese and Chinese-to-English.
 
 Fields: `english`, `chinese`, `note`, `reference_audio`.
 
-Templates: Sentence Retelling, Sentence Translation, and Sentence Dictation. Retelling uses reference audio or a semantic prompt when audio is absent and requires a learner recording before flip. Translation uses the Chinese prompt and requires an English text answer; it skips ASR and uses AI feedback because multiple translations may be valid. Dictation uses `reference_audio` as its prompt, requires an English text answer, does not accept a learner recording, and uses deterministic normalized comparison without ASR or AI. Both Vocabulary templates allow direct reveal and Rating without submitted input.
+Templates: Sentence Retelling, Sentence Translation, and Sentence Dictation. Retelling uses reference audio or a semantic prompt when audio is absent and requires a learner recording before flip. Translation uses the Chinese prompt and requires an English text answer; it skips ASR and uses AI feedback because multiple translations may be valid. Dictation uses `reference_audio` as its prompt, requires an English text answer, does not accept a learner recording, and synchronously compares words, capitalization, punctuation, and spacing without ASR or AI. Both Vocabulary templates allow direct reveal and Rating without submitted input.
 
 Retelling and Translation use separate evaluators, prompts, and mode-specific result schemas. They share only a stable AI Feedback response envelope. Each result records its `feedback_kind`, prompt, model, and schema versions so the two evaluation paths can evolve independently.
 
@@ -71,7 +71,7 @@ Start runtime queue
 
 Pre-flip recordings are temporary OSS objects. Only the recording submitted on flip becomes a permanent Attempt asset. AI and ASR do not choose the learner Rating. A Rating is written once; repeated requests are idempotent. The current Anki-style undo is runtime-only and covers the latest review operation when the same review service still owns the context.
 
-Filtered Decks store Anki-style `search_terms`, each with a query, limit, and sort order. Version 1 supports only `added`, `retrievability_ascending`, and `retrievability_descending`. `added` uses the Card's initial creation order. Retrievability is calculated from current FSRS state at rebuild time; Cards without a memory state follow stateful Cards and use `added` as their stable fallback order.
+Filtered Decks store at most two `search_terms`, each with a structured filter, limit, and sort order. Structured filters support Deck subtree, tags any/all, NoteType, Card Template, and Card state; arbitrary Anki query strings are not accepted. Version 1 supports only `added`, `retrievability_ascending`, and `retrievability_descending`. `added` uses the Card's initial creation order. Retrievability is calculated from current FSRS state at rebuild time; Cards without a memory state follow stateful Cards and use `added` as their stable fallback order.
 
 A rebuild evaluates terms in order and creates an ordered runtime Card ID queue in memory or Redis. The main order stays stable for that build, while intraday learning Cards may be reinserted by `due_at`. No filtered position is written to a Card; loss of the runtime queue or an explicit rebuild recalculates it.
 

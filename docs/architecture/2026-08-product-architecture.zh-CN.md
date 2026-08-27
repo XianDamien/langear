@@ -79,7 +79,7 @@ Sentence Translation
 Sentence Dictation
 ```
 
-`Sentence Retelling` 优先使用参考音频或语义提示；没有参考音频时退化为文字提示，并且 flip 前必须提交用户录音。`Sentence Translation` 使用中文作为正面题面，并要求学习者提交英文文本；它跳过 ASR，但通过 AI 评估可接受的多种译法。`Sentence Dictation` 使用 `reference_audio` 作为题面，要求学习者提交英文文本且不接受用户录音；它使用确定性的规范化文本比对，并跳过 ASR 和 AI。两个 Vocabulary Template 允许直接翻面评分，不要求提交输入。
+`Sentence Retelling` 优先使用参考音频或语义提示；没有参考音频时退化为文字提示，并且 flip 前必须提交用户录音。`Sentence Translation` 使用中文作为正面题面，并要求学习者提交英文文本；它跳过 ASR，但通过 AI 评估可接受的多种译法。`Sentence Dictation` 使用 `reference_audio` 作为题面，要求学习者提交英文文本且不接受用户录音；它同步执行确定性书写比对，单词、大小写、标点和空格均计入结果，并跳过 ASR 和 AI。两个 Vocabulary Template 允许直接翻面评分，不要求提交输入。
 
 Retelling 和 Translation 的 AI Feedback 使用不同的 evaluator、提示词和 mode-specific 结果结构；只共用稳定的外层响应 envelope。每条 AI 结果记录自己的 `feedback_kind`、prompt、模型和 schema 版本，便于两条评估链路独立演进。
 
@@ -113,7 +113,7 @@ ASR、AI Feedback 和 Rating 三条流程互不依赖：
 
 复习队列是运行时状态，不建立持久化 Study Session 或队列表。队列可以保存在进程内存或 Redis 中，丢失后按当前 Card 状态重新生成，不影响已经保存的学习事实。
 
-Filtered Deck 保存 Anki 风格的 `search_terms`，每项包含查询、数量上限和排序规则。v1 的排序规则只支持 `added`、`retrievability_ascending` 和 `retrievability_descending`。`added` 按 Card 首次创建顺序；retrievability 在 rebuild 时按当前 FSRS 状态计算，没有 memory state 的 Card 排在有状态 Card 之后并按 `added` 保持稳定。
+Filtered Deck 保存最多两个 `search_terms`，每项包含结构化 filter、数量上限和排序规则。结构化 filter 支持 Deck 子树、tag any/all、NoteType、Card Template 和 Card state，不接受任意 Anki query string。v1 的排序规则只支持 `added`、`retrievability_ascending` 和 `retrievability_descending`。`added` 按 Card 首次创建顺序；retrievability 在 rebuild 时按当前 FSRS 状态计算，没有 memory state 的 Card 排在有状态 Card 之后并按 `added` 保持稳定。
 
 Rebuild 时按 term 顺序查询、排序和截取 Card，并生成运行时有序 Card ID 主队列；本次 build 后主顺序保持稳定，只有分钟级 learning Card 按 `due_at` 动态插回。排序位置不写入 Card，队列丢失或显式 rebuild 时重新计算。
 

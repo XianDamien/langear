@@ -51,7 +51,7 @@ v1 系统 NoteType 的字段 key 固定为：
 | `did` | `cards.deck_id` | 复用 Card 当前 Deck 归属 |
 | deck name hierarchy | `decks.name`、`parent_id` | 复用层级牌组语义；名称和父级关系显式建模 |
 | normal/filtered deck | `decks.kind` | 复用两种容器概念；Filtered Deck 仍是临时容器 |
-| filtered search terms | `decks.filter_config.search_terms[]` | 复用 `query`、`limit`、`sort_order`；v1 固定参与正式重新调度，不暴露 Preview 开关 |
+| filtered search terms | `decks.filter_config.search_terms[]` | 复用 term、limit、sort order 的组合边界；v1 使用结构化 filter，不接受任意 Anki search string，且固定参与正式重新调度 |
 | deck daily limits | `decks.new_limit`、`review_limit` | 复用新卡/复习配额语义；父级和子树的有效配额取最小值 |
 | Anki deck config preset | `decks.scheduling_config` | 只复用当前需要的配置字段；v1 不做可复用 DeckConfig preset |
 

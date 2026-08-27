@@ -41,7 +41,7 @@ A Sentence Card Template where the learner translates the Chinese prompt into re
 _Avoid_: Sentence Retelling, direct reveal
 
 **Sentence Dictation**:
-A Sentence Card Template where the learner listens to reference audio and enters required English text without submitting a learner recording.
+A Sentence Card Template where the learner listens to reference audio and enters required English text, including capitalization, punctuation, and spacing, without submitting a learner recording.
 _Avoid_: Sentence Retelling, silent Attempt
 
 **Attempt**:
@@ -139,6 +139,7 @@ _Avoid_: Review unit, submission
 - "复习记录" was ambiguous between a practice submission and an FSRS transition — resolved: one Attempt is created on Card flip; its Rating is a separate field on the same Attempt.
 - "试录" was ambiguous between a persisted practice event and temporary input — resolved: pre-flip recordings are temporary; only the recording submitted on flip becomes Attempt input.
 - "不录音听音频" was ambiguous with a silent Retelling Attempt — resolved: it is Sentence Dictation, while Sentence Retelling requires a learner recording before flip.
+- "Dictation 文本比对" was ambiguous between meaning-only comparison and written accuracy — resolved: words, capitalization, punctuation, and spacing all belong to the submitted answer.
 - "Translation 输入" was ambiguous between optional reflection and a submitted answer — resolved: Sentence Translation requires English text before flip and does not accept learner audio.
 - "Library 导入" was ambiguous between shared references and copies — resolved: Library Decks and Notes are copied into the user's Collection; copied Notes retain the Library guid for idempotent re-import, but local edits are never overwritten.
 - "删除卡片" was ambiguous between deleting one rendered Card and deleting its Note — resolved: Card Deletion removes only one Card and its Attempts.

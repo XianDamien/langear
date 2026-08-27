@@ -148,6 +148,8 @@ relearning -> learning/day_learning 或 review
 
 一个 Collection 最多有一条已 flip、未 Rating 的活跃 Attempt，由部分唯一索引保证。创建或重建 Queue 时若存在该 Attempt，必须先把它恢复为当前项并返回已翻面快照；不能选择另一张 Card。这样进程重启不会重复创建 Attempt，也不会靠绕过当前 Card 推进 Queue。
 
+v1 不提供 abandon 未 Rating Attempt。用户重新进入后恢复并完成该 Attempt 的 Rating 才能继续；不允许删除 Attempt 或重建 Queue 来绕过 Rating。ASR/AI pending、completed 或 failed 均不改变此规则。
+
 每日新卡/复习上限在查询和 Rating 时都校验。父 Deck 限制整个子树，子 Deck 限制本地 Card，有效容量取沿途最小值。
 
 每日已用额度从当前 Collection 学习日内已 Rating 的 Attempt 推导，不依赖 Runtime Queue。Undo 清空 Rating 后，该次用量不再计入。Rating 事务需对 Collection + study day 的配额判定串行化，避免并发请求突破上限。
@@ -158,7 +160,15 @@ New 和 Review 先分别应用层级限额，再用剩余 Review capacity 对 Ne
 
 - Filtered Deck 是临时 Deck；一张 Card 最多属于一个 Filtered Deck。
 - 持久化 `original_deck_id`，不持久化 `filtered_position` 或 `original_due`；返回时恢复原 Deck，正式 due 字段从未被覆盖。
-- v1 `search_terms[]` 最多两项，每项包含 `query`、`limit`、`sort_order`，按数组顺序执行，只支持：
+- v1 `search_terms[]` 最多两项，每项包含结构化 `filter`、`limit`、`sort_order`，按数组顺序执行。`filter` 只支持：
+  - `deck_scope`：一个 Standard Deck ID 和 `include_descendants`；
+  - `tags_any`、`tags_all`：tag 数组；
+  - `note_type_keys`：`vocabulary|sentence` 数组；
+  - `card_template_keys`：`vocabulary_english_to_chinese|vocabulary_chinese_to_english|sentence_retelling|sentence_translation|sentence_dictation` 数组；
+  - `card_states`：`new|learning|review|relearning` 数组。
+- 不接受任意 Anki search string 或 raw SQL。filter 的不同字段之间使用 AND；`tags_all` 中所有 tag 都必须存在；其他数组字段内部使用 OR。空 filter 表示当前 Collection 全部可选 Card。
+- 两个 term 按数组顺序执行；后一 term 排除前一 term 已选 Card，然后各自应用 limit，最终连接为一个有序 Queue。Suspended、buried 和已经在其他 Filtered Deck 的 Card 始终排除。
+- `sort_order` 只支持：
   - `added`：`card.created_at ASC, card.id ASC`；
   - `retrievability_ascending`：当前 FSRS retrievability 升序；
   - `retrievability_descending`：当前 FSRS retrievability 降序。
@@ -176,6 +186,7 @@ flip 只创建一条 Attempt。Attempt 必须保存：
 - 本次出队的 `review_token`；
 - `input_type` 和原始 `input_snapshot`；
 - 完整 `note_snapshot`、`front_snapshot`、`back_snapshot`、`answer_snapshot`；
+- Dictation 的同步 `deterministic_result` 与 evaluator version（其他模板为空）；
 - 最终录音 `media_asset_id`（可为空）；
 - `rating`、`rated_at`、`previous_interval_days`、`scheduled_interval_days`、`review_kind`；
 - rating 时使用的 FSRS、算法和配置版本；
@@ -276,6 +287,7 @@ Web、Outbox Publisher、Worker 和导入流程都必须透传 `request_id`/`cor
 ### Filtered Deck
 
 - 对三种 sort_order 使用固定 Card/FSRS fixtures 验证稳定顺序；无 memory state 的 Card 始终排在 stateful Card 后。
+- 覆盖 deck subtree、tags any/all、NoteType、Card Template 和 Card state 的结构化 AND/OR 语义、两 term 去重，以及拒绝任意 query string。
 - 覆盖 rebuild 后主序稳定、learning Card 插回、empty/delete 归还、借出期间原 Deck 删除和禁止直接移动 borrowed Card。
 
 ### 媒体、导入与 Outbox
@@ -283,6 +295,12 @@ Web、Outbox Publisher、Worker 和导入流程都必须透传 `request_id`/`cor
 - 覆盖 immutable object key、临时录音 TTL、仅最终录音认领、private 隔离、Library shared 读取和 pending_delete 重试。
 - JSON/ZIP 使用同一 manifest fixtures，覆盖路径穿越、checksum/大小失败的全事务回滚、Deck/Note guid 幂等、本地编辑保留和缺失 Card 补齐。
 - 重复投递同一 Outbox、Publisher lease 超时和 Worker 重试只能更新同一 Attempt；Celery result backend 清空后业务状态仍可从 PostgreSQL 完整读取。
+
+### Dictation
+
+- 使用固定 evaluator fixtures 分别验证 word、capitalization、punctuation 和 spacing diff；`I`/`i`、缺失逗号、缺失句号、单空格/双空格均不 exact match。
+- Unicode/排版等价表按 evaluator version 固定；原始用户输入和答案 snapshot 不被规范化结果覆盖。
+- Dictation diff 不创建 ASR/AI Outbox、不自动选择 Rating，也不直接修改 FSRS。
 
 ### 最高应用 seam
 

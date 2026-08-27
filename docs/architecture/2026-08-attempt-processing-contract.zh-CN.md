@@ -89,7 +89,9 @@ AI Feedback 使用中文说明；被评价的英文片段、修改后的英文�
 
 ## 非 AI Evaluator
 
-Sentence Dictation 使用独立的确定性文本 evaluator。它保存 evaluator 版本和规范化比对结果，但 `asr_status=skipped`、`ai_status=skipped`，不伪装为 AI Feedback。
+Sentence Dictation 使用独立的同步确定性文本 evaluator。它保存 `deterministic_result` 和 evaluator version，但 `asr_status=skipped`、`ai_status=skipped`，不伪装为 AI Feedback。
+
+正确性比对包含单词、大小写、标点和空格。Evaluator 只执行版本化的 Unicode/排版等价规范化，不 lowercase、不 trim、不折叠连续空格、不删除标点。结果返回 `exact_match` 以及分类为 `word|capitalization|punctuation|spacing` 的 diff；该结果只辅助学习者自行 Rating，不自动推进 FSRS。
 
 ## Retelling AI 输入依赖
 
