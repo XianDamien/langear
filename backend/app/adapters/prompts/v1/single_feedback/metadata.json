@@ -1,0 +1,19 @@
+{
+  "prompt_version": "1.0.0",
+  "description": "Gemini single feedback prompt for reference-audio vs user-audio speaking evaluation",
+  "owner": "langear@lan",
+  "updated_at": "2026-03-20T00:00:00+08:00",
+  "tags": ["gemini", "single-feedback", "audio", "prompt-v2-structure"],
+  "files": {
+    "system": "system.md",
+    "user": "user.md"
+  },
+  "notes": "Adopts the Quickfire-style structured prompt layout with separate system and user sections.",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-03-20",
+      "changes": "Migrate from single txt prompt to structured system.md + user.md + metadata.json layout."
+    }
+  ]
+}

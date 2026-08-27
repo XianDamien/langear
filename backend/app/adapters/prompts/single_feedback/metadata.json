@@ -1,0 +1,24 @@
+{
+  "description": "Gemini single feedback prompt for reference-audio vs user-audio speaking evaluation",
+  "owner": "langear@lan",
+  "updated_at": "2026-03-21T12:00:00+08:00",
+  "tracking_commit": "f0e005f",
+  "tags": ["gemini", "single-feedback", "audio"],
+  "files": {
+    "system": "system.md",
+    "user": "user.md"
+  },
+  "notes": "Prompt directories stay single-versioned by task name. Revision tracking is kept in metadata and git history.",
+  "changelog": [
+    {
+      "date": "2026-03-21",
+      "commit": "f0e005f",
+      "changes": "Switch single feedback to Gemini-owned display transcription and issue-point timestamps only; word-level transcription timestamps are no longer requested."
+    },
+    {
+      "date": "2026-03-21",
+      "commit": "f0e005f",
+      "changes": "Flatten prompt layout by removing the v1 directory and keep revision tracking in metadata only."
+    }
+  ]
+}

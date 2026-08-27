@@ -1,0 +1,36 @@
+[build-system]
+requires      = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fsrs"
+version = "6.3.0"
+description = "Free Spaced Repetition Scheduler"
+readme = "README.md"
+authors = [
+    { name = "Jarrett Ye", email = "jarrett.ye@outlook.com" },
+    { name = "Joshua Hamilton", email = "hamiltonjoshuadavid@gmail.com" }
+    ]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["spaced-repetition", "flashcard"]
+dependencies = ["typing-extensions"]
+requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/open-spaced-repetition/py-fsrs"
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "setuptools", "torch", "numpy", "pandas", "uv", "pytest-xdist", "pdoc", "tqdm", "pytest-cov", "ty"]
+optimizer = ["torch", "numpy", "pandas", "tqdm"]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+filterwarnings = ["error"]
+
+[tool.ty.src]
+include = ["fsrs"]
+exclude = ["fsrs/optimizer.py"]
