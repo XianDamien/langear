@@ -2,6 +2,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { getUseMockMode } from '@/config/runtimeFlags'
 import { installMockAdapter } from './mockAdapter'
+import { getAccessToken } from './authToken'
 import type { ApiError } from '@/types/api'
 
 const http = axios.create({
@@ -15,6 +16,14 @@ const http = axios.create({
 if (getUseMockMode()) {
   installMockAdapter(http)
 } else {
+  http.interceptors.request.use((config) => {
+    const token = getAccessToken()
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  })
+
   // Unwrap backend { request_id, data } envelope → return inner data
   http.interceptors.response.use(
     (response) => {

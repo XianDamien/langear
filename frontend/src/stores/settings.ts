@@ -4,8 +4,10 @@ import { fetchSettings, saveSettings } from '@/services/api/settings'
 import { ElMessage } from 'element-plus'
 
 export const useSettingsStore = defineStore('settings', () => {
-  const dailyNewLimit = ref(10)
-  const dailyReviewLimit = ref(30)
+  const desiredRetention = ref(0.9)
+  const learningSteps = ref('15')
+  const relearningSteps = ref('15')
+  const maximumInterval = ref(36500)
   const defaultSourceScope = ref('')
   const saving = ref(false)
   const loading = ref(false)
@@ -14,8 +16,10 @@ export const useSettingsStore = defineStore('settings', () => {
     loading.value = true
     try {
       const { data } = await fetchSettings()
-      dailyNewLimit.value = data.dailyNewLimit
-      dailyReviewLimit.value = data.dailyReviewLimit
+      desiredRetention.value = data.desiredRetention
+      learningSteps.value = data.learningSteps
+      relearningSteps.value = data.relearningSteps
+      maximumInterval.value = data.maximumInterval
       defaultSourceScope.value = data.defaultSourceScope
     } finally {
       loading.value = false
@@ -26,8 +30,10 @@ export const useSettingsStore = defineStore('settings', () => {
     saving.value = true
     try {
       await saveSettings({
-        dailyNewLimit: dailyNewLimit.value,
-        dailyReviewLimit: dailyReviewLimit.value,
+        desiredRetention: desiredRetention.value,
+        learningSteps: learningSteps.value,
+        relearningSteps: relearningSteps.value,
+        maximumInterval: maximumInterval.value,
         defaultSourceScope: defaultSourceScope.value,
       })
       ElMessage.success('设置已保存')
@@ -39,8 +45,10 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   return {
-    dailyNewLimit,
-    dailyReviewLimit,
+    desiredRetention,
+    learningSteps,
+    relearningSteps,
+    maximumInterval,
     defaultSourceScope,
     saving,
     loading,

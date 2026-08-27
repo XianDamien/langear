@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { Menu, X, Plus } from 'lucide-vue-next'
+import { onMounted } from 'vue'
+import { LogOut, Menu, User, X } from 'lucide-vue-next'
 import LanguageSelector from '../ui/LanguageSelector.vue'
 import RetroButton from '../ui/RetroButton.vue'
+import { useAuthStore } from '@/stores/auth'
 
 defineProps<{
   mobileMenuOpen: boolean
@@ -12,6 +14,11 @@ const emit = defineEmits<{
 }>()
 
 const langPair = defineModel<string>('langPair', { default: 'en-zh' })
+const authStore = useAuthStore()
+
+onMounted(() => {
+  void authStore.loadCurrentUser()
+})
 </script>
 
 <template>
@@ -31,11 +38,18 @@ const langPair = defineModel<string>('langPair', { default: 'en-zh' })
 
     <div class="flex items-center gap-4">
       <LanguageSelector v-model="langPair" />
+      <div class="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-700">
+        <User class="h-4 w-4 text-brand-accent" />
+        <span>{{ authStore.user?.username || '已登录' }}</span>
+      </div>
       <RetroButton
         variant="secondary"
         size="sm"
-        :icon="Plus"
-      />
+        :icon="LogOut"
+        @click="authStore.logout()"
+      >
+        退出
+      </RetroButton>
     </div>
   </header>
 </template>

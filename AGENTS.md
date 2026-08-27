@@ -61,6 +61,14 @@ skills/
 - Production backend compose files: `/srv/langear/docker-compose.yml` + `/srv/langear/docker-compose.server.yml`
 - Test backend compose file: `/srv/langear/docker-compose.test.yml`
 
+## Frontend Deployment Rules
+
+- Frontend development source of truth is `/Users/damien/Desktop/LanProject/LanGear/frontend`
+- Do not edit frontend source code directly on the server
+- Dev frontend artifacts must be published under `/srv/langear/dev/web/releases` and switched via `/srv/langear/dev/web/current`
+- Production frontend artifacts must be published under `/srv/langear/prod/web/releases` and switched via `/srv/langear/prod/web/current`
+- Frontend deployment automation must deploy built artifacts from GitHub Actions, and dev deployment must only deploy from `main`
+
 ## Environment Rules
 
 - Frontend env lives in `frontend/.env`

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import type { UserDeckSummary } from '@/types/api'
 import type { Deck } from '@/types/domain'
 import {
   buildLessonSelectionItems,
   buildSelectedTree,
+  compressLessonSelectionToOriginDeckIds,
+  expandUserDecksToLessonIds,
   findDeckContext,
   findFirstSelectedLessonId,
   getNodeSelectionStatus,
@@ -99,5 +102,27 @@ describe('deckSelection', () => {
     expect(filteredTree).toHaveLength(1)
     expect(filteredTree[0]!.children?.[0]!.children?.map((lesson) => lesson.id)).toEqual(['102'])
     expect(findFirstSelectedLessonId(sampleTree[0]!, new Set([102]))).toBe('102')
+  })
+
+  it('compresses fully selected scopes into mixed origin deck ids', () => {
+    expect(compressLessonSelectionToOriginDeckIds(sampleTree, [101])).toEqual([101])
+    expect(compressLessonSelectionToOriginDeckIds(sampleTree, [101, 102])).toEqual([1])
+  })
+
+  it('expands active user decks back into selected lesson ids', () => {
+    const userDecks: UserDeckSummary[] = [
+      {
+        id: 1,
+        origin_deck_id: 11,
+        title: 'Unit A',
+        scope_type: 'unit',
+        total_count: 9,
+        new_count: 3,
+        learning_count: 2,
+        review_count: 1,
+      },
+    ]
+
+    expect(expandUserDecksToLessonIds(sampleTree, userDecks)).toEqual([101, 102])
   })
 })

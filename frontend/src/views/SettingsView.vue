@@ -8,7 +8,15 @@ import RetroButton from '@/components/ui/RetroButton.vue'
 
 const settingsStore = useSettingsStore()
 const dashboardStore = useDashboardStore()
-const { dailyNewLimit, dailyReviewLimit, defaultSourceScope, saving, loading } =
+const {
+  desiredRetention,
+  learningSteps,
+  relearningSteps,
+  maximumInterval,
+  defaultSourceScope,
+  saving,
+  loading,
+} =
   storeToRefs(settingsStore)
 
 onMounted(() => {
@@ -38,26 +46,50 @@ async function handleSave() {
       <RetroCard class="space-y-6">
         <div>
           <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            每日新学数量
+            目标记忆率
           </label>
           <input
-            v-model.number="dailyNewLimit"
+            v-model.number="desiredRetention"
             type="number"
-            min="1"
-            max="100"
+            min="0.5"
+            max="0.99"
+            step="0.01"
             class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
           >
         </div>
 
         <div>
           <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            每日复习数量
+            学习步长
           </label>
           <input
-            v-model.number="dailyReviewLimit"
+            v-model.trim="learningSteps"
+            type="text"
+            placeholder="单位：分钟，例如 15 或 15,1440"
+            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
+          >
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
+            重学步长
+          </label>
+          <input
+            v-model.trim="relearningSteps"
+            type="text"
+            placeholder="单位：分钟，例如 15"
+            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
+          >
+        </div>
+
+        <div>
+          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
+            最大间隔
+          </label>
+          <input
+            v-model.number="maximumInterval"
             type="number"
             min="1"
-            max="200"
             class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
           >
         </div>

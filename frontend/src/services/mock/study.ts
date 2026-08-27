@@ -3,8 +3,9 @@ import type {
   StudySessionCardResponse,
   StudySessionResponse,
 } from '@/types/api'
+import { collectLessonIds, findDeckById } from '@/utils/deckSelection'
 import { formatBusinessIso } from '@/utils/businessTime'
-import { mockLessonCards } from './decks'
+import { mockDeckTree, mockLessonCards } from './decks'
 
 const ratingLabelMap: Record<FsrsRating, RatingLabel> = {
   1: 'again',
@@ -92,9 +93,18 @@ function buildSessionCards(lessonId: number): StudySessionCardResponse[] {
   })
 }
 
-export function buildMockStudySession(lessonId?: number): StudySessionResponse {
-  const resolvedLessonId = lessonId && mockLessonCards[String(lessonId)] ? lessonId : 1001
-  const cards = buildSessionCards(resolvedLessonId)
+export function buildMockStudySession(params?: {
+  lessonId?: number
+  userDeckId?: number
+}): StudySessionResponse {
+  const resolvedLessonId =
+    params?.lessonId && mockLessonCards[String(params.lessonId)] ? params.lessonId : 1001
+  const userDeckId = params?.userDeckId
+  const userDeck = userDeckId != null ? findDeckById(mockDeckTree.tree ?? [], String(userDeckId)) : null
+  const cards =
+    userDeck != null
+      ? collectLessonIds(userDeck).flatMap((lessonId) => buildSessionCards(lessonId))
+      : buildSessionCards(resolvedLessonId)
   const reviewCards = cards.filter((card) => !isNewCard(card))
   const newCards = cards.filter((card) => isNewCard(card))
 
@@ -102,8 +112,9 @@ export function buildMockStudySession(lessonId?: number): StudySessionResponse {
     server_time: formatBusinessIso(new Date()),
     session_date: formatBusinessIso(new Date()).slice(0, 10),
     scope: {
-      lesson_id: resolvedLessonId,
-      source_ids: lessonSourceScope[resolvedLessonId] ?? [1],
+      lesson_id: userDeck ? null : resolvedLessonId,
+      user_deck_id: userDeckId ?? null,
+      source_ids: userDeck ? [] : lessonSourceScope[resolvedLessonId] ?? [1],
     },
     quota: {
       daily_new_limit: 10,
@@ -119,7 +130,8 @@ export function buildMockStudySession(lessonId?: number): StudySessionResponse {
       review_remaining: Math.max(0, 20 - reviewCards.length),
       due_count: reviewCards.filter((card) => card.due_at).length,
     },
-    lesson_name: mockLessonCards[String(resolvedLessonId)]?.lessonName ?? '学习任务',
+    lesson_name:
+      userDeck?.name ?? mockLessonCards[String(resolvedLessonId)]?.lessonName ?? '学习任务',
     cards,
   }
 }
