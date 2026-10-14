@@ -79,6 +79,7 @@ skills/
 
 ## Working Rules
 
+- Do not use `agent-browser` in this project, including its CLI, skill, or wrappers. Use the existing Playwright tests or direct API checks for verification instead.
 - Prefer minimal, task-scoped changes
 - Do not mix unrelated dirty files into a commit
 - Add or update tests when behavior changes
