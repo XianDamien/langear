@@ -51,15 +51,24 @@ skills/
 
 - Frontend dev: `cd frontend && pnpm dev` (default port `3002`)
 - Frontend E2E: `cd frontend && pnpm test:e2e`
-- Backend dev: `cd backend && uv run uvicorn app.main:app --reload` (default port `8000`)
-- Backend tests: `cd backend && uv run pytest`
+- Backend dev: use staging Compose at `/home/kemove/langear/dev/compose/docker-compose.yml`; source in `/home/kemove/langear/dev/repo/backend` reloads automatically.
+- Backend tests: on staging, use `/home/kemove/langear/dev/compose/test-backend.sh` with pytest arguments to isolate the test database and external credentials.
 
 ## Server Access
 
-- Production server SSH alias: `ssh langear-prod`
-- Remote deployment root: `/srv/langear`
-- Production backend compose files: `/srv/langear/docker-compose.yml` + `/srv/langear/docker-compose.server.yml`
-- Test backend compose file: `/srv/langear/docker-compose.test.yml`
+- Production: `ssh langear-prod`; repo `/srv/langear/prod/repo`, Compose `/srv/langear/prod/compose/docker-compose.yml`, env `/srv/langear/prod/env/backend.env`.
+- Backend development: `ssh zhaohui-staging-server` over the existing FRP SSH gateway (`8.159.139.145:20224`); repo `/home/kemove/langear/dev/repo`, Compose `/home/kemove/langear/dev/compose/docker-compose.yml`.
+- New dev starts from the deployed prod commit and uses an independent PostgreSQL copy. Do not use the live production database for development.
+- Public dev preview: `https://8.159.139.145:7145` (IP:port, no domain required); it serves the staging frontend and API through FRP. The IP certificate is self-signed. Local `pnpm dev` proxies `/api` directly to this FRP origin; no extra SSH tunnel is needed. `18004` is an optional private staging tunnel; `18000` is the historical production tunnel and requires explicit `LANGEAR_ALLOW_PROD_PROXY=1` to select.
+- `/srv/langear/dev/repo` and `dev.langear.cn` are legacy routes, not the active backend development entry. Do not assume the domain serves the static assets deployed on prod: its DNS still points to `lanproject-dev`.
+- Use the `langear-backend-prod` skill (display name: LanGear Backend Debugger) for environment routing, investigation, and remote backend work. See `docs/operations/dev-prod-workflow.md` for the current workflow.
+
+## Release Rules
+
+- CI tests and packages frontend/backend from one Git SHA; it does not deploy frontend separately.
+- Use `python3 scripts/release/manage.py stage --run <RUN_ID>` for immutable staging acceptance, `approve --checks <evidence>` to record completed checks, and `promote --sha <SHA>` for a production plan. Production execution requires authorization and `--execute`.
+- Use `manage.py dev` to resume staging hot reload after acceptance. Fixed releases use `compose/release.override.yml`; never bypass it with a base-only backend restart.
+- Runtime release records and image IDs are authoritative; deployments do not automatically switch the source checkout.
 
 ## Environment Rules
 

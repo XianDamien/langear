@@ -1,106 +1,63 @@
-name: Frontend Dev Deploy
+name: Verify and Package Release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-on:
-  pull_request:
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-dev-deploy.yml'
-  push:
-    branches:
-      - main
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-dev-deploy.yml'
-  workflow_dispatch:
-
+# This workflow never mutates servers. Staging and production consume this
+# single frontend/backend bundle through scripts/release/manage.py.
 jobs:
-  build:
+  verify-and-package:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build frontend
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.22'
+          python-version: '3.11'
+      - name: Check release tooling
+        run: python3 -m unittest discover -s scripts/release -p 'test_*.py' -v
+      - name: Backend tests with isolated configuration
+        working-directory: backend
+        run: |
+          uv sync --locked
+          uv run bash ../scripts/release/test-backend.sh -q
+      - name: Frontend tests and build
+        working-directory: frontend
         env:
           VITE_API_BASE_URL: /api/v1
-        run: pnpm build
-
-      - name: Package dist
-        run: tar -C dist -czf ../frontend-dist.tgz .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test:unit
+          pnpm build
+      - name: Build immutable backend and package matching frontend
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          docker build --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            -t "langear-release:$RELEASE_SHA" backend
+          mkdir -p release
+          docker save "langear-release:$RELEASE_SHA" | gzip > release/backend-image.tar.gz
+          python3 scripts/release/package.py "$RELEASE_SHA" frontend/dist release
+      - uses: actions/upload-artifact@v4
         with:
-          name: frontend-dist
-          path: frontend-dist.tgz
+          name: langear-release-${{ github.sha }}
+          path: release/
+          retention-days: 30
           if-no-files-found: error
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-
-      - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEV_DEPLOY_SSH_KEY }}
-
-      - name: Add deploy host to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.DEV_DEPLOY_PORT || 22 }}" "${{ secrets.DEV_DEPLOY_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Upload artifact to server
-        run: |
-          scp -P "${{ secrets.DEV_DEPLOY_PORT || 22 }}" frontend-dist.tgz \
-            "${{ secrets.DEV_DEPLOY_USER }}@${{ secrets.DEV_DEPLOY_HOST }}:/tmp/frontend-dist-${GITHUB_SHA}.tgz"
-
-      - name: Deploy release on server
-        run: |
-          RELEASE_NAME="$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
-          ssh -p "${{ secrets.DEV_DEPLOY_PORT || 22 }}" "${{ secrets.DEV_DEPLOY_USER }}@${{ secrets.DEV_DEPLOY_HOST }}" "set -euo pipefail
-          RELEASE_ROOT='/srv/langear/dev/web/releases'
-          CURRENT_LINK='/srv/langear/dev/web/current'
-          RELEASE_DIR=\"\${RELEASE_ROOT}/${RELEASE_NAME}\"
-          ARCHIVE='/tmp/frontend-dist-${GITHUB_SHA}.tgz'
-          sudo mkdir -p \"\${RELEASE_ROOT}\"
-          sudo rm -rf \"\$RELEASE_DIR\"
-          sudo mkdir -p \"\$RELEASE_DIR\"
-          sudo tar --no-same-owner -xzf \"\$ARCHIVE\" -C \"\$RELEASE_DIR\"
-          sudo chown -R langear-deploy:langear-deploy \"\$RELEASE_DIR\"
-          sudo test -f \"\$RELEASE_DIR/index.html\"
-          sudo ln -sfn \"\$RELEASE_DIR\" \"\${CURRENT_LINK}\"
-          sudo rm -f \"\$ARCHIVE\"
-          mapfile -t old_releases < <(sudo find \"\${RELEASE_ROOT}\" -mindepth 1 -maxdepth 1 -type d | sort | head -n -5)
-          if [ \${#old_releases[@]} -gt 0 ]; then
-            sudo rm -rf \"\${old_releases[@]}\"
-          fi"
