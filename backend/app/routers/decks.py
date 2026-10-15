@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.current_user import get_current_user_id
 from app.services.content_service import ContentService
 
 router = APIRouter(prefix="/api/v1/decks", tags=["Decks"])
 
 
 @router.get("/tree")
-def get_deck_tree(db: Session = Depends(get_db)):
+def get_deck_tree(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     """Get complete deck tree (sources -> units -> lessons).
 
     Returns:
@@ -38,7 +39,7 @@ def get_deck_tree(db: Session = Depends(get_db)):
     """
     request_id = str(uuid.uuid4())
 
-    content_service = ContentService(db)
+    content_service = ContentService(db, user_id=user_id)
     tree = content_service.get_deck_tree()
 
     return {
@@ -48,7 +49,7 @@ def get_deck_tree(db: Session = Depends(get_db)):
 
 
 @router.get("/{lesson_id}/cards")
-def get_lesson_cards(lesson_id: int, db: Session = Depends(get_db)):
+def get_lesson_cards(lesson_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
     """Get all cards in a lesson.
 
     Args:
@@ -68,7 +69,7 @@ def get_lesson_cards(lesson_id: int, db: Session = Depends(get_db)):
     request_id = str(uuid.uuid4())
 
     try:
-        content_service = ContentService(db)
+        content_service = ContentService(db, user_id=user_id)
         cards_data = content_service.get_lesson_cards(lesson_id)
 
         return {

@@ -42,15 +42,6 @@ class Settings(BaseSettings):
     # AI feedback provider
     ai_feedback_provider: str = "gemini"
 
-    # Coach / Q&A Agent
-    coach_agent_model_id: str | None = None
-    coach_agent_api_key: str | None = None
-    coach_agent_app_name: str = "langear-coach"
-    coach_kb_dir: str = str(BACKEND_ROOT / "knowledge_base")
-    coach_session_db_path: str = str(BACKEND_ROOT / "data" / "coach_sessions.db")
-    coach_history_limit: int = 5
-    coach_kb_top_k: int = 3
-
     # Alibaba Cloud OSS
     oss_access_key_id: str
     oss_access_key_secret: str
@@ -108,16 +99,6 @@ class Settings(BaseSettings):
         self.google_gemini_base_url = (
             self.google_gemini_base_url.strip()
             if self.google_gemini_base_url and self.google_gemini_base_url.strip()
-            else None
-        )
-        self.coach_agent_api_key = (
-            self.coach_agent_api_key.strip()
-            if self.coach_agent_api_key and self.coach_agent_api_key.strip()
-            else None
-        )
-        self.coach_agent_model_id = (
-            self.coach_agent_model_id.strip()
-            if self.coach_agent_model_id and self.coach_agent_model_id.strip()
             else None
         )
         provider = self.ai_feedback_provider.strip().lower()

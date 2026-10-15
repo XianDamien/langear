@@ -19,8 +19,6 @@ dependencies = [
     "aliyun-python-sdk-core>=2.16.0",
     "aliyun-python-sdk-sts>=3.1.0",
     "google-genai>=1.68.0",
-    "google-adk>=1.0.0",
-    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]

@@ -1,5 +1,4 @@
 import type { Deck } from '@/types/domain'
-import type { UserDeckSummary } from '@/types/api'
 
 export type DeckSelectionStatus = 'none' | 'partial' | 'full'
 
@@ -20,16 +19,8 @@ function toLessonId(value: string): number {
   return Number(value)
 }
 
-function toDeckId(value: string): number {
-  return Number(value)
-}
-
 export function normalizeLessonIds(lessonIds: number[]): number[] {
   return [...new Set(lessonIds)].sort((left, right) => left - right)
-}
-
-export function normalizeOriginDeckIds(originDeckIds: number[]): number[] {
-  return [...new Set(originDeckIds)]
 }
 
 export function collectLessonIds(deck: Deck): number[] {
@@ -38,28 +29,6 @@ export function collectLessonIds(deck: Deck): number[] {
   }
 
   return normalizeLessonIds((deck.children || []).flatMap(collectLessonIds))
-}
-
-function compressDeckSelection(deck: Deck, selectedLessonIdSet: Set<number>): number[] {
-  const lessonIds = collectLessonIds(deck)
-  const selectedCount = lessonIds.filter((lessonId) => selectedLessonIdSet.has(lessonId)).length
-
-  if (selectedCount === 0) return []
-  if (selectedCount === lessonIds.length) {
-    return [toDeckId(deck.id)]
-  }
-
-  return (deck.children || []).flatMap((child) => compressDeckSelection(child, selectedLessonIdSet))
-}
-
-export function compressLessonSelectionToOriginDeckIds(
-  decks: Deck[],
-  selectedLessonIds: number[],
-): number[] {
-  const selectedLessonIdSet = new Set(selectedLessonIds)
-  return normalizeOriginDeckIds(
-    decks.flatMap((deck) => compressDeckSelection(deck, selectedLessonIdSet)),
-  )
 }
 
 export function buildLessonSelectionItems(
@@ -163,23 +132,4 @@ export function findDeckById(decks: Deck[], deckId: string): Deck | null {
 export function findFirstSelectedLessonId(deck: Deck, selectedLessonIds: Set<number>): string | null {
   const lessonId = collectLessonIds(deck).find((candidate) => selectedLessonIds.has(candidate))
   return lessonId ? String(lessonId) : null
-}
-
-export function expandOriginDeckIdsToLessonIds(
-  decks: Deck[],
-  originDeckIds: number[],
-): number[] {
-  return normalizeLessonIds(
-    originDeckIds.flatMap((originDeckId) => {
-      const deck = findDeckById(decks, String(originDeckId))
-      return deck ? collectLessonIds(deck) : []
-    }),
-  )
-}
-
-export function expandUserDecksToLessonIds(decks: Deck[], userDecks: UserDeckSummary[]): number[] {
-  return expandOriginDeckIdsToLessonIds(
-    decks,
-    userDecks.map((userDeck) => userDeck.origin_deck_id),
-  )
 }

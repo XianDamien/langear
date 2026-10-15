@@ -10,10 +10,10 @@ from app.logging_config import setup_logging
 from app.schema_guard import validate_runtime_schema
 from app.routers import (
     auth,
-    coach,
     dashboard,
     decks,
     health,
+    my_courses,
     oss,
     realtime,
     settings as settings_router,
@@ -48,13 +48,13 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(oss.router)
 app.include_router(decks.router)
+app.include_router(my_courses.router)
 app.include_router(realtime.router)
 app.include_router(study.router)
 app.include_router(study_session.router)
 app.include_router(user_decks.router)
 app.include_router(dashboard.router)
 app.include_router(settings_router.router)
-app.include_router(coach.router)
 
 logger.info("LanGear API started successfully")
 

@@ -45,7 +45,9 @@ export function useAudioPlayer() {
     })
   }
 
-  function startSpeechPlayback(text: string, lang = 'en-US') {
+  function speakText(text: string, lang = 'en-US') {
+    stop()
+
     const token = ++playbackToken
     currentPlayback = createSpeechPlayback(text, {
       lang,
@@ -59,38 +61,6 @@ export function useAudioPlayer() {
     })
   }
 
-  function playWithFallback(src: string, fallbackText: string, lang = 'en-US') {
-    stop()
-
-    if (!src) {
-      if (fallbackText.trim()) {
-        startSpeechPlayback(fallbackText, lang)
-      }
-      return
-    }
-
-    const token = ++playbackToken
-    const fallbackToSpeech = () => {
-      if (token === playbackToken) {
-        isPlaying.value = false
-        if (fallbackText.trim()) {
-          startSpeechPlayback(fallbackText, lang)
-        }
-      }
-    }
-
-    currentPlayback = createAudioPlayback(src, {
-      ...createPlaybackCallbacks(token),
-      onError: fallbackToSpeech,
-    })
-    void currentPlayback.play().catch(fallbackToSpeech)
-  }
-
-  function speakText(text: string, lang = 'en-US') {
-    stop()
-    startSpeechPlayback(text, lang)
-  }
-
   function stop() {
     playbackToken += 1
     currentPlayback?.stop()
@@ -99,5 +69,5 @@ export function useAudioPlayer() {
     isPlaying.value = false
   }
 
-  return { isPlaying, play, playWithFallback, speakText, stop }
+  return { isPlaying, play, speakText, stop }
 }

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import CardFront from '@/components/study/CardFront.vue'
+import AudioRecorderPanel from '@/components/study/modules/AudioRecorderPanel.vue'
 import { mountWithApp } from '../../helpers/mountWithApp'
 
-describe('CardFront', () => {
-  it('disables recording while reference audio is playing', async () => {
-    const wrapper = mountWithApp(CardFront, {
+describe('AudioRecorderPanel', () => {
+  it('disables recording when requested by the card', async () => {
+    const wrapper = mountWithApp(AudioRecorderPanel, {
       props: {
         audioPlaying: true,
+        recordingDisabled: true,
         isRecording: false,
         liveTranscript: '',
         userTranscript: '',
@@ -17,16 +18,13 @@ describe('CardFront', () => {
 
     const button = wrapper.get('[data-testid="record-toggle"]')
     expect(button.attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="record-hint"]').text()).toContain(
-      '建议完整听完原音频之后再录音',
-    )
 
     await button.trigger('click')
     expect(wrapper.emitted('toggleRecording')).toBeFalsy()
   })
 
   it('emits recording toggle once playback is idle', async () => {
-    const wrapper = mountWithApp(CardFront, {
+    const wrapper = mountWithApp(AudioRecorderPanel, {
       props: {
         audioPlaying: false,
         isRecording: false,

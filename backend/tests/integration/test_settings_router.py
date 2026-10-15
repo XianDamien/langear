@@ -8,6 +8,7 @@ from tests.test_data.seed_data import create_test_user_settings
 
 
 @pytest.mark.integration
+@pytest.mark.usefixtures("authenticated_user")
 class TestSettingsRouter:
     """Test suite for `/api/v1/settings`."""
 

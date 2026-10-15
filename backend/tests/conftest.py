@@ -85,6 +85,28 @@ def client(test_db: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def authenticated_user(client: TestClient, test_db: Session):
+    """Authenticate legacy API scenarios as the owner of their seeded data."""
+    from app.models import User
+    from app.services.auth_service import create_access_token
+
+    if test_db.get(User, 1) is None:
+        test_db.add(User(id=1, username="test-learner"))
+        test_db.commit()
+    client.headers["Authorization"] = f"Bearer {create_access_token(1)}"
+    yield
+    client.headers.pop("Authorization", None)
+
+
+@pytest.fixture
+def selected_sample_course(authenticated_user, sample_deck_tree, test_db: Session):
+    """Select the seeded lesson before exercising its personal study APIs."""
+    from app.services.my_courses_service import MyCoursesService
+
+    MyCoursesService(test_db).replace_lesson_ids(1, [sample_deck_tree["lesson"].id])
+
+
 # ============================================================================
 # Mock Fixtures for External Services
 # ============================================================================

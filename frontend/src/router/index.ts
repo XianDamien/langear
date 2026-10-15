@@ -30,12 +30,6 @@ const router = createRouter({
       component: () => import('@/views/MyCoursesView.vue'),
     },
     {
-      path: '/study/decks/:userDeckId',
-      name: 'StudyUserDeck',
-      component: () => import('@/views/StudySessionView.vue'),
-      meta: { fullscreen: true },
-    },
-    {
       path: '/study/:lessonId',
       name: 'Study',
       component: () => import('@/views/StudySessionView.vue'),

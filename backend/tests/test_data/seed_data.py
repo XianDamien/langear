@@ -256,6 +256,7 @@ def create_test_review_log(
             }
 
     log = ReviewLog(
+        user_id=1,
         card_id=card_id,
         deck_id=deck_id,
         rating=rating,
@@ -351,6 +352,7 @@ def create_multiple_review_logs(
         created_at = storage_now() - timedelta(days=days_ago - i)
 
         log = ReviewLog(
+            user_id=1,
             card_id=card_id,
             deck_id=deck_id,
             rating=rating,

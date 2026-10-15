@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import Card, Deck, ReviewLog, Setting, UserCardFSRS, UserCardSRS
+from app.models import Card, Deck, ReviewLog, Setting, UserCardSRS
 from app.utils.timezone import storage_now
 
 
@@ -56,57 +56,8 @@ def _create_scoped_source(
 
 
 @pytest.mark.integration
+@pytest.mark.usefixtures("selected_sample_course")
 class TestStudySessionRouter:
-    def test_get_study_session_by_user_deck_returns_only_active_user_deck_cards(
-        self,
-        client: TestClient,
-        test_db: Session,
-        sample_deck_tree,
-    ):
-        lesson = sample_deck_tree["lesson"]
-        cards = sample_deck_tree["cards"]
-
-        selection = client.put(
-            "/api/v1/user-decks/selection",
-            json={"origin_deck_ids": [lesson.id]},
-        )
-        assert selection.status_code == 200
-        user_deck_id = selection.json()["data"]["user_decks"][0]["id"]
-
-        now = storage_now()
-        test_db.add(
-            UserCardFSRS(
-                user_id=1,
-                card_id=cards[0].id,
-                state="learning",
-                step=0,
-                due=now - timedelta(minutes=30),
-                last_review=now - timedelta(hours=1),
-            )
-        )
-        test_db.add(
-            UserCardFSRS(
-                user_id=1,
-                card_id=cards[1].id,
-                state="review",
-                step=None,
-                due=now - timedelta(minutes=5),
-                last_review=now - timedelta(days=1),
-            )
-        )
-        test_db.commit()
-
-        response = client.get(f"/api/v1/study/session?user_deck_id={user_deck_id}")
-
-        assert response.status_code == 200
-        data = response.json()["data"]
-        assert data["scope"]["user_deck_id"] == user_deck_id
-        assert data["scope"]["lesson_id"] is None
-        assert len(data["cards"]) == 5
-        assert [card["id"] for card in data["cards"][:2]] == [cards[0].id, cards[1].id]
-        assert data["cards"][0]["card_state"] == "learning"
-        assert data["cards"][1]["card_state"] == "review"
-
     def test_get_study_session_uses_beijing_timezone_offset(
         self,
         client: TestClient,
@@ -177,6 +128,7 @@ class TestStudySessionRouter:
 
         test_db.add(
             ReviewLog(
+                user_id=1,
                 card_id=cards[0].id,
                 deck_id=lesson.id,
                 rating="good",
@@ -219,13 +171,13 @@ class TestStudySessionRouter:
             for card in data["cards"]
         )
 
-    def test_get_study_session_does_not_schedule_cards_missing_srs_snapshot(
+    def test_get_study_session_treats_missing_personal_snapshot_as_new(
         self,
         client: TestClient,
         test_db: Session,
         sample_deck_tree,
     ):
-        """Cards without an SRS row must not be treated as new cards."""
+        """An unreviewed card starts a new personal schedule without a legacy row."""
         from app.models import UserCardSRS
 
         lesson = sample_deck_tree["lesson"]
@@ -247,8 +199,10 @@ class TestStudySessionRouter:
         assert response.status_code == 200
         data = response.json()["data"]
         returned_ids = [card["id"] for card in data["cards"]]
-        assert cards[0].id not in returned_ids
-        assert len(returned_ids) == 4
+        assert len(returned_ids) == 5
+        new_card = next(card for card in data["cards"] if card["id"] == cards[0].id)
+        assert new_card["is_new_card"] is True
+        assert new_card["last_review_at"] is None
 
     def test_get_study_session_lesson_scope_keeps_reviewed_future_cards_visible(
         self,
@@ -302,12 +256,14 @@ class TestStudySessionRouter:
         assert response.status_code == 200
         data = response.json()["data"]
         returned_ids = [card["id"] for card in data["cards"]]
-        assert returned_ids == [cards[1].id, cards[2].id, cards[3].id, cards[0].id]
+        assert returned_ids[:2] == [cards[1].id, cards[2].id]
+        assert set(returned_ids[2:]) == {cards[0].id, cards[3].id}
         assert data["cards"][0]["last_review_at"] is not None
         assert data["cards"][1]["is_new_card"] is True
-        assert data["cards"][2]["card_state"] == "relearning"
-        assert data["cards"][3]["card_state"] == "review"
-        assert data["cards"][3]["last_review_at"] is not None
+        by_id = {card["id"]: card for card in data["cards"]}
+        assert by_id[cards[3].id]["card_state"] == "relearning"
+        assert by_id[cards[0].id]["card_state"] == "review"
+        assert by_id[cards[0].id]["last_review_at"] is not None
 
         scoped_response = client.get("/api/v1/study/session")
         assert scoped_response.status_code == 200

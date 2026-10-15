@@ -9,15 +9,17 @@ from app.repositories.card_repo import CardRepository
 from app.repositories.deck_repo import DeckRepository
 from app.repositories.review_log_repo import ReviewLogRepository
 from app.repositories.srs_repo import SRSRepository
-from app.utils.timezone import app_now, to_app_timezone
+from app.repositories.personal_srs_repo import PersonalSRSRepository
+from app.utils.timezone import app_now, to_app_timezone, to_storage_local
 
 
 class ContentService:
     """Service for querying educational content (decks and cards)."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, user_id: int | None = None):
         """Initialize service with database session."""
         self.db = db
+        self.user_id = user_id
         self.deck_repo = DeckRepository(db)
         self.card_repo = CardRepository(db)
         self.srs_repo = SRSRepository(db)
@@ -29,6 +31,13 @@ class ContentService:
         completed_cards = self.srs_repo.count_completed_by_lesson(lesson_id)
         due_cards = self.srs_repo.count_due_by_lesson(lesson_id)
         new_cards = max(0, total_cards - completed_cards)
+        if self.user_id is not None:
+            states = self._get_lesson_srs_map(lesson_id)
+            reviewed = [state for state in states.values() if state is not None and state.last_review is not None]
+            completed_cards = len(reviewed)
+            as_of = to_storage_local(app_now(self.db), self.db)
+            due_cards = sum(state.due <= as_of for state in reviewed)
+            new_cards = max(0, total_cards - completed_cards)
 
         return {
             "id": lesson_id,
@@ -65,6 +74,10 @@ class ContentService:
         """Get lesson SRS rows keyed by card_id."""
         from app.models.card import Card
         from app.models.user_card_srs import UserCardSRS
+
+        if self.user_id is not None:
+            card_ids = [row.id for row in self.db.query(Card.id).filter(Card.deck_id == lesson_id)]
+            return PersonalSRSRepository(self.db).for_cards(self.user_id, card_ids)
 
         rows = (
             self.db.query(UserCardSRS)
@@ -153,7 +166,7 @@ class ContentService:
         server_time = app_now(self.db)
 
         # Get latest user recording OSS paths per card
-        oss_paths = self.review_log_repo.get_latest_oss_paths_by_lesson(lesson_id)
+        oss_paths = self.review_log_repo.get_latest_oss_paths_by_lesson(lesson_id, user_id=self.user_id)
 
         result_cards = []
         for card in cards:

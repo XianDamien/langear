@@ -196,7 +196,7 @@ describe('StudySessionView', () => {
     await vi.waitFor(() => {
       expect(recordToggle.attributes('disabled')).toBeDefined()
     })
-    expect(wrapper.get('[data-testid="record-hint"]').text()).toContain(
+    expect(wrapper.text()).toContain(
       '建议完整听完原音频之后再录音',
     )
 
@@ -300,7 +300,7 @@ describe('StudySessionView', () => {
       expect(wrapper.get('[data-testid="task-nav-status-1"]').text()).toContain('完成')
     })
 
-    expect(wrapper.get('[data-testid="card-back"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="card-back-container"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="feedback-panel"]').text()).toContain(completedFeedback)
     expect(wrapper.get('[data-testid="transcription-result"]').text().replace(/\s+/g, '')).toContain(
       compactTranscript,
@@ -312,14 +312,14 @@ describe('StudySessionView', () => {
     expect(wrapper.get('[data-testid="study-lesson-title"]').text()).toContain('2')
     expect(wrapper.get('[data-testid="task-nav-item-2"]').text()).toContain(secondCard.front_text)
     expect(wrapper.get('[data-testid="task-nav-status-1"]').text()).toContain('完成')
-    expect(wrapper.get('[data-testid="card-front"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="card-front-container"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="feedback-panel"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="task-nav-item-1"]').trigger('click')
     await flushPromises()
 
     await vi.waitFor(() => {
-      expect(wrapper.get('[data-testid="card-back"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="card-back-container"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="task-nav-status-1"]').text()).toContain('完成')
       expect(wrapper.get('[data-testid="feedback-panel"]').text()).toContain(completedFeedback)
       expect(

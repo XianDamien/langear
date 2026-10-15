@@ -140,7 +140,7 @@ async function submit() {
               autocomplete="current-password"
               type="password"
               required
-              minlength="8"
+              :minlength="mode === 'register' ? 8 : undefined"
             >
           </label>
 

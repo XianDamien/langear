@@ -1,11 +1,7 @@
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 import { mockDashboardData } from './mock/dashboard'
 import { mockDeckTree, mockLessonCards } from './mock/decks'
-import {
-  buildMockUserDecks,
-  readMockUserDeckOriginIds,
-  writeMockUserDeckOriginIds,
-} from './mock/myCourses'
+import { readMockMyCourseLessonIds, writeMockMyCourseLessonIds } from './mock/myCourses'
 import { mockLessonSummary } from './mock/summary'
 import { mockSettings } from './mock/settings'
 import {
@@ -118,20 +114,18 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
     return mockResolve(mockDeckTree)
   }
 
-  if (method === 'get' && url === '/user-decks') {
+  if (method === 'get' && url === '/my-courses/lessons') {
     await delay()
     return mockResolve({
-      user_decks: buildMockUserDecks(readMockUserDeckOriginIds()),
+      lesson_ids: readMockMyCourseLessonIds(),
     })
   }
 
-  if (method === 'put' && url === '/user-decks/selection') {
+  if (method === 'put' && url === '/my-courses/lessons') {
     await delay(200)
-    const body = parseBody(config) as { origin_deck_ids?: number[] }
-    const originDeckIds = writeMockUserDeckOriginIds(body.origin_deck_ids || [])
+    const body = parseBody(config) as { lesson_ids?: number[] }
     return mockResolve({
-      origin_deck_ids: originDeckIds,
-      user_decks: buildMockUserDecks(originDeckIds),
+      lesson_ids: writeMockMyCourseLessonIds(body.lesson_ids || []),
     })
   }
 
@@ -145,13 +139,7 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
   if (method === 'get' && url.startsWith('/study/session')) {
     await delay()
     const lessonId = Number(getParam(config, 'lesson_id'))
-    const userDeckId = Number(getParam(config, 'user_deck_id'))
-    return mockResolve(
-      buildMockStudySession({
-        lessonId: Number.isFinite(lessonId) ? lessonId : undefined,
-        userDeckId: Number.isFinite(userDeckId) ? userDeckId : undefined,
-      }),
-    )
+    return mockResolve(buildMockStudySession(Number.isFinite(lessonId) ? lessonId : undefined))
   }
 
   if (method === 'get' && url === '/oss/sts-token') {
@@ -172,7 +160,6 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
     const body = parseBody(config) as {
       lesson_id?: number
       card_id?: number
-      user_deck_id?: number | null
       oss_audio_path?: string
       realtime_session_id?: string
       transcription_text?: string
@@ -188,7 +175,6 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
         submission_id: submissionId,
         lesson_id: body.lesson_id ?? null,
         card_id: body.card_id ?? null,
-        user_deck_id: body.user_deck_id ?? null,
         status: 'processing',
         timestamp: Date.now(),
         created_at: formatBusinessIso(new Date()),
@@ -207,24 +193,17 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
   if (method === 'get' && url === '/study/submissions') {
     await delay(150)
     const lessonId = Number(getParam(config, 'lesson_id'))
-    const userDeckIdParam = getParam(config, 'user_deck_id')
-    const userDeckId = userDeckIdParam != null ? Number(userDeckIdParam) : null
     const cardIdParam = getParam(config, 'card_id')
     const cardId = cardIdParam != null ? Number(cardIdParam) : null
 
     const items = readStoredSubmissions()
-      .filter((item) =>
-        userDeckId != null
-          ? Number(item.user_deck_id) === userDeckId
-          : Number(item.lesson_id) === lessonId,
-      )
+      .filter((item) => Number(item.lesson_id) === lessonId)
       .filter((item) => (cardId == null ? true : Number(item.card_id) === cardId))
       .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))
       .map((item) => ({
         submission_id: Number(item.submission_id),
         card_id: item.card_id != null ? Number(item.card_id) : null,
         lesson_id: Number(item.lesson_id),
-        user_deck_id: item.user_deck_id != null ? Number(item.user_deck_id) : null,
         status: String(item.status),
         error_code: item.error_code ?? null,
         error_message: item.error_message ?? null,

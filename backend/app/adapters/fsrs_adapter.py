@@ -1,6 +1,6 @@
 """Native FSRS adapter aligned with the upstream py-fsrs contract."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from fsrs import Card as FSRSCard
@@ -22,9 +22,17 @@ STRING_TO_STATE = {value: key for key, value in STATE_TO_STRING.items()}
 class FSRSAdapter:
     """Bridge between persisted SQL rows and native py-fsrs objects."""
 
-    def __init__(self):
+    def __init__(self, scheduling_settings: dict | None = None):
         """Initialize FSRS scheduler with default parameters."""
-        self.scheduler = Scheduler()
+        if scheduling_settings is None:
+            self.scheduler = Scheduler()
+        else:
+            self.scheduler = Scheduler(
+                desired_retention=scheduling_settings["desired_retention"],
+                learning_steps=tuple(timedelta(minutes=value) for value in scheduling_settings["learning_steps"]),
+                relearning_steps=tuple(timedelta(minutes=value) for value in scheduling_settings["relearning_steps"]),
+                maximum_interval=scheduling_settings["maximum_interval"],
+            )
 
     def rating_from_string(self, rating_str: str) -> Rating:
         """Convert rating string to FSRS Rating enum.

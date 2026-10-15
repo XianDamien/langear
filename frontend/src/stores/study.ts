@@ -1,7 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  fetchStudySessionWithScope,
+  fetchStudySession,
   submitReviewAsync,
   submitRating,
   getOSSSignedUrl,
@@ -25,7 +25,6 @@ export type RecordingState = 'idle' | 'recording' | 'stopped'
 export type SubmitState = 'idle' | 'submitting' | 'success' | 'failed'
 export type AsyncSubmitState = 'idle' | 'submitting' | 'processing' | 'completed' | 'failed'
 export type UploadState = 'idle' | 'uploading' | 'uploaded' | 'failed'
-export type StudySessionMode = 'lesson' | 'userDeck'
 
 function resolveDueAt(payload: { due_at?: string | null; due?: string | null }): string | null {
   return payload.due_at ?? payload.due ?? null
@@ -60,8 +59,6 @@ function mapStudySessionCardToDomain(raw: StudySessionCardResponse): Card {
 
 export const useStudyStore = defineStore('study', () => {
   const lessonId = ref<string | null>(null)
-  const userDeckId = ref<string | null>(null)
-  const sessionMode = ref<StudySessionMode>('lesson')
   const lessonName = ref('')
   const cards = ref<Card[]>([])
   const currentIndex = ref(0)
@@ -105,39 +102,11 @@ export const useStudyStore = defineStore('study', () => {
   }
 
   async function loadStudySession(id: string) {
-    return loadLessonStudySession(id)
-  }
-
-  async function loadLessonStudySession(id: string) {
     loading.value = true
     lessonId.value = id
-    userDeckId.value = null
-    sessionMode.value = 'lesson'
     try {
       const parsedLessonId = parseNumericIdOrThrow(id, '课程 ID')
-      const { data } = await fetchStudySessionWithScope({ lessonId: parsedLessonId })
-      cards.value = data.cards.map(mapStudySessionCardToDomain)
-      lessonName.value = data.lesson_name ?? data.lessonName ?? '学习任务'
-      sessionServerTime.value = data.server_time
-      sessionDate.value = data.session_date
-      sessionScope.value = data.scope
-      sessionQuota.value = data.quota
-      sessionSummary.value = data.summary
-      currentIndex.value = 0
-      resetCardState()
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function loadUserDeckStudySession(id: string) {
-    loading.value = true
-    lessonId.value = null
-    userDeckId.value = id
-    sessionMode.value = 'userDeck'
-    try {
-      const parsedUserDeckId = parseNumericIdOrThrow(id, '用户牌组 ID')
-      const { data } = await fetchStudySessionWithScope({ userDeckId: parsedUserDeckId })
+      const { data } = await fetchStudySession({ lessonId: parsedLessonId })
       cards.value = data.cards.map(mapStudySessionCardToDomain)
       lessonName.value = data.lesson_name ?? data.lessonName ?? '学习任务'
       sessionServerTime.value = data.server_time
@@ -184,15 +153,12 @@ export const useStudyStore = defineStore('study', () => {
     ossAudioPath: string,
     realtimeSessionId: string,
   ): Promise<number> {
-    if (!currentCard.value) {
+    if (!lessonId.value || !currentCard.value) {
       throw new Error('No active lesson')
     }
 
-    const parsedLessonId = parseNumericIdOrThrow(currentCard.value.lessonId, '课程 ID')
+    const parsedLessonId = parseNumericIdOrThrow(lessonId.value, '课程 ID')
     const parsedCardId = parseNumericIdOrThrow(currentCard.value.id, '卡片 ID')
-    const parsedUserDeckId = userDeckId.value
-      ? parseNumericIdOrThrow(userDeckId.value, '用户牌组 ID')
-      : null
 
     asyncSubmitState.value = 'submitting'
 
@@ -203,9 +169,6 @@ export const useStudyStore = defineStore('study', () => {
         card_id: parsedCardId,
         oss_audio_path: ossAudioPath,
         realtime_session_id: realtimeSessionId,
-        ...(sessionMode.value === 'userDeck' && parsedUserDeckId != null
-          ? { user_deck_id: parsedUserDeckId }
-          : {}),
         ...(transcriptionText ? { transcription_text: transcriptionText } : {}),
       })
       const data = response.data as SubmitReviewResponseAsync
@@ -307,8 +270,6 @@ export const useStudyStore = defineStore('study', () => {
 
   return {
     lessonId,
-    userDeckId,
-    sessionMode,
     lessonName,
     cards,
     sessionServerTime,
@@ -348,7 +309,5 @@ export const useStudyStore = defineStore('study', () => {
     jumpToTimestamp,
     resetTimestampAudio,
     loadStudySession,
-    loadLessonStudySession,
-    loadUserDeckStudySession,
   }
 })

@@ -46,7 +46,7 @@ function createEmptyTask(cardId: string, cardIndex: number): StudyTaskEntry {
 }
 
 export const useStudyTasksStore = defineStore('studyTasks', () => {
-  const sessionKey = ref<string | null>(null)
+  const lessonId = ref<string | null>(null)
   const taskMap = ref<Record<string, StudyTaskEntry>>({})
   const pollingTimers = new Map<string, number>()
 
@@ -81,10 +81,10 @@ export const useStudyTasksStore = defineStore('studyTasks', () => {
     }
   }
 
-  function initializeSession(nextSessionKey: string, cards: Card[]) {
-    if (sessionKey.value !== nextSessionKey) {
+  function initializeLesson(nextLessonId: string, cards: Card[]) {
+    if (lessonId.value !== nextLessonId) {
       teardown()
-      sessionKey.value = nextSessionKey
+      lessonId.value = nextLessonId
     }
 
     const nextTaskMap: Record<string, StudyTaskEntry> = {}
@@ -93,10 +93,6 @@ export const useStudyTasksStore = defineStore('studyTasks', () => {
       nextTaskMap[card.id]!.cardIndex = index
     })
     taskMap.value = nextTaskMap
-  }
-
-  function initializeLesson(nextLessonId: string, cards: Card[]) {
-    initializeSession(`lesson:${nextLessonId}`, cards)
   }
 
   function setUploadState(cardId: string, cardIndex: number, uploadState: UploadState) {
@@ -274,15 +270,9 @@ export const useStudyTasksStore = defineStore('studyTasks', () => {
     stopPolling(cardId)
   }
 
-  async function restoreSessionHistory(
-    params: { lessonId?: string; userDeckId?: string },
-    cards: Card[],
-  ) {
-    const requestParams =
-      params.userDeckId != null
-        ? { user_deck_id: parseNumericIdOrThrow(params.userDeckId, '用户牌组 ID') }
-        : { lesson_id: parseNumericIdOrThrow(params.lessonId, '课程 ID') }
-    const { data } = await listStudySubmissions(requestParams)
+  async function restoreLessonHistory(nextLessonId: string, cards: Card[]) {
+    const parsedLessonId = parseNumericIdOrThrow(nextLessonId, '课程 ID')
+    const { data } = await listStudySubmissions({ lesson_id: parsedLessonId })
 
     const latestByCardId = new Map<string, StudySubmissionListItem>()
     for (const item of data) {
@@ -303,10 +293,6 @@ export const useStudyTasksStore = defineStore('studyTasks', () => {
     })
   }
 
-  async function restoreLessonHistory(nextLessonId: string, cards: Card[]) {
-    await restoreSessionHistory({ lessonId: nextLessonId }, cards)
-  }
-
   function getTask(cardId: string | null | undefined): StudyTaskEntry | null {
     if (!cardId) return null
     return taskMap.value[cardId] ?? null
@@ -316,20 +302,18 @@ export const useStudyTasksStore = defineStore('studyTasks', () => {
     pollingTimers.forEach((timer) => window.clearInterval(timer))
     pollingTimers.clear()
     taskMap.value = {}
-    sessionKey.value = null
+    lessonId.value = null
   }
 
   return {
-    sessionKey,
+    lessonId,
     taskMap,
     orderedTasks,
-    initializeSession,
     initializeLesson,
     setUploadState,
     setSubmissionPending,
     setSubmissionFailed,
     registerSubmission,
-    restoreSessionHistory,
     restoreLessonHistory,
     ensureSignedAudioUrl,
     getTask,

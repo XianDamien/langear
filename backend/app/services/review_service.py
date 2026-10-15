@@ -11,12 +11,13 @@ from app.config import settings
 from app.repositories.card_repo import CardRepository
 from app.repositories.review_log_repo import ReviewLogRepository
 from app.repositories.srs_repo import SRSRepository
-from app.repositories.user_card_fsrs_repo import UserCardFSRSRepository
-from app.repositories.user_deck_repo import UserDeckRepository
 from app.services.realtime_session_service import get_realtime_session_store
 from app.services.submission_trace import log_submission_trace
 from app.tasks.review_task import process_review_task
-from app.utils.timezone import from_storage_local, storage_now
+from app.utils.timezone import from_storage_local, to_storage_local
+from app.models.user_card_fsrs import UserCardFSRS
+from app.repositories.personal_srs_repo import PersonalSRSRepository
+from app.services.deck_settings_service import DeckSettingsService
 
 logger = logging.getLogger(__name__)
 NATIVE_SRS_STATES = {"learning", "review", "relearning"}
@@ -37,8 +38,6 @@ class ReviewService:
         self.card_repo = CardRepository(db)
         self.review_log_repo = ReviewLogRepository(db)
         self.srs_repo = SRSRepository(db)
-        self.user_card_fsrs_repo = UserCardFSRSRepository(db)
-        self.user_deck_repo = UserDeckRepository(db)
         self.fsrs_adapter = FSRSAdapter()
         self.realtime_store = get_realtime_session_store()
 
@@ -58,13 +57,12 @@ class ReviewService:
 
     def submit_card_review(
         self,
-        user_id: int,
         lesson_id: int,
         card_id: int,
         oss_audio_path: str,
         realtime_session_id: str,
-        user_deck_id: int | None = None,
         request_id: str | None = None,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         """Submit a card feedback request (synchronous part).
 
@@ -119,15 +117,6 @@ class ReviewService:
         if card.deck_id != lesson_id:
             raise_validation_error(f"Card {card_id} does not belong to lesson {lesson_id}")
 
-        if user_deck_id is not None:
-            user_deck = self.user_deck_repo.get_active_by_id(user_id, user_deck_id)
-            if user_deck is None:
-                raise_validation_error(f"USER_DECK_NOT_FOUND: {user_deck_id}")
-            if not self.user_deck_repo.has_card_membership(user_deck_id, card_id):
-                raise_validation_error(
-                    f"USER_DECK_CARD_MISMATCH: card {card_id} does not belong to user deck {user_deck_id}"
-                )
-
         # Validate OSS path format
         expected_prefix = (
             f"{(settings.oss_recordings_prefix or 'recordings').strip().strip('/') or 'recordings'}/"
@@ -156,14 +145,11 @@ class ReviewService:
                 "REALTIME_TRANSCRIPT_NOT_READY: realtime final transcript is not ready"
             )
 
-        if user_deck_id is not None:
-            current_srs = self.user_card_fsrs_repo.get_by_user_card(user_id, card_id)
-            card_state = self._derive_user_fsrs_state(current_srs)
-            quota_bucket = "new" if self._is_user_new_bucket(current_srs) else "review"
-        else:
-            current_srs = self.srs_repo.get_by_card_id(card_id)
-            card_state = self.srs_repo.derive_card_state(current_srs)
-            quota_bucket = "new" if self.srs_repo.is_new_bucket(current_srs) else "review"
+        if user_id is not None:
+            DeckSettingsService(self.db).get(user_id, lesson_id)
+        current_srs = PersonalSRSRepository(self.db).get(user_id, card_id) if user_id is not None else self.srs_repo.get_by_card_id(card_id)
+        card_state = self.srs_repo.derive_card_state(current_srs)
+        quota_bucket = "new" if self.srs_repo.is_new_bucket(current_srs) else "review"
 
         # Create review_log with status='processing'
         log_submission_trace(
@@ -177,8 +163,7 @@ class ReviewService:
             review_log_committed=False,
         )
         review_log = self.review_log_repo.create(
-            user_id=user_id,
-            user_deck_id=user_deck_id,
+            user_id=user_id or 1,
             card_id=card_id,
             deck_id=lesson_id,
             rating=None,
@@ -244,7 +229,7 @@ class ReviewService:
         self,
         submission_id: int,
         rating: str,
-        user_id: int,
+        user_id: int | None = None,
     ) -> dict[str, Any]:
         """Submit rating for a previously created submission.
 
@@ -266,9 +251,7 @@ class ReviewService:
             raise ValueError(f"Invalid rating. Must be one of: {valid_ratings}")
 
         review_log = self.review_log_repo.get_by_id(submission_id)
-        if not review_log:
-            raise ValueError(f"Submission {submission_id} not found")
-        if review_log.user_id != user_id:
+        if not review_log or (user_id is not None and review_log.user_id != user_id):
             raise ValueError(f"Submission {submission_id} not found")
 
         if review_log.status == "failed":
@@ -277,13 +260,35 @@ class ReviewService:
         if review_log.card_id is None:
             raise ValueError("Cannot submit rating for summary submission")
 
-        current_srs = self.srs_repo.get_by_card_id(review_log.card_id)
-        current_user_srs = self.user_card_fsrs_repo.get_by_user_card(user_id, review_log.card_id)
+        if user_id is not None:
+            configuration, _ = DeckSettingsService(self.db).resolve(user_id, review_log.deck_id)
+            self.fsrs_adapter = FSRSAdapter(configuration)
+        current_srs = PersonalSRSRepository(self.db).get(user_id, review_log.card_id) if user_id is not None else self.srs_repo.get_by_card_id(review_log.card_id)
         new_srs_data = self.fsrs_adapter.schedule_card(
-            current_user_srs or current_srs,
+            current_srs,
             rating,
             card_id=review_log.card_id,
         )
+
+        if user_id is not None:
+            srs = self.db.get(UserCardFSRS, (user_id, review_log.card_id)) or UserCardFSRS(user_id=user_id, card_id=review_log.card_id)
+            for field in ("state", "step", "stability", "difficulty"):
+                setattr(srs, field, new_srs_data[field])
+            srs.due = to_storage_local(new_srs_data["due"], self.db)
+            srs.last_review = to_storage_local(new_srs_data["last_review"], self.db)
+            srs.last_rating = rating
+            self.db.add(srs)
+            self.srs_repo.create_review_log(
+                card_id=review_log.card_id,
+                rating=new_srs_data["review_log"]["rating"],
+                review_datetime=new_srs_data["review_log"]["review_datetime"],
+                review_duration=new_srs_data["review_log"]["review_duration"],
+            )
+            review_log.rating = rating
+            review_log.submitted_rating = rating
+            review_log.rated_at = srs.last_review
+            self.db.commit()
+            return {"submission_id": submission_id, "rating": rating, "rating_label": rating, "srs": self._serialize_native_srs(srs)}
 
         srs = self.srs_repo.upsert(
             card_id=review_log.card_id,
@@ -300,21 +305,8 @@ class ReviewService:
             review_datetime=new_srs_data["review_log"]["review_datetime"],
             review_duration=new_srs_data["review_log"]["review_duration"],
         )
-        self.user_card_fsrs_repo.upsert(
-            user_id=user_id,
-            card_id=review_log.card_id,
-            state=new_srs_data["state"],
-            step=new_srs_data["step"],
-            stability=new_srs_data["stability"],
-            difficulty=new_srs_data["difficulty"],
-            due=new_srs_data["due"],
-            last_review=new_srs_data["last_review"],
-            last_rating=rating,
-        )
 
         review_log.rating = rating
-        review_log.submitted_rating = rating
-        review_log.rated_at = storage_now(self.db)
         self.db.commit()
 
         result = {
@@ -327,7 +319,7 @@ class ReviewService:
             result["srs"] = native_srs
         return result
 
-    def get_submission_result(self, submission_id: int) -> dict[str, Any]:
+    def get_submission_result(self, submission_id: int, user_id: int | None = None) -> dict[str, Any]:
         """Get submission result (for polling).
 
         Args:
@@ -343,7 +335,7 @@ class ReviewService:
             ValueError: If submission not found
         """
         review_log = self.review_log_repo.get_by_id(submission_id)
-        if not review_log:
+        if not review_log or (user_id is not None and review_log.user_id != user_id):
             raise ValueError(f"Submission {submission_id} not found")
 
         # Processing status
@@ -378,10 +370,7 @@ class ReviewService:
 
             # SRS is only returned after rating is submitted (decoupled flow)
             if review_log.rating and review_log.card_id is not None:
-                srs = (
-                    self.user_card_fsrs_repo.get_by_user_card(review_log.user_id, review_log.card_id)
-                    or self.srs_repo.get_by_card_id(review_log.card_id)
-                )
+                srs = PersonalSRSRepository(self.db).get(user_id, review_log.card_id) if user_id is not None else self.srs_repo.get_by_card_id(review_log.card_id)
                 native_srs = self._serialize_native_srs(srs)
                 if native_srs is not None:
                     result["srs"] = native_srs
@@ -396,16 +385,14 @@ class ReviewService:
 
     def list_submissions(
         self,
-        user_id: int,
-        lesson_id: int | None = None,
-        user_deck_id: int | None = None,
+        lesson_id: int,
         card_id: int | None = None,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """List submission history for a lesson or user deck."""
+        """List submission history for a lesson/card."""
         submissions = self.review_log_repo.list_single_submissions(
             user_id=user_id,
             lesson_id=lesson_id,
-            user_deck_id=user_deck_id,
             card_id=card_id,
         )
         result: list[dict[str, Any]] = []
@@ -416,7 +403,6 @@ class ReviewService:
                     "submission_id": submission.id,
                     "card_id": submission.card_id,
                     "lesson_id": submission.deck_id,
-                    "user_deck_id": submission.user_deck_id,
                     "status": submission.status,
                     "error_code": submission.error_code,
                     "error_message": submission.error_message,
@@ -428,14 +414,3 @@ class ReviewService:
             )
 
         return result
-
-    @staticmethod
-    def _is_user_new_bucket(srs: Any) -> bool:
-        """Whether a per-user FSRS row is still in the business new bucket."""
-        return srs is None or srs.last_review is None
-
-    def _derive_user_fsrs_state(self, srs: Any) -> str:
-        """Return API-facing state for per-user FSRS rows without exposing synthetic new."""
-        if self._is_user_new_bucket(srs):
-            return "learning"
-        return srs.state

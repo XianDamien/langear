@@ -2,8 +2,7 @@ import http from '../http'
 import type {
   DeckTreeResponse,
   LessonCardsResponse,
-  UserDeckListResponse,
-  UserDeckSelectionResponse,
+  MyCourseLessonsResponse,
 } from '@/types/api'
 
 export function fetchDeckTree() {
@@ -14,12 +13,12 @@ export function fetchLessonCards(lessonId: string) {
   return http.get<LessonCardsResponse>(`/decks/${lessonId}/cards`)
 }
 
-export function fetchUserDecks() {
-  return http.get<UserDeckListResponse>('/user-decks')
+export function fetchMyCourseLessons() {
+  return http.get<MyCourseLessonsResponse>('/my-courses/lessons')
 }
 
-export function updateUserDeckSelection(originDeckIds: number[]) {
-  return http.put<UserDeckSelectionResponse>('/user-decks/selection', {
-    origin_deck_ids: originDeckIds,
+export function updateMyCourseLessons(lessonIds: number[]) {
+  return http.put<MyCourseLessonsResponse>('/my-courses/lessons', {
+    lesson_ids: lessonIds,
   })
 }

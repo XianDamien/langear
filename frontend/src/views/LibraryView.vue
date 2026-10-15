@@ -32,16 +32,14 @@ const {
 } = useLessonPicker({
   deckTree,
   selectedLessonIds,
-  replaceLessons: (lessonIds) => userCoursesStore.replaceLessons(deckTree.value, lessonIds),
+  replaceLessons: userCoursesStore.replaceLessons,
 })
 
 onMounted(() => {
-  void (async () => {
-    if (!deckTree.value.length) {
-      await deckStore.load()
-    }
-    await userCoursesStore.load(deckTree.value)
-  })()
+  if (!deckTree.value.length) {
+    deckStore.load()
+  }
+  userCoursesStore.load()
 })
 
 function handleSelectLesson(lessonId: string) {
@@ -56,10 +54,10 @@ async function handleToggleDeckSelection(deckId: string) {
   if (deck.type === 'lesson') {
     const lessonId = Number(deck.id)
     if (selectedLessonIdSet.value.has(lessonId)) {
-      await userCoursesStore.removeLessons(deckTree.value, [lessonId])
+      await userCoursesStore.removeLessons([lessonId])
       ElMessage.success('已从我的课程移除该 lesson')
     } else {
-      await userCoursesStore.addLessons(deckTree.value, [lessonId])
+      await userCoursesStore.addLessons([lessonId])
       ElMessage.success('已加入我的课程')
     }
     return
@@ -67,7 +65,7 @@ async function handleToggleDeckSelection(deckId: string) {
 
   const status = getNodeSelectionStatus(deck, selectedLessonIdSet.value)
   if (status === 'full') {
-    await userCoursesStore.removeLessons(deckTree.value, collectLessonIds(deck))
+    await userCoursesStore.removeLessons(collectLessonIds(deck))
     ElMessage.success('已移除该范围下的所有 lessons')
     return
   }
@@ -112,7 +110,7 @@ async function handlePickerSave(lessonIds: number[]) {
 
     <LessonPickerModal
       :open="!!pickerDeck"
-      :title="pickerDeck ? pickerDeck.name : ''"
+      :title="pickerDeck ? `${pickerDeck.name} · 选择 lessons` : ''"
       :lessons="pickerLessons"
       :selected-lesson-ids="pickerSelectedLessonIds"
       :saving="saving"

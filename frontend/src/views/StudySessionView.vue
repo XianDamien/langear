@@ -27,7 +27,6 @@ const {
   currentIndex,
   currentCard,
   isFlipped,
-  lastFeedback,
   userTranscript,
   liveTranscript,
   userAudioUrl,
@@ -40,7 +39,7 @@ const {
   audioPlaying,
   uploadState,
   asyncSubmitState,
-  sessionMode,
+  lastFeedback,
 } = storeToRefs(studyStore)
 const { taskMap } = storeToRefs(studyTasksStore)
 
@@ -80,7 +79,6 @@ function toSubmissionDisplayError(error: unknown): SubmissionDisplayError {
 }
 
 const sessionTitle = computed(() => lessonName.value || '学习任务')
-const isUserDeckSession = computed(() => sessionMode.value === 'userDeck')
 
 const ratingDisabled = computed(() =>
   studyStore.submitState === 'submitting' ||
@@ -91,35 +89,6 @@ const ratingDisabled = computed(() =>
 )
 
 const currentTask = computed(() => studyTasksStore.getTask(currentCard.value?.id))
-
-async function loadSessionFromRoute() {
-  const routeLessonId = route.params.lessonId
-  const routeUserDeckId = route.params.userDeckId
-
-  if (typeof routeUserDeckId === 'string' && routeUserDeckId) {
-    clearCardSession()
-    await studyStore.loadUserDeckStudySession(routeUserDeckId)
-    studyTasksStore.initializeSession(`userDeck:${routeUserDeckId}`, cards.value)
-    try {
-      await studyTasksStore.restoreSessionHistory({ userDeckId: routeUserDeckId }, cards.value)
-    } catch (error) {
-      console.error('Failed to restore study submission history:', error)
-      ElMessage.warning('任务历史加载失败，请确认后端实例和数据库是否正确')
-    }
-    return
-  }
-
-  if (typeof routeLessonId !== 'string' || !routeLessonId) return
-  clearCardSession()
-  await studyStore.loadLessonStudySession(routeLessonId)
-  studyTasksStore.initializeLesson(routeLessonId, cards.value)
-  try {
-    await studyTasksStore.restoreLessonHistory(routeLessonId, cards.value)
-  } catch (error) {
-    console.error('Failed to restore study submission history:', error)
-    ElMessage.warning('任务历史加载失败，请确认后端实例和数据库是否正确')
-  }
-}
 
 function shouldKeepCardBackVisible() {
   const task = currentTask.value
@@ -155,7 +124,7 @@ async function waitForRealtimeSessionId(timeoutMs = 1200): Promise<boolean> {
 function playCurrentAudio() {
   if (!currentCard.value) return
   if (currentCard.value.frontAudio) {
-    audioPlayer.playWithFallback(currentCard.value.frontAudio, currentCard.value.backText)
+    audioPlayer.play(currentCard.value.frontAudio)
   } else {
     audioPlayer.speakText(currentCard.value.backText)
   }
@@ -171,23 +140,26 @@ function clearCardSession() {
 }
 
 watch(
-  () => [route.params.lessonId, route.params.userDeckId, route.name] as const,
-  async () => {
-    await loadSessionFromRoute()
+  () => route.params.lessonId,
+  async (lessonId) => {
+    if (typeof lessonId !== 'string' || !lessonId) return
+    clearCardSession()
+    await studyStore.loadStudySession(lessonId)
+    studyTasksStore.initializeLesson(lessonId, cards.value)
+    try {
+      await studyTasksStore.restoreLessonHistory(lessonId, cards.value)
+    } catch (error) {
+      console.error('Failed to restore study submission history:', error)
+      ElMessage.warning('任务历史加载失败，请确认后端实例和数据库是否正确')
+    }
   },
   { immediate: true },
 )
 
 watch(cards, (nextCards) => {
-  const routeUserDeckId = route.params.userDeckId
-  if (typeof routeUserDeckId === 'string' && routeUserDeckId) {
-    studyTasksStore.initializeSession(`userDeck:${routeUserDeckId}`, nextCards)
-    return
-  }
-
-  const routeLessonId = route.params.lessonId
-  if (typeof routeLessonId !== 'string' || !routeLessonId) return
-  studyTasksStore.initializeLesson(routeLessonId, nextCards)
+  const lessonId = route.params.lessonId
+  if (typeof lessonId !== 'string' || !lessonId) return
+  studyTasksStore.initializeLesson(lessonId, nextCards)
 })
 
 watch(currentIndex, () => {
@@ -291,7 +263,7 @@ async function startRealtimeForCurrentCard(): Promise<boolean> {
   if (!currentCard.value) return false
 
   try {
-    const lessonId = parseNumericIdOrThrow(currentCard.value.lessonId, '课程 ID')
+    const lessonId = parseNumericIdOrThrow(route.params.lessonId as string, '课程 ID')
     const cardId = parseNumericIdOrThrow(currentCard.value.id, '卡片 ID')
     const connected = await realtimeAsr.connect(lessonId, cardId)
     const hasSessionId = connected ? await waitForRealtimeSessionId() : false
@@ -502,19 +474,12 @@ function handleSummary() {
 
 function exitSummary() {
   isSummaryOpen.value = false
-  if (isUserDeckSession.value) {
-    router.push('/my-courses')
-    return
-  }
-
-  const routeLessonId = route.params.lessonId
-  if (typeof routeLessonId === 'string' && routeLessonId) {
-    router.push(`/summary/${routeLessonId}`)
-  }
+  const lessonId = route.params.lessonId as string
+  router.push(`/summary/${lessonId}`)
 }
 
 function exitStudy() {
-  router.push(isUserDeckSession.value ? '/my-courses' : '/library')
+  router.push('/library')
 }
 </script>
 

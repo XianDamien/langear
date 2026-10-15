@@ -1,21 +1,50 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { Play } from 'lucide-vue-next'
+import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
+import { useDeckStore } from '@/stores/deck'
 import { useUserCoursesStore } from '@/stores/userCourses'
+import {
+  buildSelectedTree,
+  findDeckById,
+  findFirstSelectedLessonId,
+} from '@/utils/deckSelection'
 
 const router = useRouter()
+const deckStore = useDeckStore()
 const userCoursesStore = useUserCoursesStore()
-const { userDecks, loading } = storeToRefs(userCoursesStore)
+const { deckTree, loading } = storeToRefs(deckStore)
+const {
+  selectedLessonIdSet,
+  loading: coursesLoading,
+} = storeToRefs(userCoursesStore)
+
+const myCourseTree = computed(() => buildSelectedTree(deckTree.value, selectedLessonIdSet.value))
+const pageLoading = computed(() => loading.value || coursesLoading.value)
 
 onMounted(() => {
-  void userCoursesStore.load()
+  if (!deckTree.value.length) {
+    deckStore.load()
+  }
+  userCoursesStore.load()
 })
 
-function handlePlayDeck(userDeckId: number) {
-  router.push(`/study/decks/${userDeckId}`)
+function handleSelectLesson(lessonId: string) {
+  deckStore.selectLesson(lessonId)
+  router.push(`/study/${lessonId}`)
+}
+
+function handlePlayDeck(deckId: string) {
+  const deck = findDeckById(myCourseTree.value, deckId)
+  if (!deck) return
+
+  const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
+  if (lessonId) {
+    deckStore.selectLesson(lessonId)
+    router.push(`/study/${lessonId}`)
+  }
 }
 </script>
 
@@ -26,61 +55,42 @@ function handlePlayDeck(userDeckId: number) {
     </h2>
 
     <div
-      v-if="loading"
+      v-if="pageLoading"
       class="py-20 text-center text-slate-500"
     >
       加载中...
     </div>
 
     <div
-      v-else-if="!userDecks.length"
+      v-else-if="!myCourseTree.length"
       class="border-2 border-dashed border-slate-200 p-8 text-center"
     >
       <p class="mb-4 text-slate-500">
-        还没有课程
+        你还没有加入任何课程。去题库挑选一些 lesson 吧。
       </p>
       <RetroButton
         variant="primary"
         size="sm"
         @click="router.push('/library')"
       >
-        去题库添加
+        去题库添加课程
       </RetroButton>
     </div>
 
     <div
       v-else
-      class="space-y-3"
+      class="space-y-2"
     >
-      <div
-        v-for="userDeck in userDecks"
-        :key="userDeck.id"
-        class="flex items-center justify-between border border-slate-200 bg-white p-4 transition-colors hover:border-brand-accent"
-      >
-        <div class="min-w-0">
-          <div class="truncate text-lg font-bold text-slate-900">
-            {{ userDeck.title }}
-          </div>
-          <div class="mt-1 text-sm text-slate-500">
-            <span class="font-pixel text-brand-accent">{{ userDeck.new_count }}</span> 新卡 •
-            <span class="font-pixel text-brand-accent">{{ userDeck.review_count }}</span> 复习 •
-            <span class="font-pixel text-sky-600">{{ userDeck.learning_count }}</span> 学习中 •
-            <span class="text-green-600">{{ userDeck.total_count }}</span> 总句数
-          </div>
-          <div class="mt-1 text-xs uppercase text-slate-400">
-            {{ userDeck.scope_type }}
-          </div>
-        </div>
-
-        <RetroButton
-          variant="primary"
-          size="sm"
-          :icon="Play"
-          @click="handlePlayDeck(userDeck.id)"
-        >
-          开始
-        </RetroButton>
-      </div>
+      <DeckTreeItem
+        v-for="deck in myCourseTree"
+        :key="deck.id"
+        :deck="deck"
+        mode="my-courses"
+        :selected-lesson-id-set="selectedLessonIdSet"
+        :depth="0"
+        @select-lesson="handleSelectLesson"
+        @play-deck="handlePlayDeck"
+      />
     </div>
   </div>
 </template>
