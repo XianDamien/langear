@@ -11,6 +11,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  UV_HTTP_TIMEOUT: '120'
+  UV_HTTP_RETRIES: '3'
 
 # This workflow never mutates servers. Staging and production consume this
 # single frontend/backend bundle through scripts/release/manage.py.
@@ -31,6 +33,8 @@ jobs:
         with:
           version: '0.8.22'
           python-version: '3.11'
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
       - name: Check release tooling
         run: python3 -m unittest discover -s scripts/release -p 'test_*.py' -v
       - name: Backend tests with isolated configuration
