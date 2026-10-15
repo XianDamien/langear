@@ -9,7 +9,7 @@ import {
   buildMockStudySession,
   getMockRatingLabel,
 } from './mock/study'
-import type { SettingsData } from '@/types/api'
+import type { BackendSettingsData } from '@/types/api'
 import type { FsrsRating } from '@/types/domain'
 import { formatBusinessIso } from '@/utils/businessTime'
 
@@ -333,14 +333,25 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
     return mockResolve(mockLessonSummary(summaryMatch[1]!))
   }
 
-  if (method === 'get' && url === '/settings') {
+  if ((method === 'get' || method === 'put') && url === '/settings') {
     await delay()
-    return mockResolve({ ...mockSettings })
-  }
-
-  if (method === 'put' && url === '/settings') {
-    await delay()
-    return mockResolve(parseBody(config) as SettingsData)
+    const deckId = getParam(config, 'deck_id')
+    const account = String(config.headers.Authorization || 'mock-user')
+    const defaultsKey = 'mock_settings:' + account + ':defaults'
+    const key = deckId === undefined ? defaultsKey : 'mock_settings:' + account + ':deck:' + deckId
+    const defaults = JSON.parse(sessionStorage.getItem(defaultsKey) || JSON.stringify(mockSettings)) as BackendSettingsData
+    const values = JSON.parse(sessionStorage.getItem(key) || JSON.stringify({
+      ...defaults,
+      ...(deckId === undefined ? {} : {
+        deck_id: Number(deckId), deck_title: '牌组 ' + deckId,
+        daily_new_limit: 20, daily_review_limit: 100,
+      }),
+    })) as BackendSettingsData
+    if (method === 'put') {
+      Object.assign(values, parseBody(config) as BackendSettingsData)
+      sessionStorage.setItem(key, JSON.stringify(values))
+    }
+    return mockResolve(values)
   }
 
   return null

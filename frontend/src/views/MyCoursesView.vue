@@ -36,6 +36,10 @@ function handleSelectLesson(lessonId: string) {
   router.push(`/study/${lessonId}`)
 }
 
+function handleEditDeckSettings(deckId: string) {
+  router.push({ name: 'Settings', query: { deck_id: deckId } })
+}
+
 function handlePlayDeck(deckId: string) {
   const deck = findDeckById(myCourseTree.value, deckId)
   if (!deck) return
@@ -90,6 +94,7 @@ function handlePlayDeck(deckId: string) {
         :depth="0"
         @select-lesson="handleSelectLesson"
         @play-deck="handlePlayDeck"
+        @edit-deck-settings="handleEditDeckSettings"
       />
     </div>
   </div>
