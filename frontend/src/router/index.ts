@@ -36,6 +36,11 @@ const router = createRouter({
       meta: { fullscreen: true },
     },
     {
+      path: '/decks/:deckId/settings',
+      name: 'DeckSettings',
+      redirect: to => ({ name: 'Settings', query: { deck_id: String(to.params.deckId) } }),
+    },
+    {
       path: '/cards/:cardId',
       name: 'CardDetail',
       component: () => import('@/views/CardDetailView.vue'),

@@ -7,12 +7,6 @@ import type {
   Card,
 } from './domain'
 
-export interface ApiError {
-  code: string
-  message: string
-  request_id: string
-}
-
 export interface CurrentUser {
   id: number
   username: string
@@ -25,6 +19,12 @@ export interface AuthResponse {
   access_token: string
   token_type: 'bearer'
   user: CurrentUser
+}
+
+export interface ApiError {
+  code: string
+  message: string
+  request_id: string
 }
 
 export interface SubmissionDisplayError {
@@ -241,11 +241,27 @@ export interface LessonSummary {
 }
 
 export interface SettingsData {
+  deckId?: number
+  deckTitle?: string
+  dailyNewLimit?: number
+  dailyReviewLimit?: number
   desiredRetention: number
   learningSteps: string
   relearningSteps: string
   maximumInterval: number
   defaultSourceScope: string
+}
+
+export interface BackendSettingsData {
+  deck_id?: number
+  deck_title?: string
+  daily_new_limit?: number
+  daily_review_limit?: number
+  desired_retention: number
+  learning_steps: number[]
+  relearning_steps: number[]
+  maximum_interval: number
+  default_source_scope?: number[]
 }
 
 export interface DeckTreeLessonNode {

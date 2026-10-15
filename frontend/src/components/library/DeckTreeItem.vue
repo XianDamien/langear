@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, ChevronRight, Check, Play, Plus } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Check, Play, Plus, Settings } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import type { Deck } from '@/types/domain'
 import {
@@ -20,6 +20,7 @@ const emit = defineEmits<{
   selectLesson: [lessonId: string]
   toggleDeckSelection: [deckId: string]
   playDeck: [deckId: string]
+  editDeckSettings: [deckId: string]
 }>()
 
 const expanded = ref(props.depth === 0)
@@ -44,6 +45,11 @@ function handleChevronClick() {
 }
 
 function handleRowClick() {
+  if (props.mode === 'library') {
+    toggle()
+    return
+  }
+
   if (props.deck.type === 'lesson') {
     emit('selectLesson', props.deck.id)
     return
@@ -110,9 +116,9 @@ function handlePlayClick() {
             v-if="deck.type === 'lesson'"
             class="text-sm text-slate-500"
           >
-            <span class="font-pixel text-brand-accent">{{ deck.newCards }}</span> 新卡 •
-            <span class="font-pixel text-brand-accent">{{ deck.reviewCards }}</span> 复习 •
-            <span class="text-green-600">{{ deck.completedCards }}</span> 已完成
+            <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·
+            <span class="font-pixel text-brand-accent">复习 {{ deck.reviewCards }}</span> ·
+            <span class="text-green-600">完成 {{ deck.completedCards }}</span>
           </div>
 
           <div
@@ -120,12 +126,11 @@ function handlePlayClick() {
             class="text-xs text-slate-500 uppercase"
           >
             <template v-if="mode === 'library' && selectionStatus !== 'none'">
-              已加入 {{ selectedLessonCount }}/{{ totalLessonCount }} lessons •
+              {{ selectionStatus === 'full' ? '已选' : '' }}{{ selectedLessonCount }}/{{ totalLessonCount }}
             </template>
             <template v-if="mode === 'my-courses'">
-              {{ totalLessonCount }} lessons •
+              {{ totalLessonCount }} 节
             </template>
-            {{ deck.totalCards }} 句
           </div>
         </div>
       </div>
@@ -142,6 +147,15 @@ function handlePlayClick() {
           </RetroButton>
         </template>
         <template v-else>
+          <button
+            type="button"
+            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent"
+            :title="`${deck.name} 设置`"
+            :aria-label="`${deck.name} 设置`"
+            @click.stop="emit('editDeckSettings', deck.id)"
+          >
+            <Settings :size="16" />
+          </button>
           <RetroButton
             variant="primary"
             size="sm"
@@ -165,6 +179,7 @@ function handlePlayClick() {
         @select-lesson="emit('selectLesson', $event)"
         @toggle-deck-selection="emit('toggleDeckSelection', $event)"
         @play-deck="emit('playDeck', $event)"
+        @edit-deck-settings="emit('editDeckSettings', $event)"
       />
     </template>
   </div>

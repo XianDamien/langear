@@ -1,39 +1,44 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
-import { useDashboardStore } from '@/stores/dashboard'
 import RetroCard from '@/components/ui/RetroCard.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
 
 const settingsStore = useSettingsStore()
-const dashboardStore = useDashboardStore()
-const {
-  desiredRetention,
-  learningSteps,
-  relearningSteps,
-  maximumInterval,
-  defaultSourceScope,
-  saving,
-  loading,
-} =
+const route = useRoute()
+const { desiredRetention, learningSteps, relearningSteps, maximumInterval, defaultSourceScope, saving, loading, loadError, saveError } =
   storeToRefs(settingsStore)
-
-onMounted(() => {
-  settingsStore.load()
+const { deckId, deckTitle, dailyNewLimit, dailyReviewLimit } = storeToRefs(settingsStore)
+const retentionPercent = computed({
+  get: () => Number((desiredRetention.value * 100).toFixed(4)),
+  set: (value: number) => { desiredRetention.value = value / 100 },
 })
+
+function loadSettings() {
+  const raw = route.query.deck_id
+  return settingsStore.load(raw === undefined ? undefined : Number(raw))
+}
+watch(() => route.query.deck_id, loadSettings, { immediate: true })
 
 async function handleSave() {
   await settingsStore.save()
-  await dashboardStore.load()
 }
 </script>
 
 <template>
   <div class="animate-fadeIn max-w-xl mx-auto">
     <h2 class="text-3xl font-bold mb-6 text-brand-accent uppercase">
-      设置
+      {{ deckId ? deckTitle + ' · 设置' : '设置' }}
     </h2>
+
+    <RouterLink v-if="route.query.deck_id" to="/my-courses" class="mb-4 inline-block text-sm text-brand-accent underline">
+      返回我的课程
+    </RouterLink>
+    <p class="mb-6 text-sm text-slate-500">
+      {{ route.query.deck_id ? '仅调整你在此牌组中的学习设置，不影响其他用户。子牌组未单独设置时继承此配置。' : '当前账号的默认设置。单个牌组的设置请从「我的课程」进入。' }}
+    </p>
 
     <div
       v-if="loading"
@@ -42,78 +47,88 @@ async function handleSave() {
       加载中...
     </div>
 
+    <div v-else-if="loadError" role="alert" class="border border-amber-400 p-4">
+      <p>{{ loadError }}</p>
+      <button type="button" class="mt-3 underline" @click="loadSettings">重试</button>
+    </div>
+
     <template v-else>
       <RetroCard class="space-y-6">
-        <div>
-          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            目标记忆率
-          </label>
-          <input
-            v-model.number="desiredRetention"
-            type="number"
-            min="0.5"
-            max="0.99"
-            step="0.01"
-            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
-          >
-        </div>
+        <form class="space-y-6" @submit.prevent="handleSave">
+          <template v-if="deckId">
+            <div>
+              <label for="daily-new-limit" class="block text-sm font-bold text-slate-500 mb-2">每日新学数量</label>
+              <input id="daily-new-limit" v-model.number="dailyNewLimit" type="number" min="0" max="10000" step="1" required class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
+            </div>
+            <div>
+              <label for="daily-review-limit" class="block text-sm font-bold text-slate-500 mb-2">每日复习数量</label>
+              <input id="daily-review-limit" v-model.number="dailyReviewLimit" type="number" min="0" max="10000" step="1" required class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
+            </div>
+          </template>
+          <div>
+            <label for="desired-retention" class="block text-sm font-bold uppercase text-slate-500 mb-2">
+              目标保留率（%）
+            </label>
+            <input
+              id="desired-retention"
+              v-model.number="retentionPercent"
+              type="number"
+              min="1"
+              max="99.9"
+              step="0.1"
+              required
+              class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
+            >
+          </div>
 
-        <div>
-          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            学习步长
-          </label>
-          <input
-            v-model.trim="learningSteps"
-            type="text"
-            placeholder="单位：分钟，例如 15 或 15,1440"
-            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
-          >
-        </div>
+          <div>
+            <label for="maximum-interval" class="block text-sm font-bold uppercase text-slate-500 mb-2">
+              最大复习间隔（天）
+            </label>
+            <input
+              id="maximum-interval"
+              v-model.number="maximumInterval"
+              :max="deckId ? 36500 : undefined"
+              type="number"
+              min="1"
+              step="1"
+              required
+              class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
+            >
+          </div>
 
-        <div>
-          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            重学步长
-          </label>
-          <input
-            v-model.trim="relearningSteps"
-            type="text"
-            placeholder="单位：分钟，例如 15"
-            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
-          >
-        </div>
+          <div>
+            <label for="learning-steps" class="block text-sm font-bold text-slate-500 mb-2">学习步长（分钟）</label>
+            <input id="learning-steps" v-model.trim="learningSteps" type="text" placeholder="例如 1,15；留空表示无步长" class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
+          </div>
+          <div>
+            <label for="relearning-steps" class="block text-sm font-bold text-slate-500 mb-2">重学步长（分钟）</label>
+            <input id="relearning-steps" v-model.trim="relearningSteps" type="text" placeholder="例如 15；留空表示无步长" class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
+          </div>
 
-        <div>
-          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            最大间隔
-          </label>
-          <input
-            v-model.number="maximumInterval"
-            type="number"
-            min="1"
-            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
-          >
-        </div>
+          <div v-if="!deckId">
+            <label for="default-source-scope" class="block text-sm font-bold uppercase text-slate-500 mb-2">
+              默认教材范围
+            </label>
+            <input
+              id="default-source-scope"
+              v-model.trim="defaultSourceScope"
+              type="text"
+              placeholder="留空表示全部，或填写 source ID，逗号分隔"
+              class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none bg-white"
+            >
+          </div>
 
-        <div>
-          <label class="block text-sm font-bold uppercase text-slate-500 mb-2">
-            默认教材范围
-          </label>
-          <input
-            v-model.trim="defaultSourceScope"
-            type="text"
-            placeholder="留空表示全部，或填写 source ID，逗号分隔"
-            class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none bg-white"
+          <p v-if="saveError" role="alert" class="text-sm text-red-600">{{ saveError }}</p>
+          <RetroButton
+            type="submit"
+            variant="primary"
+            class="w-full"
+            :disabled="saving"
           >
-        </div>
-
-        <RetroButton
-          variant="primary"
-          class="w-full"
-          :disabled="saving"
-          @click="handleSave"
-        >
-          {{ saving ? '保存中...' : '保存设置' }}
-        </RetroButton>
+            {{ saving ? '保存中...' : '保存设置' }}
+          </RetroButton>
+        </form>
       </RetroCard>
     </template>
   </div>
