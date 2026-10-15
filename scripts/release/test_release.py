@@ -69,6 +69,19 @@ class BundleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Unsafe'):
                 extract_frontend(archive, self.root / 'web')
 
+    def test_prepared_frontend_is_readable_by_nginx_workers(self):
+        archive = self.root / 'valid.tar.gz'
+        with tarfile.open(archive, 'w:gz') as handle:
+            entry = tarfile.TarInfo('index.html')
+            entry.size = 2
+            entry.mode = 0o644
+            handle.addfile(entry, io.BytesIO(b'ok'))
+        destination = self.root / 'prepared'
+        destination.mkdir(mode=0o700)
+        extract_frontend(archive, destination)
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((destination / 'index.html').read_text(), 'ok')
+
     def test_release_overlay_removes_source_mount(self):
         config = overlay(self.manifest['image_id'], self.root, True)
         self.assertIn('volumes: !override', config)

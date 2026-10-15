@@ -64,6 +64,8 @@ def extract_frontend(archive_path, destination):
         archive.extractall(destination)
     if not (destination / 'index.html').is_file():
         raise ValueError('Missing frontend index.html')
+    # TemporaryDirectory starts at 0700; Nginx workers need directory traversal.
+    destination.chmod(0o755)
 
 
 def verify_approval(bundle, manifest):
