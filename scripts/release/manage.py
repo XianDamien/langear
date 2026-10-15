@@ -46,12 +46,12 @@ def upload(environment, directory, sha):
 
 
 def stage(run_id):
-    metadata = json.loads(run('gh', 'run', 'view', run_id, '--json',
-                              'headSha,conclusion,event,workflowName', capture=True))
+    metadata = json.loads(run('gh', 'api', 'repos/{owner}/{repo}/actions/runs/' + run_id, capture=True))
     if (metadata['conclusion'] != 'success' or metadata['event'] not in ('push', 'workflow_dispatch')
-            or metadata['workflowName'] != 'Verify and Package Release'):
+            or metadata['path'] != '.github/workflows/frontend-dev-deploy.yml'):
         raise SystemExit('Use a successful push/workflow_dispatch run of Verify and Package Release')
-    sha = metadata['headSha']
+    # GitHub retains the old workflow display name until the default branch is updated.
+    sha = metadata['head_sha']
     with tempfile.TemporaryDirectory(prefix='langear-release-') as tmp:
         directory = Path(tmp)
         run('gh', 'run', 'download', run_id, '--name', 'langear-release-' + sha, '--dir', directory)

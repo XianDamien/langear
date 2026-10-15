@@ -1,4 +1,5 @@
 import io
+import contextlib
 import json
 from pathlib import Path
 import tarfile
@@ -7,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from host import Deployment, digest, extract_frontend, overlay, verify_approval, verify_bundle
+from manage import stage
 
 
 class BundleTests(unittest.TestCase):
@@ -79,6 +81,26 @@ class BundleTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'revision changed'):
                 deployment.restore({'db_revision': ['old']})
             compose.assert_not_called()
+
+    def test_stage_uses_workflow_path_despite_old_github_display_name(self):
+        metadata = {'conclusion': 'success', 'event': 'workflow_dispatch',
+                    'path': '.github/workflows/frontend-dev-deploy.yml',
+                    'name': 'Frontend Dev Deploy', 'head_sha': self.manifest['sha']}
+        with patch('manage.run', return_value=json.dumps(metadata)), \
+                patch('manage.tempfile.TemporaryDirectory', return_value=contextlib.nullcontext(str(self.root))), \
+                patch('manage.upload', return_value='/remote/bundle') as upload, \
+                patch('manage.invoke') as invoke:
+            stage('123')
+            upload.assert_called_once_with('staging', self.root, self.manifest['sha'])
+            invoke.assert_called_once_with('staging', 'deploy', '--bundle', '/remote/bundle')
+
+    def test_stage_refuses_pr_merge_artifacts(self):
+        metadata = {'conclusion': 'success', 'event': 'pull_request',
+                    'path': '.github/workflows/frontend-dev-deploy.yml'}
+        with patch('manage.run', return_value=json.dumps(metadata)), patch('manage.upload') as upload:
+            with self.assertRaises(SystemExit):
+                stage('123')
+            upload.assert_not_called()
 
 
 if __name__ == '__main__':
