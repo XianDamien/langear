@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useDeckStore } from '@/stores/deck'
+import { useUserCoursesStore } from '@/stores/userCourses'
+import { buildSelectedTree, findDeckById, findFirstSelectedLessonId } from '@/utils/deckSelection'
 import StatsCards from '@/components/dashboard/StatsCards.vue'
 import ActivityChart from '@/components/dashboard/ActivityChart.vue'
 import RecentDecks from '@/components/dashboard/RecentDecks.vue'
@@ -12,33 +14,39 @@ import Leaderboard from '@/components/dashboard/Leaderboard.vue'
 const router = useRouter()
 const dashboardStore = useDashboardStore()
 const deckStore = useDeckStore()
+const userCoursesStore = useUserCoursesStore()
 const { stats, weeklyTrend, loading, error } = storeToRefs(dashboardStore)
-const { deckTree, loading: deckLoading } = storeToRefs(deckStore)
+const { deckTree } = storeToRefs(deckStore)
+const { selectedLessonIdSet } = storeToRefs(userCoursesStore)
+const myCourseTree = computed(() => buildSelectedTree(deckTree.value, selectedLessonIdSet.value))
+const coursesLoading = ref(true)
+const coursesError = ref<string | null>(null)
+
+async function loadCourses() {
+  coursesLoading.value = true
+  coursesError.value = null
+  try {
+    await Promise.all([deckStore.load(), userCoursesStore.load()])
+  } catch {
+    coursesError.value = '课程加载失败，请重试'
+  } finally {
+    coursesLoading.value = false
+  }
+}
 
 onMounted(() => {
   dashboardStore.load()
-  deckStore.load()
+  loadCourses()
 })
 
 function handlePlayDeck(deckId: string) {
-  // Find a lesson under this deck to start studying
-  function findFirstLesson(decks: typeof deckTree.value): string | null {
-    for (const d of decks) {
-      if (d.type === 'lesson') return d.id
-      if (d.children?.length) {
-        const found = findFirstLesson(d.children)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
-  const target = deckTree.value.find((d) => d.id === deckId)
-  if (target) {
-    const lessonId = target.type === 'lesson' ? target.id : findFirstLesson(target.children || [])
-    if (lessonId) {
-      router.push(`/study/${lessonId}`)
-    }
+  if (coursesLoading.value || coursesError.value) return
+  const deck = findDeckById(myCourseTree.value, deckId)
+  if (!deck) return
+  const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
+  if (lessonId) {
+    deckStore.selectLesson(lessonId)
+    router.push(`/study/${lessonId}`)
   }
 }
 </script>
@@ -62,14 +70,17 @@ function handlePlayDeck(deckId: string) {
       <ActivityChart :data="weeklyTrend" />
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <RecentDecks
-          :decks="deckTree"
+          :decks="myCourseTree"
+          :loading="coursesLoading"
+          :error="coursesError"
           @play="handlePlayDeck"
+          @retry="loadCourses"
         />
         <Leaderboard />
       </div>
     </template>
     <div
-      v-else-if="deckLoading"
+      v-else-if="coursesLoading"
       class="text-center text-slate-500 py-20"
     >
       加载中...
