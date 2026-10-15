@@ -27,6 +27,9 @@ docs/*
 !docs/adr/**
 !docs/architecture/
 !docs/architecture/**
+!docs/operations/
+docs/operations/*
+!docs/operations/dev-prod-workflow.md
 
 # Old output directories
 2_processed_output.old/

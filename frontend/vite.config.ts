@@ -6,7 +6,14 @@ import { resolve } from 'path'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
-  const proxyTarget = env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8000'
+  const proxyTarget = env.VITE_DEV_PROXY_TARGET || 'https://8.159.139.145:7145'
+  const targetUrl = new URL(proxyTarget)
+  if (targetUrl.pathname !== '/' || targetUrl.search || targetUrl.hash) {
+    throw new Error('VITE_DEV_PROXY_TARGET must be an origin without /api/v1; VITE_API_BASE_URL supplies the API path.')
+  }
+  if (targetUrl.port === '18000' && env.LANGEAR_ALLOW_PROD_PROXY !== '1') {
+    throw new Error('Port 18000 is the production tunnel. Set LANGEAR_ALLOW_PROD_PROXY=1 only for explicit production investigation.')
+  }
 
   return {
     plugins: [vue()],
@@ -26,11 +33,13 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 3002,
+      strictPort: true,
       proxy: {
         '/api': {
           target: proxyTarget,
           changeOrigin: true,
-          secure: false,
+          // Only the known staging IP uses a self-signed certificate.
+          secure: targetUrl.origin !== 'https://8.159.139.145:7145',
           ws: true,
         },
       },
