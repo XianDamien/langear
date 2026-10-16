@@ -26,7 +26,7 @@ const emit = defineEmits<{
     </div>
     <div v-else-if="!decks.length" class="border border-dashed border-slate-200 p-6 text-slate-500">
       <p>还没有加入课程</p>
-      <RouterLink to="/library" class="mt-3 inline-block text-brand-accent underline">去题库添加课程</RouterLink>
+      <RouterLink to="/library" class="mt-3 inline-block text-brand-accent underline">去题库资源添加课程</RouterLink>
     </div>
     <div v-else class="space-y-3">
       <div

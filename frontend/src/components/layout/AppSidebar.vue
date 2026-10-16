@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { contentCoreEnabled } from '@/services/contentCore'
 import { Home, BookMarked, BookOpen, Settings as SettingsIcon } from 'lucide-vue-next'
 import SidebarNav from './SidebarNav.vue'
 import RetroButton from '../ui/RetroButton.vue'
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 
     <nav class="mt-8">
       <SidebarNav
+        v-if="!contentCoreEnabled"
         to="/dashboard"
         :icon="Home"
         label="总览"
@@ -43,16 +45,18 @@ const emit = defineEmits<{
       <SidebarNav
         to="/library"
         :icon="BookOpen"
-        label="题库"
+        label="题库资源"
         @navigate="emit('close')"
       />
       <SidebarNav
+        v-if="!contentCoreEnabled"
         to="/my-courses"
         :icon="BookMarked"
         label="我的课程"
         @navigate="emit('close')"
       />
       <SidebarNav
+        v-if="!contentCoreEnabled"
         to="/settings"
         :icon="SettingsIcon"
         label="设置"

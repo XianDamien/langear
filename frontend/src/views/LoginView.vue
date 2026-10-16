@@ -3,12 +3,17 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Lock, LogIn, UserPlus } from 'lucide-vue-next'
+import { contentCoreEnabled, resourceError } from '@/services/contentCore'
+import { useCoreAuthStore } from '@/stores/coreAuth'
 import { useAuthStore } from '@/stores/auth'
 import RetroButton from '@/components/ui/RetroButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const coreAuth = useCoreAuthStore()
+const formError = ref('')
+const busy = computed(() => contentCoreEnabled ? coreAuth.loading : authStore.loading)
 
 const mode = ref<'login' | 'register'>('login')
 const form = reactive({
@@ -22,7 +27,13 @@ const title = computed(() => (mode.value === 'login' ? '登录 LanGear' : '创�
 const submitIcon = computed(() => (mode.value === 'login' ? LogIn : UserPlus))
 
 async function submit() {
+  formError.value = ''
   try {
+    if (contentCoreEnabled) {
+      await coreAuth.signIn(mode.value, form.email, form.password)
+      await router.push('/library')
+      return
+    }
     if (mode.value === 'login') {
       await authStore.loginWithPassword({
         username: form.username,
@@ -38,7 +49,8 @@ async function submit() {
     }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     await router.push(redirect)
-  } catch {
+  } catch (error) {
+    if (contentCoreEnabled) { formError.value = resourceError(error); return }
     ElMessage.error(mode.value === 'login' ? '用户名或密码不正确' : '账号创建失败')
   }
 }
@@ -68,16 +80,28 @@ async function submit() {
 
       <div class="grid grid-cols-3 gap-4 text-sm text-slate-300">
         <div class="border border-slate-700 p-4">
-          <div class="text-2xl font-black text-white">01</div>
-          <div class="mt-2">个人卡组</div>
+          <div class="text-2xl font-black text-white">
+            01
+          </div>
+          <div class="mt-2">
+            个人卡组
+          </div>
         </div>
         <div class="border border-slate-700 p-4">
-          <div class="text-2xl font-black text-white">02</div>
-          <div class="mt-2">复习状态</div>
+          <div class="text-2xl font-black text-white">
+            02
+          </div>
+          <div class="mt-2">
+            复习状态
+          </div>
         </div>
         <div class="border border-slate-700 p-4">
-          <div class="text-2xl font-black text-white">03</div>
-          <div class="mt-2">练习流水</div>
+          <div class="text-2xl font-black text-white">
+            03
+          </div>
+          <div class="mt-2">
+            练习流水
+          </div>
         </div>
       </div>
     </section>
@@ -85,15 +109,35 @@ async function submit() {
     <section class="flex items-center justify-center px-5 py-10">
       <div class="w-full max-w-md bg-brand-panel border border-slate-200 shadow-mech p-8">
         <div class="mb-8">
-          <div class="text-sm text-slate-500 uppercase mb-2">Account</div>
-          <h2 class="text-3xl font-black text-slate-950">{{ title }}</h2>
+          <div class="text-sm text-slate-500 uppercase mb-2">
+            Account
+          </div>
+          <h2 class="text-3xl font-black text-slate-950">
+            {{ title }}
+          </h2>
         </div>
 
+        <p
+          v-if="contentCoreEnabled"
+          class="mb-5 text-sm text-slate-500"
+        >
+          使用题库账号登录；首次使用请创建账号。
+        </p>
+        <p
+          v-if="formError"
+          class="mb-4 text-sm text-red-700"
+          role="alert"
+        >
+          {{ formError }}
+        </p>
         <form
           class="space-y-5"
           @submit.prevent="submit"
         >
-          <label class="block">
+          <label
+            v-if="!contentCoreEnabled"
+            class="block"
+          >
             <span class="text-sm font-bold text-slate-700">用户名</span>
             <input
               v-model.trim="form.username"
@@ -106,7 +150,7 @@ async function submit() {
           </label>
 
           <label
-            v-if="mode === 'register'"
+            v-if="mode === 'register' || contentCoreEnabled"
             class="block"
           >
             <span class="text-sm font-bold text-slate-700">邮箱</span>
@@ -114,12 +158,13 @@ async function submit() {
               v-model.trim="form.email"
               class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
               autocomplete="email"
+              :required="contentCoreEnabled"
               type="email"
             >
           </label>
 
           <label
-            v-if="mode === 'register'"
+            v-if="mode === 'register' && !contentCoreEnabled"
             class="block"
           >
             <span class="text-sm font-bold text-slate-700">邀请码</span>
@@ -140,7 +185,7 @@ async function submit() {
               autocomplete="current-password"
               type="password"
               required
-              :minlength="mode === 'register' ? 8 : undefined"
+              :minlength="contentCoreEnabled ? 12 : mode === 'register' ? 8 : undefined"
             >
           </label>
 
@@ -149,7 +194,7 @@ async function submit() {
             variant="primary"
             type="submit"
             :icon="submitIcon"
-            :disabled="authStore.loading"
+            :disabled="busy"
           >
             {{ mode === 'login' ? '登录' : '创建并登录' }}
           </RetroButton>

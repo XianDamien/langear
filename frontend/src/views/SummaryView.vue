@@ -106,7 +106,7 @@ function retry() {
             variant="secondary"
             @click="router.push('/library')"
           >
-            返回题库
+            返回题库资源
           </RetroButton>
           <RetroButton
             variant="primary"

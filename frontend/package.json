@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:content": "vite --mode content",
     "dev:staging": "vite --mode staging",
     "dev:mock": "sh -c 'vite --mode mock --host \"${HOST:-localhost}\" --port \"${PORT:-3002}\"'",
     "build": "vue-tsc -b && vite build",
@@ -16,6 +17,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:content": "playwright test --config playwright.content.config.ts",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui"
   },

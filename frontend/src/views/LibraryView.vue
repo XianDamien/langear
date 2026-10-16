@@ -82,7 +82,7 @@ async function handlePickerSave(lessonIds: number[]) {
 <template>
   <div class="animate-fadeIn">
     <h2 class="mb-6 text-3xl font-bold uppercase text-brand-accent">
-      题库
+      题库资源
     </h2>
 
     <div
