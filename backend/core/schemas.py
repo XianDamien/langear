@@ -70,6 +70,7 @@ class DeckUpdate(DeckCreate):
 
 
 class NoteCreate(Body):
+    card_template_key: str | None = Field(default=None, min_length=1, max_length=80)
     note_type_key: Literal["vocabulary", "sentence"]
     fields: dict[str, str | None]
     tags: list[str] = Field(default_factory=list, max_length=100)
