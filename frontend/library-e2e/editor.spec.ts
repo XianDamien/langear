@@ -12,7 +12,8 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
       noteIds.push(body.id)
     }
   })
-  await page.goto('/login')
+  await page.addInitScript(() => localStorage.setItem('langear-use-mock', 'true'))
+  await page.goto('/login?mock=true')
   await page.getByLabel('用户名', { exact: true }).fill('test')
   await page.getByLabel('密码', { exact: true }).fill('test123')
   await page.getByRole('button', { name: '登录', exact: true }).click()
@@ -97,6 +98,7 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await expect(deck.getByRole('button', { name: '已加入', exact: true })).toBeVisible()
     await deck.getByRole('button', { name: deckName, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/review/${deckId}`))
+    await expect(page.getByText('模拟模式 · 演示数据')).toHaveCount(0)
     for (let i = 0; i < 5; i++) {
       await expect(page.getByTestId('card-front-container')).toBeVisible()
       await expect(page.getByTestId('card-back-container')).toHaveCount(0)
@@ -108,10 +110,12 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
       if (i === 0) {
         await expect(page.getByTestId('card-front-container')).toContainText('journey')
         await expect(page.getByTestId('card-front-container')).not.toContainText('旅程')
+        await page.screenshot({ path: '/tmp/langear-real-vocabulary-front.png', animations: 'disabled' })
       }
       await page.getByRole('button', { name: '显示答案', exact: true }).click()
       await expect(page.getByTestId('card-back-container')).toBeVisible()
       await expect(page.getByTestId('card-back-container')).toContainText(i === 0 || i === 2 ? '旅程' : 'Every journey begins with a single step.')
+      if (i === 0) await page.screenshot({ path: '/tmp/langear-real-vocabulary-back.png', animations: 'disabled' })
       await page.getByRole('button', { name: i === 4 ? '完成本轮' : '下一张', exact: true }).click()
     }
     await expect(page.getByRole('heading', { name: '本轮翻卡完成' })).toBeVisible()

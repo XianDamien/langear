@@ -1,36 +1,17 @@
-import { describe, expect, it } from 'vitest'
-import { resolveUseMockMode } from '@/config/runtimeFlags'
+import { describe, expect, it, vi } from 'vitest'
+import { getUseMockMode, resolveUseMockMode } from '@/config/runtimeFlags'
 
-function createStorage(initialValue: string | null = null) {
-  let value = initialValue
-  return {
-    getItem() {
-      return value
-    },
-    setItem(_key: string, nextValue: string) {
-      value = nextValue
-    },
-    removeItem() {
-      value = null
-    },
-  }
-}
-
-describe('resolveUseMockMode', () => {
-  it('prefers env flag when explicitly enabled', () => {
-    const storage = createStorage(null)
-    expect(resolveUseMockMode('true', '', storage)).toBe(true)
+describe('explicit mock mode', () => {
+  it('requires an explicit startup flag', () => {
+    expect(resolveUseMockMode('true')).toBe(true)
+    expect(resolveUseMockMode('false')).toBe(false)
+    expect(resolveUseMockMode(undefined)).toBe(false)
   })
-
-  it('persists querystring override to storage', () => {
-    const storage = createStorage(null)
-    expect(resolveUseMockMode('false', '?mock=true', storage)).toBe(true)
-    expect(resolveUseMockMode('false', '', storage)).toBe(true)
-  })
-
-  it('clears persisted mock mode when querystring disables it', () => {
-    const storage = createStorage('true')
-    expect(resolveUseMockMode('false', '?mock=false', storage)).toBe(false)
-    expect(resolveUseMockMode('false', '', storage)).toBe(false)
+  it('ignores stale mock preferences and URL overrides during normal startup', () => {
+    vi.stubEnv('VITE_USE_MOCK', 'false')
+    window.localStorage.setItem('langear-use-mock', 'true')
+    window.history.replaceState({}, '', '/?mock=true')
+    try { expect(getUseMockMode()).toBe(false) }
+    finally { window.history.replaceState({}, '', '/'); vi.unstubAllEnvs() }
   })
 })

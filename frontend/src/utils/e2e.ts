@@ -1,4 +1,6 @@
-export const isE2EMode = import.meta.env.VITE_E2E_MODE === 'true'
+import { getUseMockMode } from '@/config/runtimeFlags'
+
+export const isE2EMode = getUseMockMode() && import.meta.env.VITE_E2E_MODE === 'true'
 
 export function buildE2ERealtimeSessionId(lessonId: number, cardId: number): string {
   return `e2e-session-${lessonId}-${cardId}`

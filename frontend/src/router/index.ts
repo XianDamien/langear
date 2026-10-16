@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { contentCoreEnabled } from '@/services/contentCore'
 import { useCoreAuthStore } from '@/stores/coreAuth'
+import { getUseMockMode } from '@/config/runtimeFlags'
 import { hasAccessToken } from '@/services/authToken'
 
 const router = createRouter({
@@ -67,6 +68,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  if (getUseMockMode()) return to.name === 'Login' ? { name: 'Dashboard' } : true
   if (contentCoreEnabled) {
     const auth = useCoreAuthStore()
     if (to.name === 'Login') return true

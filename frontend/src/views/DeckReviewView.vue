@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import RetroButton from '@/components/ui/RetroButton.vue'
+import ReviewPracticeCard from '@/components/review/ReviewPracticeCard.vue'
+import ReviewCardFront from '@/components/review/ReviewCardFront.vue'
+import ReviewCardBack from '@/components/review/ReviewCardBack.vue'
 import FlashcardContainer from '@/components/study/modules/FlashcardContainer.vue'
 import PracticeFields from '@/components/study/modules/PracticeFields.vue'
 import { contentResources, libraryContent } from '@/services/libraryContent'
@@ -17,6 +20,12 @@ const finished = ref(false)
 const loading = ref(true)
 const error = ref('')
 const current = computed(() => cards.value[index.value])
+const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
+const wordAnswer = computed(() => ({
+  english: current.value?.back.word || '', chinese: current.value?.back.meaning,
+  phonetic: current.value?.back.phonetic, note: current.value?.back.note,
+}))
+const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
 let generation = 0
 async function load() {
   const request = ++generation
@@ -121,54 +130,73 @@ onBeforeUnmount(() => { generation++ })
         再练一遍
       </RetroButton>
     </div>
-    <template v-else-if="current">
+    <div
+      v-else-if="current"
+      class="flex flex-1 flex-col items-center justify-center py-4"
+    >
       <p class="mb-3 text-center text-sm font-bold text-brand-accent">
         {{ templateLabels[current.card_template_key] }}
       </p>
-      <FlashcardContainer
+      <component
+        :is="isVocabulary ? ReviewPracticeCard : FlashcardContainer"
         :key="current.id"
         :is-flipped="flipped"
-        class="min-h-80 flex-1"
+        :class="isVocabulary ? '' : 'min-h-80 w-full flex-1'"
       >
         <template #front>
+          <ReviewCardFront
+            v-if="isVocabulary"
+            :card="current"
+          />
           <PracticeFields
+            v-else
             :key="`${current.id}-front`"
             :fields="current.front"
           />
         </template>
         <template #back>
+          <template v-if="isVocabulary">
+            <ReviewCardBack :back-snapshot="wordAnswer" />
+            <PracticeFields
+              v-if="Object.keys(wordMedia).length"
+              :fields="wordMedia"
+            />
+          </template>
           <PracticeFields
+            v-else
             :key="`${current.id}-back`"
             :fields="current.back"
           />
         </template>
-      </FlashcardContainer>
-      <footer class="mt-6 flex flex-wrap justify-center gap-3">
-        <RetroButton
-          variant="secondary"
-          :disabled="index === 0"
-          @click="previous"
-        >
-          上一张
-        </RetroButton>
-        <RetroButton
-          v-if="!flipped"
-          @click="flipped = true"
-        >
-          显示答案
-        </RetroButton>
-        <template v-else>
-          <RetroButton
-            variant="secondary"
-            @click="flipped = false"
-          >
-            查看题面
-          </RetroButton>
-          <RetroButton @click="next">
-            {{ index + 1 === cards.length ? '完成本轮' : '下一张' }}
-          </RetroButton>
+        <template #actions>
+          <footer class="flex flex-wrap justify-center gap-3">
+            <RetroButton
+              variant="secondary"
+              :disabled="index === 0"
+              @click="previous"
+            >
+              上一张
+            </RetroButton>
+            <RetroButton
+              v-if="!flipped"
+              @click="flipped = true"
+            >
+              显示答案
+            </RetroButton>
+            <template v-else>
+              <RetroButton
+                variant="secondary"
+                @click="flipped = false"
+              >
+                查看题面
+              </RetroButton>
+              <RetroButton @click="next">
+                {{ index + 1 === cards.length ? '完成本轮' : '下一张' }}
+              </RetroButton>
+            </template>
+          </footer>
         </template>
-      </footer>
-    </template>
+      </component>
+    </div>
   </div>
 </template>

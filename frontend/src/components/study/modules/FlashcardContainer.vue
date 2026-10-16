@@ -14,7 +14,10 @@ const cardClass = computed(() =>
 </script>
 
 <template>
-  <RetroCard :title="isFlipped ? 'Answer' : 'Question'" :class="cardClass">
+  <RetroCard
+    :title="isFlipped ? 'Answer' : 'Question'"
+    :class="cardClass"
+  >
     <div
       v-if="!isFlipped"
       class="flex max-h-full w-full flex-col items-center overflow-y-auto overscroll-contain"
@@ -28,6 +31,12 @@ const cardClass = computed(() =>
       data-testid="card-back-container"
     >
       <slot name="back" />
+    </div>
+    <div
+      v-if="$slots.actions"
+      class="mt-6 w-full shrink-0 border-t border-slate-200 pt-4"
+    >
+      <slot name="actions" />
     </div>
   </RetroCard>
 </template>

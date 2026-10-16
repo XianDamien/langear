@@ -21,6 +21,7 @@ async function mountCoursePage(component: typeof MyCoursesView | typeof LibraryV
     routes: [
       { path: '/my-courses', component: MyCoursesView },
       { path: '/library', component: LibraryView },
+      { path: '/study/:lessonId', component: { template: '<div />' } },
       { path: '/settings', name: 'Settings', component: { template: '<div />' } },
     ],
   })
@@ -42,13 +43,13 @@ describe('personal course settings navigation', () => {
     wrapper.unmount()
   })
 
-  it('does not expose settings or study navigation in library', async () => {
+  it('opens a leaf deck from library while keeping settings in my courses', async () => {
     const { wrapper, router } = await mountCoursePage(LibraryView, '/library')
     expect(wrapper.find('button[aria-label="Lesson one 设置"]').exists()).toBe(false)
     expect(wrapper.findAll('button').some(button => /^(复习|开始)$/.test(button.text()))).toBe(false)
     await wrapper.getComponent(DeckTreeItem).get('.truncate').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/library')
+    expect(router.currentRoute.value.path).toBe('/study/18')
     wrapper.unmount()
   })
 

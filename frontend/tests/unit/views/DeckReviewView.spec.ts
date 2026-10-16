@@ -8,7 +8,7 @@ vi.mock('@/services/libraryContent', () => ({
   contentResources: vi.fn(), libraryContent: { get: vi.fn() },
 }))
 const cards = [
-  { id: 'a', deck_id: 'deck-a', note_id: 'n1', card_template_key: 'vocabulary_english_to_chinese', front: { word: 'journey' }, back: { meaning: '旅程' } },
+  { id: 'a', deck_id: 'deck-a', note_id: 'n1', card_template_key: 'vocabulary_english_to_chinese', front: { word: 'journey' }, back: { word: 'journey', meaning: '旅程' } },
   { id: 'b', deck_id: 'deck-a', note_id: 'n2', card_template_key: 'sentence_translation', front: { chinese: '你好' }, back: { english: 'Hello' } },
 ]
 async function start() {
