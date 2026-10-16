@@ -34,7 +34,7 @@ def test_empty_postgres_migration_seeds_idempotently_and_no_legacy_tables(engine
     # Check migration seeds before the ORM seed helper can repair missing rows.
     with Session(engine) as db:
         assert db.scalar(select(func.count()).select_from(NoteType)) == 2
-        assert db.scalar(select(func.count()).select_from(NoteTypeField)) == 10
+        assert db.scalar(select(func.count()).select_from(NoteTypeField)) == 11
         assert db.scalar(select(func.count()).select_from(CardTemplate)) == 5
         assert db.scalar(select(func.count()).select_from(Collection)) == 1
     from alembic.autogenerate import compare_metadata
@@ -54,11 +54,11 @@ def test_empty_postgres_migration_seeds_idempotently_and_no_legacy_tables(engine
         seed_system(db)
         seed_system(db)
         assert db.scalar(select(func.count()).select_from(NoteType)) == 2
-        assert db.scalar(select(func.count()).select_from(NoteTypeField)) == 10
+        assert db.scalar(select(func.count()).select_from(NoteTypeField)) == 11
         assert db.scalar(select(func.count()).select_from(CardTemplate)) == 5
         assert db.scalar(select(func.count()).select_from(Collection)) == 1
         assert (
-            db.scalar(text("SELECT version_num FROM alembic_version")) == "lan30_0003"
+            db.scalar(text("SELECT version_num FROM alembic_version")) == "lan30_0004"
         )
     for table in ["collections", "decks", "notes", "cards", "attempts", "sessions"]:
         assert all(
