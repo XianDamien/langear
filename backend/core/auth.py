@@ -1,5 +1,7 @@
 """Opaque server sessions, Argon2id and CSRF for every cookie-auth write."""
 
+import base64
+import binascii
 import hashlib
 import hmac
 import secrets
@@ -8,7 +10,7 @@ from datetime import timedelta
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Depends, Request
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete, select, or_
 from sqlalchemy.dialects.postgresql import insert
 from core.config import get_settings
 from core.db import get_db, get_engine
@@ -71,7 +73,7 @@ def rate_limit(request, operation, email):
 
 def public_identity(user, collection):
     return {
-        "user": {"id": user.id, "email": user.email},
+        "user": {"id": user.id, "email": user.email, "username": user.username},
         "collection": {
             "id": collection.id,
             "timezone": collection.timezone,
@@ -112,6 +114,8 @@ def open_session(db, user, request, response):
 def register(db, body, request, response):
     require_origin(request)
     rate_limit(request, "register", body.email)
+    if db.scalar(select(User.id).where(User.username == body.email)):
+        raise DomainError(409, "CONFLICT", "This account identity already exists.")
     user = User(email=body.email, password_hash=HASHER.hash(body.password))
     db.add(user)
     db.flush()
@@ -123,18 +127,49 @@ def register(db, body, request, response):
     return open_session(db, user, request, response)
 
 
+def verify_password(stored_hash, password):
+    """Read legacy hashes without importing legacy runtime/configuration."""
+    try:
+        if stored_hash.startswith("pbkdf2_sha256$"):
+            _, rounds, salt, expected = stored_hash.split("$")
+            iterations = int(rounds)
+            if not 100000 <= iterations <= 1000000:
+                return False
+            decoded = base64.b64decode(
+                salt + "=" * (-len(salt) % 4), altchars=b"-_", validate=True
+            )
+            if not 8 <= len(decoded) <= 128 or len(expected) != 43:
+                return False
+            actual = hashlib.pbkdf2_hmac(
+                "sha256", password.encode(), decoded, iterations
+            )
+            return hmac.compare_digest(
+                base64.urlsafe_b64encode(actual).rstrip(b"=").decode(), expected
+            )
+        return HASHER.verify(stored_hash, password)
+    except (VerificationError, InvalidHashError, ValueError, binascii.Error):
+        return False
+
+
 def login(db, body, request, response):
     require_origin(request)
     rate_limit(request, "login", body.email)
-    user = db.scalar(select(User).where(User.email == body.email))
-    try:
-        HASHER.verify(user.password_hash if user else DUMMY_HASH, body.password)
-        valid = user is not None and not user.disabled
-    except (VerificationError, InvalidHashError):
-        valid = False
-    if not valid:
-        raise DomainError(401, "INVALID_CREDENTIALS", "Invalid email or password.")
-    if HASHER.check_needs_rehash(user.password_hash):
+    users = list(
+        db.scalars(
+            select(User).where(
+                or_(User.email == body.email, User.username == body.email)
+            )
+        )
+    )
+    user = users[0] if len(users) == 1 else None
+    valid = verify_password(user.password_hash if user else DUMMY_HASH, body.password)
+    if not valid or user is None or user.disabled:
+        raise DomainError(
+            401, "INVALID_CREDENTIALS", "Invalid username/email or password."
+        )
+    if user.password_hash.startswith("pbkdf2_sha256$") or HASHER.check_needs_rehash(
+        user.password_hash
+    ):
         user.password_hash = HASHER.hash(body.password)
     return open_session(db, user, request, response)
 

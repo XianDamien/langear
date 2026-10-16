@@ -8,6 +8,20 @@ class Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class Login(Body):
+    # Retain the existing wire key; its value may be a legacy username.
+    email: str = Field(min_length=1, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_identifier(cls, value):
+        value = value.strip().lower()
+        if not value:
+            raise ValueError("Username or email is required")
+        return value
+
+
 class Credentials(Body):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=12, max_length=128)
