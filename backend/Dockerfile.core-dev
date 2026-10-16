@@ -1,0 +1,9 @@
+# Extend the explicitly selected staging dependency image; do not pin a server baseline here.
+ARG DEV_BASE_IMAGE
+FROM ${DEV_BASE_IMAGE}
+USER root
+COPY pyproject.toml uv.lock /tmp/core-deps/
+RUN UV_PROJECT_ENVIRONMENT=/app/.venv uv sync --locked --project /tmp/core-deps --no-install-project
+WORKDIR /workspace/backend
+ENV PYTHONPATH=/workspace/backend
+CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -14,6 +14,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
 COPY app ./app
+COPY core ./core
+COPY core_migrations ./core_migrations
+COPY alembic-core.ini ./
 COPY migrations ./migrations
 COPY alembic.ini ./
 
@@ -29,6 +32,9 @@ WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app /app/app
+COPY --from=builder /app/core /app/core
+COPY --from=builder /app/core_migrations /app/core_migrations
+COPY --from=builder /app/alembic-core.ini /app/alembic-core.ini
 COPY --from=builder /app/migrations /app/migrations
 COPY --from=builder /app/alembic.ini /app/alembic.ini
 
