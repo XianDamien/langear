@@ -164,6 +164,7 @@ class Scoped:
 
 class Deck(Entity, Scoped, Base):
     __tablename__ = "decks"
+    in_my_courses: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     name: Mapped[str] = mapped_column(String(200))
     deck_guid: Mapped[str] = mapped_column(String(100), default=lambda: str(uuid7()))
     kind: Mapped[str] = mapped_column(String(16), default="standard")

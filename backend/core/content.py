@@ -171,6 +171,7 @@ class ContentService:
             "parent_id": deck.parent_id,
             "kind": deck.kind,
             "deck_guid": deck.deck_guid,
+            "in_my_courses": deck.in_my_courses,
             "scheduling_config": deck.scheduling_config,
         }
 

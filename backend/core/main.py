@@ -466,3 +466,25 @@ def media_assets(
             for asset in rows
         ]
     }
+
+
+@app.put("/api/v1/decks/{deck_id}/membership")
+def set_deck_membership(deck_id: UUID, body: schemas.DeckMembership, service=Depends(content)):
+    service.repo.lock()
+    deck = service.repo.standard_deck(deck_id)
+    deck.in_my_courses = body.joined
+    service.db.flush()
+    return service.deck_data(deck)
+
+
+@app.get("/api/v1/media-assets/{asset_id}/url")
+def media_asset_url(asset_id: UUID, service=Depends(content)):
+    asset = service.db.scalar(select(MediaAsset).where(
+        MediaAsset.id == asset_id,
+        MediaAsset.lifecycle == "ready",
+        or_(MediaAsset.collection_id == service.collection.id, MediaAsset.scope == "library_shared"),
+    ))
+    if asset is None:
+        missing()
+    from core.media import sign_media
+    return {"url": sign_media(asset.object_key), "kind": asset.kind, "expires_in": 900}
