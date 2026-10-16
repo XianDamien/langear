@@ -6,6 +6,8 @@ import { mockLessonSummary } from './mock/summary'
 import { mockSettings } from './mock/settings'
 import {
   buildMockRatingSrs,
+  buildMockFeedback,
+  getMockRecording,
   buildMockStudySession,
   getMockRatingLabel,
 } from './mock/study'
@@ -246,40 +248,10 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
       result_type: 'single',
       realtime_session_id: data.realtime_session_id,
       transcription: {
-        text: transcriptText || 'By the way, I hope you are all comfortable.',
+        text: transcriptText || getMockRecording(data.card_id).transcript,
         timestamps: [],
       },
-      feedback: {
-        overall_rating: '整体来说你这句表达是能让人听懂的，内容也基本到位，准确度和发音上面没有太大问题。主要还是流利度上可以再自然一点，尤其是在个别短语前后有停顿，听起来还不够连贯。继续练几遍，把节奏带顺，会更像自然交流。',
-        issues: [
-          {
-            problem: '在“extra seats”前后停顿有点明显，影响了整句的连贯度。',
-            suggestion: '把“in extra seats so that”这一小段连起来多练几遍，尽量一口气顺下来。',
-            target_word: 'extra seats',
-            ipa: null,
-            timestamp: 0.8,
-          },
-          {
-            problem: '“squashed”的发音还不够清楚，结尾听起来有点含糊。',
-            suggestion: '重点练 /skw/ 和结尾 /t/，先慢读 squashed，再放回整句里练习。',
-            target_word: 'squashed',
-            ipa: '/skwɒʃt/',
-            timestamp: 2.05,
-          },
-          {
-            problem: '开头少了“we”，虽然不太影响理解，但和原句相比不够完整。',
-            suggestion: '练习时注意把主语一起带出来，特别是“we have brought in”这一段要成块记忆。',
-            target_word: 'we have brought in',
-            ipa: null,
-            timestamp: 0.55,
-          },
-        ],
-        'alternative phrases and sentences': [
-          'We’ve added some extra seats so nobody has to stand.',
-          'There are a few extra seats at the back if anyone needs one.',
-          'It might be a little crowded at the back, but everyone should be able to sit down.',
-        ],
-      },
+      feedback: buildMockFeedback(data.card_id, transcriptText || getMockRecording(data.card_id).transcript),
       srs: {
         state: 'review',
         difficulty: 0.3,
@@ -295,7 +267,7 @@ async function matchRoute(config: InternalAxiosRequestConfig): Promise<MockRespo
       `submission_${submissionId}`,
       JSON.stringify({
         ...data,
-        status: 'completed',
+        ...completedPayload,
       }),
     )
     return mockResolve({

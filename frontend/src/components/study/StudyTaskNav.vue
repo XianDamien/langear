@@ -1,98 +1,182 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { Card } from '@/types/domain'
-import type { StudyTaskEntry } from '@/stores/studyTasks'
 
-const props = defineProps<{
+defineProps<{
   cards: Card[]
   currentIndex: number
-  taskMap: Record<string, StudyTaskEntry>
 }>()
 
 const emit = defineEmits<{
   select: [index: number]
 }>()
 
-function getTask(cardId: string) {
-  return props.taskMap[cardId]
+// Read actual media metadata; unknown or failed audio never gets an invented duration.
+const durations = ref<Record<string, number>>({})
+
+function readDuration(source: string, event: Event) {
+  const duration = (event.target as HTMLAudioElement).duration
+  if (Number.isFinite(duration) && duration > 0) durations.value[source] = duration
 }
 
-function getStatusLabel(task: StudyTaskEntry | undefined): string {
-  if (!task) return '待练'
-  if (task.reviewStatus === 'completed') return '完成'
-  if (task.reviewStatus === 'failed') return task.errorCode || '失败'
-  if (task.reviewStatus === 'submitting' || task.reviewStatus === 'processing') return '评测中'
-  if (task.uploadState === 'uploading') return '上传中'
-  if (task.uploadState === 'failed') return '上传失败'
-  if (task.uploadState === 'uploaded') return '已上传'
-  return '待练'
-}
-
-function getStatusClass(task: StudyTaskEntry | undefined): string {
-  if (!task) return 'bg-slate-300'
-  if (task.reviewStatus === 'completed') return 'bg-emerald-500'
-  if (task.reviewStatus === 'failed' || task.uploadState === 'failed') return 'bg-red-500'
-  if (task.reviewStatus === 'submitting' || task.reviewStatus === 'processing') return 'bg-amber-500'
-  if (task.uploadState === 'uploading') return 'bg-sky-500'
-  if (task.uploadState === 'uploaded') return 'bg-brand-accent'
-  return 'bg-slate-300'
-}
-
-function getStatusDetail(task: StudyTaskEntry | undefined): string | undefined {
-  if (!task) return undefined
-  if (task.reviewStatus === 'failed') {
-    return [task.errorCode, task.errorMessage].filter(Boolean).join(': ')
-  }
-  return undefined
+function formatDuration(source?: string) {
+  const duration = source ? durations.value[source] : undefined
+  return duration ? `${duration.toFixed(2)}s` : '—'
 }
 </script>
 
 <template>
-  <div
-    class="mb-4 rounded border border-slate-200 bg-brand-panel/90 p-3 shadow-mech-sm"
-    data-testid="study-task-nav"
-  >
-    <div class="mb-2 flex items-center justify-between gap-3">
-      <div class="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">
-        句子任务导航
-      </div>
-      <div class="text-xs text-slate-500">
-        切卡不影响已提交任务状态
-      </div>
-    </div>
-
-    <div class="flex gap-2 overflow-x-auto pb-1">
-      <button
-        v-for="(card, index) in cards"
-        :key="card.id"
-        :class="[
-          'group min-w-[7.5rem] rounded border px-3 py-2 text-left transition-colors',
-          index === currentIndex
-            ? 'border-brand-accent bg-white shadow-mech-sm'
-            : 'border-slate-200 bg-white/70 hover:border-brand-accent/60',
-        ]"
-        :title="getStatusDetail(getTask(card.id))"
-        :data-testid="`task-nav-item-${index + 1}`"
-        @click="emit('select', index)"
-      >
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <span class="font-pixel text-sm text-brand-accent">{{ index + 1 }}</span>
-          <span
-            :class="[
-              'inline-flex h-2.5 w-2.5 rounded-full',
-              getStatusClass(getTask(card.id)),
-            ]"
-          />
-        </div>
-        <div class="truncate text-sm text-slate-700">
-          {{ card.backText || card.frontText || `句子 ${index + 1}` }}
-        </div>
-        <div
-          class="mt-1 text-xs text-slate-500"
-          :data-testid="`task-nav-status-${index + 1}`"
+  <nav class="sentence-nav" aria-label="句子列表" data-testid="study-task-nav">
+    <ol class="sentence-timeline">
+      <li v-for="(card, index) in cards" :key="card.id" class="sentence-item">
+        <audio
+          v-if="card.frontAudio"
+          :key="card.frontAudio"
+          :src="card.frontAudio"
+          preload="metadata"
+          hidden
+          aria-hidden="true"
+          @loadedmetadata="readDuration(card.frontAudio, $event)"
+          @durationchange="readDuration(card.frontAudio, $event)"
+        />
+        <button
+          type="button"
+          class="sentence-button"
+          :class="{ 'is-current': index === currentIndex }"
+          :aria-current="index === currentIndex ? 'step' : undefined"
+          :data-testid="`task-nav-item-${index + 1}`"
+          @click="emit('select', index)"
         >
-          {{ getStatusLabel(getTask(card.id)) }}
-        </div>
-      </button>
-    </div>
-  </div>
+          <span class="sentence-marker" aria-hidden="true">
+            <span v-if="index === currentIndex" class="sentence-wave">
+              <i /><i /><i />
+            </span>
+            <span v-else class="sentence-dot" />
+          </span>
+          <span>第{{ index + 1 }}句 <span class="sentence-duration">— {{ formatDuration(card.frontAudio) }}</span></span>
+        </button>
+      </li>
+    </ol>
+  </nav>
 </template>
+
+<style scoped>
+.sentence-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 12px;
+}
+
+.sentence-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sentence-item {
+  position: relative;
+}
+
+.sentence-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 30px;
+  bottom: -30px;
+  width: 1px;
+  background: #dedfe2;
+  pointer-events: none;
+}
+
+.sentence-button {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 4px;
+  border-radius: 4px;
+  color: #475569;
+  text-align: left;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: color 150ms;
+}
+
+.sentence-button:hover,
+.sentence-button.is-current {
+  color: #ff4d2d;
+}
+
+.sentence-button.is-current {
+  font-weight: 600;
+}
+
+.sentence-button:focus-visible {
+  outline: 2px solid #ff4d2d;
+  outline-offset: -2px;
+}
+
+.sentence-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.sentence-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.sentence-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #dedfe2;
+  box-shadow: 0 0 0 4px white;
+}
+
+.sentence-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ff4d2d;
+  box-shadow: 0 0 0 3px white;
+}
+
+.sentence-wave i {
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: white;
+  animation: sentence-wave 950ms ease-in-out infinite alternate;
+}
+
+.sentence-wave i:nth-child(2) {
+  animation-delay: -350ms;
+}
+
+.sentence-wave i:nth-child(3) {
+  animation-delay: -650ms;
+}
+
+@keyframes sentence-wave {
+  from { transform: scaleY(0.35); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sentence-wave i { animation: none; }
+  .sentence-wave i:nth-child(2) { transform: scaleY(0.5); }
+}
+</style>

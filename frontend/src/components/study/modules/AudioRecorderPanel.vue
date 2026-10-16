@@ -19,25 +19,25 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-md space-y-6">
+  <div class="mx-auto w-full max-w-md space-y-3">
     <!-- Play Reference button -->
-    <div class="mb-8 flex justify-center">
+    <div class="mb-4 mt-2 flex justify-center">
       <div
         :class="[
-          'p-4 rounded-full border-4 inline-flex items-center justify-center w-24 h-24 cursor-pointer hover:bg-slate-50 transition-colors',
-          audioPlaying ? 'border-brand-accent animate-pulse' : 'border-slate-300',
+          'p-3 rounded-2xl border-2 shadow-mech-sm inline-flex items-center justify-center w-20 h-20 cursor-pointer hover:bg-slate-50 transition-colors',
+          audioPlaying ? 'border-brand-accent animate-pulse' : 'border-brand-accent text-brand-accent',
         ]"
         data-testid="play-reference-audio"
         @click="emit('playReference')"
       >
         <Volume2
           v-if="audioPlaying"
-          :size="40"
+          :size="32"
           class="text-brand-accent"
         />
         <Play
           v-else
-          :size="40"
+          :size="32"
         />
       </div>
     </div>
@@ -48,7 +48,7 @@ const emit = defineEmits<{
 
     <!-- Transcription area -->
     <div
-      class="min-h-[60px] text-brand-accent font-sans text-lg border-b border-slate-200 pb-2"
+      class="min-h-[48px] text-brand-accent font-sans text-lg border-b border-slate-200 pb-2"
       data-testid="live-transcript"
     >
       {{ isRecording ? (liveTranscript || '...') : (userTranscript || '...') }}
@@ -62,7 +62,7 @@ const emit = defineEmits<{
     <div class="flex justify-center gap-4">
       <RetroButton
         :variant="isRecording ? 'danger' : 'secondary'"
-        class="w-full"
+        class="w-full rounded-md"
         :disabled="recordingDisabled"
         data-testid="record-toggle"
         @click="emit('toggleRecording')"

@@ -30,7 +30,7 @@ const mockTree: Deck[] = [
         children: [
           {
             id: '1001',
-            name: 'Lesson 1 - A private conversation',
+            name: 'Lesson 1 - 句子复述演示',
             description: '',
             totalCards: 6,
             newCards: 2,
@@ -121,11 +121,11 @@ export const mockDeckTree: DeckTreeResponse = { tree: mockTree }
 export const mockLessonCards: Record<string, LessonCardsResponse> = {
   '1001': {
     lessonId: '1001',
-    lessonName: 'Lesson 1 - A private conversation',
+    lessonName: 'Lesson 1 - 句子复述演示',
     cards: [
       {
         id: '2001',
-        frontAudio: '',
+        frontAudio: '/mock/audio/2001-reference.wav',
         backText: 'The quick brown fox jumps over the lazy dog.',
         backTranslation: '这只敏捷的棕色狐狸跳过了懒惰的狗。',
         difficulty: 1,
@@ -137,7 +137,7 @@ export const mockLessonCards: Record<string, LessonCardsResponse> = {
       },
       {
         id: '2002',
-        frontAudio: '',
+        frontAudio: '/mock/audio/2002-reference.wav',
         backText: 'Learning a language requires patience and practice.',
         backTranslation: '学习语言需要耐心和练习。',
         difficulty: 2,
@@ -158,7 +158,7 @@ export const mockLessonCards: Record<string, LessonCardsResponse> = {
     cards: [
       {
         id: '2003',
-        frontAudio: '',
+        frontAudio: '/mock/audio/2003-reference.wav',
         backText: 'It was Sunday and I never get up early on Sundays.',
         backTranslation: '那是星期天，我星期天从不早起。',
         difficulty: 1,
@@ -170,7 +170,7 @@ export const mockLessonCards: Record<string, LessonCardsResponse> = {
       },
       {
         id: '2004',
-        frontAudio: '',
+        frontAudio: '/mock/audio/2004-reference.wav',
         backText: 'I sometimes stay in bed until lunchtime.',
         backTranslation: '有时候我会在床上待到午饭时间。',
         difficulty: 1,
@@ -188,7 +188,7 @@ export const mockLessonCards: Record<string, LessonCardsResponse> = {
     cards: [
       {
         id: '2005',
-        frontAudio: '',
+        frontAudio: '/mock/audio/2005-reference.wav',
         backText: 'Postcards always spoil my holidays.',
         backTranslation: '明信片总是破坏我的假期。',
         difficulty: 2,
@@ -206,7 +206,7 @@ export const mockLessonCards: Record<string, LessonCardsResponse> = {
     cards: [
       {
         id: '3001',
-        frontAudio: '',
+        frontAudio: '/mock/audio/3001-reference.wav',
         backText: 'Good morning, I would like to book a room please.',
         backTranslation: '早上好，我想预订一个房间。',
         difficulty: 1,

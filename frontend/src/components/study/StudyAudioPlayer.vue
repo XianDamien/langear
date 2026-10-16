@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Pause, Play, Volume2 } from 'lucide-vue-next'
 
 const props = defineProps<{
+  compact?: boolean
   label: string
   src: string | null
   hint?: string
@@ -142,7 +143,7 @@ defineExpose({
 
 <template>
   <section
-    class="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100/90 p-4 shadow-mech"
+    :class="compact ? 'min-w-0' : 'rounded-md border border-slate-200 bg-slate-50/70 p-3'"
   >
     <audio
       ref="audioElement"
@@ -155,62 +156,125 @@ defineExpose({
       @play="isPlaying = true"
     />
 
-    <div class="flex items-start justify-between gap-3">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span
-            v-if="channel"
-            class="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500"
-          >
-            {{ channel }}
-          </span>
-          <span class="text-[10px] font-bold uppercase tracking-[0.32em] text-slate-400">
-            {{ stateLabel }}
-          </span>
-        </div>
-        <h3 class="mt-2 text-base font-semibold text-slate-900">
-          {{ label }}
-        </h3>
-        <p class="mt-1 text-sm leading-6 text-slate-500">
-          {{ hint || (hasSource ? '可独立播放和拖动进度。' : '当前卡片还没有可播放的音频。') }}
-        </p>
-      </div>
-
+    <div v-if="compact" class="flex items-center gap-3">
       <button
         type="button"
-        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition hover:border-brand-accent hover:text-brand-accent disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-brand-accent transition hover:border-brand-accent disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"
+        :aria-label="`${isPlaying ? '暂停' : '播放'}${label}`"
         :disabled="!hasSource"
         @click="togglePlayback"
       >
-        <Pause
-          v-if="isPlaying"
-          :size="20"
-        />
-        <Play
-          v-else-if="hasSource"
-          :size="20"
-        />
-        <Volume2
-          v-else
-          :size="20"
-        />
+        <Pause v-if="isPlaying" :size="18" />
+        <Play v-else :size="18" />
       </button>
-    </div>
-
-    <div class="mt-5 rounded-2xl border border-slate-200 bg-white/90 p-3">
-      <input
-        class="h-2 w-full cursor-pointer accent-brand-accent disabled:cursor-not-allowed"
-        type="range"
-        :disabled="!hasSource"
-        :max="duration || 0"
-        :step="0.1"
-        :value="currentTime"
-        @input="handleSeek"
-      >
-      <div class="mt-3 flex items-center justify-between text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-        <span>{{ formatTime(currentTime) }}</span>
-        <span>{{ hasSource ? formatTime(duration) : '--:--' }}</span>
+      <div class="min-w-0 flex-1">
+        <div class="mb-1 flex items-center justify-between gap-2 text-xs text-slate-500">
+          <span>{{ label }}</span>
+          <span class="tabular-nums text-slate-400">
+            {{ hasSource ? `${formatTime(currentTime)} / ${formatTime(duration)}` : '暂无音频' }}
+          </span>
+        </div>
+        <input
+          class="compact-audio-progress block w-full cursor-pointer disabled:cursor-not-allowed"
+          type="range"
+          :aria-label="`${label}进度`"
+          :disabled="!hasSource"
+          :max="duration || 0"
+          :step="0.1"
+          :value="currentTime"
+          @input="handleSeek"
+        >
       </div>
     </div>
+
+    <template v-else>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span
+              v-if="channel"
+              class="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500"
+            >
+              {{ channel }}
+            </span>
+            <span class="text-[10px] font-bold uppercase tracking-[0.32em] text-slate-400">
+              {{ stateLabel }}
+            </span>
+          </div>
+          <h3 class="mt-1 text-base font-semibold text-slate-900">
+            {{ label }}
+          </h3>
+          <p class="mt-1 text-sm leading-6 text-slate-500">
+            {{ hint || (hasSource ? '可独立播放和拖动进度。' : '当前卡片还没有可播放的音频。') }}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-900 transition hover:border-brand-accent hover:text-brand-accent disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+          :disabled="!hasSource"
+          @click="togglePlayback"
+        >
+          <Pause
+            v-if="isPlaying"
+            :size="20"
+          />
+          <Play
+            v-else-if="hasSource"
+            :size="20"
+          />
+          <Volume2
+            v-else
+            :size="20"
+          />
+        </button>
+      </div>
+
+      <div class="mt-3 rounded-md border border-slate-200 bg-white p-2">
+        <input
+          class="h-2 w-full cursor-pointer accent-brand-accent disabled:cursor-not-allowed"
+          type="range"
+          :disabled="!hasSource"
+          :max="duration || 0"
+          :step="0.1"
+          :value="currentTime"
+          @input="handleSeek"
+        >
+        <div class="mt-2 flex items-center justify-between text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+          <span>{{ formatTime(currentTime) }}</span>
+          <span>{{ hasSource ? formatTime(duration) : '--:--' }}</span>
+        </div>
+      </div>
+    </template>
   </section>
 </template>
+
+<style scoped>
+.compact-audio-progress {
+  height: 4px;
+  appearance: none;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #ff4d2d;
+}
+
+.compact-audio-progress:disabled {
+  color: #cbd5e1;
+}
+
+.compact-audio-progress::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  appearance: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.compact-audio-progress::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+</style>
