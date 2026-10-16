@@ -43,7 +43,8 @@ class Entity:
 
 class User(Entity, Base):
     __tablename__ = "users"
-    email: Mapped[str] = mapped_column(String(254), unique=True)
+    email: Mapped[str | None] = mapped_column(String(254), unique=True)
+    username: Mapped[str | None] = mapped_column(String(100), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     __table_args__ = (
@@ -397,3 +398,16 @@ class Attempt(Entity, Scoped, Base):
             postgresql_where=text("rating IS NULL"),
         ),
     )
+
+
+class LegacyImport(Base):
+    """Maintenance-only immutable import ledger; never exposed through content APIs."""
+
+    __tablename__ = "legacy_imports"
+    source: Mapped[str] = mapped_column(String(100), primary_key=True)
+    checksum: Mapped[str] = mapped_column(String(64))
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    report: Mapped[dict] = mapped_column(JSONB)
+    archive: Mapped[dict] = mapped_column(JSONB)

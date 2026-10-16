@@ -173,7 +173,7 @@ def register(
 
 @app.post("/api/v1/auth/login")
 def login(
-    body: schemas.Credentials,
+    body: schemas.Login,
     request: Request,
     response: Response,
     db=Depends(get_db, scope="function"),
