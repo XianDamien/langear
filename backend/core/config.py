@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002",
         "https://8.159.139.145:7145",
     ]
+    oss_access_key_id: SecretStr | None = None
+    oss_access_key_secret: SecretStr | None = None
+    oss_endpoint: str | None = None
+    oss_bucket_name: str | None = None
     legacy_identity_url: str | None = None
     legacy_import_source: str | None = None
     cookie_secure: bool = True

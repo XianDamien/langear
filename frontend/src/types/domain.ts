@@ -1,4 +1,5 @@
 export interface Deck {
+  origin?: 'core'
   id: string
   name: string
   description: string

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import DeckTreeItem from './DeckTreeItem.vue'
+import { useContentDecksStore } from '@/stores/contentDecks'
 import { ElMessage } from 'element-plus'
 import { cardEditorFields } from '@/services/cardEditorFields'
 import RetroButton from '@/components/ui/RetroButton.vue'
@@ -8,10 +11,10 @@ import { fieldLabels, resourceError, templateLabels, type ResourceDeck, type Res
 
 import { contentResources, libraryContent } from '@/services/libraryContent'
 
-const expandedDecks = ref(new Set<string>())
+const router = useRouter()
+const contentDecks = useContentDecksStore()
+const { decks, cards, personalDecks, joinedIds } = storeToRefs(contentDecks)
 const cardLoading = ref(false)
-const decks = ref<ResourceDeck[]>([])
-const cards = ref<ResourceCard[]>([])
 const noteTypes = ref<ResourceNoteType[]>([])
 const media = ref<ResourceMedia[]>([])
 const loading = ref(true)
@@ -32,30 +35,22 @@ const activeType = computed(() => noteTypes.value.find(t => t.key === activeTemp
 const editorFields = computed(() => cardEditorFields(activeType.value?.fields || [], activeTemplate.value))
 const fields = computed(() => drafts[typeKey.value]!)
 const standardDecks = computed(() => decks.value.filter(d => d.kind === 'standard'))
-const personalDecks = computed(() => standardDecks.value.filter(d => !d.deck_guid?.startsWith('legacy:') || cards.value.some(c => c.deck_id === d.id)))
 const generated = computed(() => activeTemplate.value && activeTemplate.value.required_fields.every(f => fields.value[f]?.trim()) ? [activeTemplate.value] : [])
 const skipped = computed(() => activeTemplate.value && !generated.value.length ? [activeTemplate.value] : [])
 const canSaveCard = computed(() => !!targetDeck.value && !!activeType.value && activeType.value.fields.every(f => !f.required || fields.value[f.key]?.trim()) && generated.value.length > 0)
 watch(typeKey, () => { formError.value = '' })
 
-function deckPath(deck: ResourceDeck): string {
-  const names = [deck.name]; const visited = new Set([deck.id]); let parent = deck.parent_id
-  while (parent && !visited.has(parent)) {
-    visited.add(parent)
-    const row = decks.value.find(d => d.id === parent)
-    if (!row) break
-    names.unshift(row.name); parent = row.parent_id
-  }
-  return names.join(' / ')
+const deckPath = contentDecks.deckPath
+async function toggleMembership(id: string) {
+  try {
+    const joined = await contentDecks.toggleMembership(id)
+    if (joined !== undefined) ElMessage.success(joined ? '已加入我的课程' : '已从我的课程移除')
+  } catch (error) { ElMessage.error(resourceError(error)) }
 }
 async function load() {
   loading.value = true; loadError.value = ''
   try {
-    const [newDecks, newCards] = await Promise.all([
-      contentResources<ResourceDeck>('/decks', 'decks'),
-      contentResources<ResourceCard>('/cards', 'cards', { exclude_imported: true }),
-    ])
-    decks.value = newDecks; cards.value = newCards
+    await contentDecks.load()
   } catch (error) { loadError.value = resourceError(error) }
   finally { loading.value = false }
 }
@@ -75,16 +70,12 @@ async function openCard() {
   } catch (error) { formError.value = resourceError(error) }
   finally { cardLoading.value = false }
 }
-function toggleDeck(id: string) {
-  if (expandedDecks.value.has(id)) expandedDecks.value.delete(id)
-  else expandedDecks.value.add(id)
-}
 async function saveDeck() {
   if (!deckName.value.trim() || saving.value) return
   saving.value = true; formError.value = ''
   try {
     const { data } = await libraryContent.post<ResourceDeck>('/decks', { name: deckName.value.trim() })
-    decks.value.push(data); selectedDeck.value = data.id; deckDialog.value = false; expandedDecks.value.add(data.id); loadError.value = ''
+    decks.value.push(data); selectedDeck.value = data.id; deckDialog.value = false; loadError.value = ''
     ElMessage.success('牌组已添加')
   } catch (error) { formError.value = resourceError(error) }
   finally { saving.value = false }
@@ -98,7 +89,7 @@ async function saveCard() {
       fields: Object.fromEntries(Object.entries(fields.value).filter(([, value]) => value.trim())),
       tags: (tagDrafts[typeKey.value] || '').split(/[,，\s]+/).filter(Boolean),
     })
-    cards.value.push(...data.cards); selectedDeck.value = targetDeck.value; expandedDecks.value.add(targetDeck.value); loadError.value = ''
+    cards.value.push(...data.cards); selectedDeck.value = targetDeck.value; loadError.value = ''
     drafts[typeKey.value] = {}; tagDrafts[typeKey.value] = ''; cardDialog.value = false
     ElMessage.success(`已添加 ${data.cards.length} 张卡片`)
   } catch (error) { formError.value = resourceError(error) }
@@ -132,52 +123,19 @@ onMounted(load)
       <h3 class="mb-3 text-sm font-bold text-slate-500">
         自建内容
       </h3>
-      <div
+      <DeckTreeItem
         v-for="deck in personalDecks"
         :key="deck.id"
         class="personal-deck"
-      >
-        <button
-          type="button"
-          class="mb-2 flex w-full items-center justify-between border border-slate-200 bg-slate-50 p-3 text-left hover:bg-slate-100"
-          :aria-expanded="expandedDecks.has(deck.id)"
-          @click="toggleDeck(deck.id)"
-        >
-          <span class="flex min-w-0 items-center gap-2">
-            <component
-              :is="expandedDecks.has(deck.id) ? ChevronDown : ChevronRight"
-              :size="16"
-              class="shrink-0 text-slate-400"
-            />
-            <span class="break-words font-bold text-lg">{{ deckPath(deck) }}</span>
-          </span>
-          <span class="ml-3 shrink-0 text-sm text-slate-500">{{ cards.filter(c => c.deck_id === deck.id).length }} 张卡片</span>
-        </button>
-        <div
-          v-if="expandedDecks.has(deck.id)"
-          class="ml-4 border-l border-slate-200 pl-4"
-        >
-          <p
-            v-if="!cards.some(c => c.deck_id === deck.id)"
-            class="py-4 text-sm text-slate-500"
-          >
-            暂无卡片，点击「添加卡片」开始。
-          </p>
-          <article
-            v-for="card in cards.filter(c => c.deck_id === deck.id)"
-            :key="card.id"
-            class="personal-card mb-2 border border-slate-200 bg-white p-3"
-          >
-            <span class="text-xs font-bold text-brand-accent">{{ templateLabels[card.card_template_key] }}</span>
-            <p class="mt-1 whitespace-pre-wrap break-words">
-              {{ card.back.english || card.back.word }}
-            </p>
-            <p class="mt-1 whitespace-pre-wrap break-words text-sm text-slate-500">
-              {{ card.back.chinese || card.back.meaning }}
-            </p>
-          </article>
-        </div>
-      </div>
+        :deck="deck"
+        mode="library"
+        :selected-lesson-id-set="new Set<number>()"
+        :selected-core-deck-ids="joinedIds"
+        :selection-disabled="contentDecks.saving"
+        :depth="0"
+        @select-lesson="router.push({ name: 'DeckReview', params: { deckId: $event } })"
+        @toggle-deck-selection="toggleMembership"
+      />
     </div>
     <el-dialog
       v-model="deckDialog"

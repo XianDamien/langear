@@ -38,6 +38,12 @@ const router = createRouter({
       meta: { fullscreen: true },
     },
     {
+      path: '/review/:deckId',
+      name: 'DeckReview',
+      component: () => import('@/views/DeckReviewView.vue'),
+      meta: { fullscreen: true },
+    },
+    {
       path: '/decks/:deckId/settings',
       name: 'DeckSettings',
       redirect: to => ({ name: 'Settings', query: { deck_id: String(to.params.deckId) } }),

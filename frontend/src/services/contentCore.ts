@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 export const contentCoreEnabled = import.meta.env.VITE_CONTENT_CORE === 'true'
-export interface ResourceDeck { id: string; name: string; parent_id: string | null; kind: 'standard' | 'filtered'; deck_guid?: string }
+export interface ResourceDeck { id: string; name: string; parent_id: string | null; kind: 'standard' | 'filtered'; in_my_courses?: boolean; deck_guid?: string }
 export interface ResourceTemplate { key: string; required_fields: string[] }
 export interface ResourceField { key: string; kind: 'text' | 'audio' | 'image'; required: boolean; ord: number }
 export interface ResourceNoteType { key: string; display_name: string; fields: ResourceField[]; card_templates: ResourceTemplate[] }
