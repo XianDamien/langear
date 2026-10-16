@@ -12,6 +12,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002",
         "https://8.159.139.145:7145",
     ]
+    legacy_identity_url: str | None = None
+    legacy_import_source: str | None = None
     cookie_secure: bool = True
     session_absolute_seconds: int = 604800
     session_idle_seconds: int = 86400

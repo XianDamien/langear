@@ -57,7 +57,7 @@ app.add_middleware(
     allow_origins=get_settings().allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID", "Authorization"],
     expose_headers=["X-Request-ID"],
 )
 
@@ -169,6 +169,13 @@ def register(
     db=Depends(get_db, scope="function"),
 ):
     return auth.register(db, body, request, response)
+
+
+@app.post("/api/v1/auth/legacy")
+def legacy_login(
+    request: Request, response: Response, db=Depends(get_db, scope="function")
+):
+    return auth.legacy_login(db, request, response)
 
 
 @app.post("/api/v1/auth/login")
@@ -376,11 +383,16 @@ def change_type(note_id: UUID, body: schemas.TypeChange, service=Depends(content
 @app.get("/api/v1/cards")
 def cards(
     deck_id: UUID | None = None,
+    exclude_imported: bool = False,
     service=Depends(content),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     query = select(Card).where(Card.collection_id == service.collection.id)
+    if exclude_imported:
+        query = query.join(Note, Card.note_id == Note.id).where(
+            ~Note.guid.startswith("legacy:")
+        )
     if deck_id:
         service.repo.get(Deck, deck_id)
         query = query.where(Card.deck_id == deck_id)
