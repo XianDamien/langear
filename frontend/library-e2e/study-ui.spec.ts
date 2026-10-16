@@ -12,9 +12,15 @@ test('复述 UI 使用 staging 真实课程，正常启动忽略旧 mock 开关'
   await expect(page).toHaveURL(/\/study\/\d+/)
   await expect(page.getByTestId('study-session-view')).toBeVisible()
   await expect(page.getByTestId('study-task-nav')).toBeVisible()
-  await expect(page.getByTestId('card-front-container')).toBeVisible()
+  // Existing real attempts may restore this card directly to its answer side.
+  await expect(page.getByTestId('card-front-container').or(page.getByTestId('card-back-container'))).toBeVisible()
   await expect(page.getByText('模拟模式 · 演示数据')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '录音', exact: true })).toBeVisible()
+  if (await page.getByTestId('card-back-container').count()) {
+    await expect(page.getByTestId('transcription-result')).toBeVisible()
+    await expect(page.getByTestId('study-rating-bar')).toBeVisible()
+  } else {
+    await expect(page.getByRole('button', { name: '录音', exact: true })).toBeVisible()
+  }
   await page.screenshot({ path: '/tmp/langear-real-retelling-ui.png', animations: 'disabled' })
   await page.setViewportSize({ width: 390, height: 600 })
   await expect(page.locator('#study-sidebar')).toBeHidden()

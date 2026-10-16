@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
-import DeckReviewView from '@/views/DeckReviewView.vue'
+import ReviewSessionView from '@/views/ReviewSessionView.vue'
 import { contentResources, libraryContent } from '@/services/libraryContent'
 
 vi.mock('@/services/libraryContent', () => ({
@@ -13,11 +13,11 @@ const cards = [
 ]
 async function start() {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/review/:deckId', component: DeckReviewView },
+    { path: '/review/:deckId', component: ReviewSessionView },
     { path: '/library', component: { template: '<div>Library</div>' } },
   ] })
   await router.push('/review/deck-a')
-  const wrapper = mount(DeckReviewView, { global: { plugins: [router] } })
+  const wrapper = mount(ReviewSessionView, { global: { plugins: [router] } })
   await flushPromises()
   const click = async (text: string) => {
     await wrapper.findAll('button').find(b => b.text() === text)!.trigger('click')
@@ -26,28 +26,31 @@ async function start() {
   return { wrapper, router, click }
 }
 describe('deck flip practice', () => {
-  it('hides answers until flipped, resets each card and supports completion and restart', async () => {
+  it('shows the mnemonic only on the answer and offers no forward navigation for words', async () => {
     vi.mocked(libraryContent.get).mockResolvedValue({ data: { id: 'deck-a', name: 'Practice' } })
-    vi.mocked(contentResources).mockResolvedValue(cards)
+    vi.mocked(contentResources).mockResolvedValue([{ ...cards[0]!, back: { word: 'journey', meaning: '旅程', mnemonic: '记忆联想', note: '常用搭配' } }])
     const { wrapper, click } = await start()
     expect(contentResources).toHaveBeenCalledWith('/cards', 'cards', { deck_id: 'deck-a', exclude_imported: true })
     expect(wrapper.text()).toContain('journey')
-    expect(wrapper.text()).not.toContain('旅程')
+    expect(wrapper.text()).not.toContain('记忆联想')
     await click('显示答案')
     expect(wrapper.text()).toContain('旅程')
-    await click('下一张')
-    expect(wrapper.text()).toContain('你好')
-    expect(wrapper.text()).not.toContain('Hello')
-    await click('上一张')
-    expect(wrapper.text()).not.toContain('旅程')
+    expect(wrapper.text()).toContain('记忆联想')
+    expect(wrapper.text()).toContain('常用搭配')
+    const ratings = wrapper.get('[aria-label="复习评分（尚未启用）"]')
+    expect(ratings.findAll('button')).toHaveLength(4)
+    for (const button of ratings.findAll('button')) expect(button.attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('button').some(b => ['下一张', '上一张', '查看题面', '完成本轮'].includes(b.text()))).toBe(false)
+    wrapper.unmount()
+  })
+  it('does not offer a sentence as the previous word in a mixed deck', async () => {
+    vi.mocked(libraryContent.get).mockResolvedValue({ data: { id: 'deck-a', name: 'Mixed' } })
+    vi.mocked(contentResources).mockResolvedValue([cards[1]!, cards[0]!])
+    const { wrapper, click } = await start()
     await click('显示答案')
     await click('下一张')
-    await click('显示答案')
-    await click('完成本轮')
-    expect(wrapper.text()).toContain('本轮翻卡完成')
-    await click('再练一遍')
     expect(wrapper.text()).toContain('journey')
-    expect(wrapper.text()).not.toContain('旅程')
+    expect(wrapper.findAll('button').some(b => b.text() === '上一张')).toBe(false)
     wrapper.unmount()
   })
   it('supports retry and empty decks without a false completion state', async () => {

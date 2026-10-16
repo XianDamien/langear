@@ -41,4 +41,4 @@ export const templateLabels: Record<string,string> = {
   vocabulary_english_to_chinese: '英译中', vocabulary_chinese_to_english: '中译英',
   sentence_retelling: '复述', sentence_translation: '翻译', sentence_dictation: '听写',
 }
-export const fieldLabels: Record<string,string> = { word: '单词', meaning: '释义', phonetic: '音标', note: '笔记', english: '英文', chinese: '中文', reference_audio: '参考音频', image: '图片' }
+export const fieldLabels: Record<string,string> = { word: '单词', meaning: '释义', phonetic: '音标', mnemonic: '助记', note: '笔记', english: '英文', chinese: '中文', reference_audio: '参考音频', image: '图片' }

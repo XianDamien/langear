@@ -38,6 +38,7 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await expect(dialog.locator('.field-row .editor-input').nth(1)).toHaveAttribute('aria-label', '中文释义')
     await dialog.getByLabel('英文单词', { exact: true }).fill('journey')
     await dialog.getByLabel('释义', { exact: false }).fill('旅程')
+    await dialog.getByLabel('助记', { exact: true }).fill('把 journey 联想成一次旅程')
     await expect(dialog.locator('.template-chip')).toHaveText(['英译中'])
     await page.route('**/content-api/v1/notes', route => route.abort())
     await dialog.getByRole('button', { name: '添加', exact: true }).click()
@@ -99,26 +100,21 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await deck.getByRole('button', { name: deckName, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/review/${deckId}`))
     await expect(page.getByText('模拟模式 · 演示数据')).toHaveCount(0)
-    for (let i = 0; i < 5; i++) {
-      await expect(page.getByTestId('card-front-container')).toBeVisible()
-      await expect(page.getByTestId('card-back-container')).toHaveCount(0)
-      const audio = page.locator('audio')
-      if (i >= 3) {
-        await expect(audio).toBeVisible()
-        await expect.poll(() => audio.evaluate((node: HTMLAudioElement) => node.readyState)).toBeGreaterThan(0)
-      }
-      if (i === 0) {
-        await expect(page.getByTestId('card-front-container')).toContainText('journey')
-        await expect(page.getByTestId('card-front-container')).not.toContainText('旅程')
-        await page.screenshot({ path: '/tmp/langear-real-vocabulary-front.png', animations: 'disabled' })
-      }
-      await page.getByRole('button', { name: '显示答案', exact: true }).click()
-      await expect(page.getByTestId('card-back-container')).toBeVisible()
-      await expect(page.getByTestId('card-back-container')).toContainText(i === 0 || i === 2 ? '旅程' : 'Every journey begins with a single step.')
-      if (i === 0) await page.screenshot({ path: '/tmp/langear-real-vocabulary-back.png', animations: 'disabled' })
-      await page.getByRole('button', { name: i === 4 ? '完成本轮' : '下一张', exact: true }).click()
+    await expect(page.getByTestId('card-front-container')).toContainText('journey')
+    await expect(page.getByTestId('card-front-container')).not.toContainText('把 journey 联想成一次旅程')
+    await page.getByRole('button', { name: '显示答案', exact: true }).click()
+    await expect(page.getByTestId('card-back-container')).toContainText('旅程')
+    await expect(page.getByTestId('card-back-container')).toContainText('把 journey 联想成一次旅程')
+    for (const label of ['下一张', '查看题面', '上一张']) {
+      await expect(page.getByRole('button', { name: label, exact: true })).toHaveCount(0)
     }
-    await expect(page.getByRole('heading', { name: '本轮翻卡完成' })).toBeVisible()
+    const ratings = page.getByRole('group', { name: '复习评分（尚未启用）' })
+    await expect(ratings.getByRole('button')).toHaveCount(4)
+    for (const button of await ratings.getByRole('button').all()) await expect(button).toBeDisabled()
+    await page.reload()
+    await page.getByRole('button', { name: '显示答案', exact: true }).click()
+    await expect(page.getByTestId('card-back-container')).toContainText('把 journey 联想成一次旅程')
+    await page.screenshot({ path: '/tmp/langear-real-vocabulary-back.png', animations: 'disabled' })
     await page.getByRole('button', { name: '返回题库', exact: true }).click()
     await page.getByRole('link', { name: '我的课程', exact: true }).click()
     const myDeck = page.locator('div.mb-2').filter({ has: page.getByRole('button', { name: deckName, exact: true }) })

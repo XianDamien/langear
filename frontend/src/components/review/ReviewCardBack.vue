@@ -2,7 +2,7 @@
 
 // 背面按模板渲染 Note 可选槽位：缺失槽位不渲染、不用空字符串占位。
 defineProps<{
-  backSnapshot: { english: string; chinese?: string | null; note?: string | null; phonetic?: string | null }
+  backSnapshot: { english: string; chinese?: string | null; note?: string | null; phonetic?: string | null; mnemonic?: string | null }
 }>()
 </script>
 
@@ -32,6 +32,14 @@ defineProps<{
       </p>
     </div>
 
+    <div v-if="backSnapshot.mnemonic?.trim()">
+      <p class="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+        助记
+      </p>
+      <p class="whitespace-pre-wrap break-words text-base leading-relaxed text-slate-600">
+        {{ backSnapshot.mnemonic }}
+      </p>
+    </div>
     <div v-if="backSnapshot.note">
       <p class="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
         笔记

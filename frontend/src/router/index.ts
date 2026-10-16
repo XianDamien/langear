@@ -41,7 +41,7 @@ const router = createRouter({
     {
       path: '/review/:deckId',
       name: 'DeckReview',
-      component: () => import('@/views/DeckReviewView.vue'),
+      component: () => import('@/views/ReviewSessionView.vue'),
       meta: { fullscreen: true },
     },
     {

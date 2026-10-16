@@ -13,10 +13,12 @@ describe('vocabulary card templates', () => {
     expect(wrapper.text()).not.toContain(answer)
   })
   it('renders real vocabulary fields and omits absent optional fields', () => {
-    const wrapper = mount(ReviewCardBack, { props: { backSnapshot: { english: 'journey', chinese: '旅程', phonetic: '/ˈdʒɜːni/' } } })
+    const wrapper = mount(ReviewCardBack, { props: { backSnapshot: { english: 'journey', chinese: '旅程', phonetic: '/ˈdʒɜːni/', mnemonic: '联想到旅程' } } })
     expect(wrapper.text()).toContain('journey')
     expect(wrapper.text()).toContain('旅程')
     expect(wrapper.text()).toContain('/ˈdʒɜːni/')
+    expect(wrapper.text()).toContain('助记')
+    expect(wrapper.text()).toContain('联想到旅程')
     expect(wrapper.text()).not.toContain('笔记')
   })
 })

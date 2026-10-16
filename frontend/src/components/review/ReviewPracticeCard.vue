@@ -24,7 +24,7 @@ defineProps<{ isFlipped: boolean }>()
           <slot name="back" />
         </div>
       </div>
-      <div class="border-t border-slate-200 px-2 py-3 sm:px-4">
+      <div class="border-t border-slate-200 px-4 py-3">
         <slot name="actions" />
       </div>
     </div>
