@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from starlette.exceptions import HTTPException
 from core import auth, schemas
@@ -19,7 +19,16 @@ from core.config import get_settings
 from core.content import ContentService
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
-from core.models import Card, Collection, Deck, LoginSession, Note, NoteType, User
+from core.models import (
+    Card,
+    Collection,
+    Deck,
+    LoginSession,
+    MediaAsset,
+    Note,
+    NoteType,
+    User,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -414,3 +423,34 @@ def execute_delete(
     if kind is None:
         missing()
     return service.delete_resource(kind, resource_id, body.confirmation_token)
+
+
+@app.get("/api/v1/media-assets")
+def media_assets(
+    service=Depends(content),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    rows = service.db.scalars(
+        select(MediaAsset)
+        .where(
+            MediaAsset.lifecycle == "ready",
+            or_(
+                MediaAsset.collection_id == service.collection.id,
+                MediaAsset.scope == "library_shared",
+            ),
+        )
+        .order_by(MediaAsset.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return {
+        "media_assets": [
+            {
+                "id": asset.id,
+                "kind": asset.kind,
+                "name": asset.object_key.rsplit("/", 1)[-1],
+            }
+            for asset in rows
+        ]
+    }

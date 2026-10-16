@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import secrets
+from urllib.parse import urlsplit
 from datetime import timedelta
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -24,7 +25,11 @@ def digest(value):
 
 
 def require_origin(request):
-    if request.headers.get("origin") not in get_settings().allowed_origins:
+    origin = request.headers.get("origin")
+    if not origin and request.method == "GET":
+        referer = urlsplit(request.headers.get("referer", ""))
+        origin = f"{referer.scheme}://{referer.netloc}"
+    if origin not in get_settings().allowed_origins:
         raise DomainError(403, "ORIGIN_FORBIDDEN", "A trusted Origin is required.")
 
 

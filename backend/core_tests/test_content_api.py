@@ -624,3 +624,37 @@ def test_same_source_field_can_map_twice_without_copying_unmapped_fields(
     )
     assert response.status_code == 200
     assert response.json()["fields"] == {"english": "Hello", "chinese": "Hello"}
+
+
+def test_media_picker_lists_only_ready_owned_and_library_assets(
+    client, account, engine
+):
+    own = asset(engine, account["collection"]["id"])
+    with Session(engine) as db, db.begin():
+        library = db.scalar(select(Collection).where(Collection.kind == "library"))
+        shared = MediaAsset(
+            collection_id=library.id,
+            collection_kind="library",
+            kind="audio",
+            scope="library_shared",
+            object_key="library/shared.wav",
+        )
+        temporary = MediaAsset(
+            collection_id=UUID(account["collection"]["id"]),
+            kind="audio",
+            lifecycle="temporary",
+            object_key="private/temp.wav",
+        )
+        db.add_all([shared, temporary])
+        db.flush()
+        shared_id = str(shared.id)
+    listed = client.get("/api/v1/media-assets").json()["media_assets"]
+    assert {row["id"] for row in listed} == {own, shared_id}
+    assert all(set(row) == {"id", "kind", "name"} for row in listed)
+    other = client.post(
+        "/api/v1/auth/register",
+        json={"email": "picker@example.com", "password": "a strong test password"},
+    ).json()
+    client.headers["X-CSRF-Token"] = other["csrf_token"]
+    listed = client.get("/api/v1/media-assets").json()["media_assets"]
+    assert [row["id"] for row in listed] == [shared_id]

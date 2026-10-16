@@ -406,3 +406,28 @@ def test_database_constraints_reject_invalid_ownership_and_state(engine, violati
             elif violation == "filtered_card_origin":
                 cards[0].original_deck_id = decks[0].id
             db.flush()
+
+
+def test_csrf_refresh_accepts_same_origin_browser_referer(client, account):
+    client.headers.pop("Origin")
+    assert client.get("/api/v1/auth/csrf").status_code == 403
+    assert (
+        client.get(
+            "/api/v1/auth/csrf", headers={"Referer": "https://evil.example/library"}
+        ).status_code
+        == 403
+    )
+    response = client.get(
+        "/api/v1/auth/csrf", headers={"Referer": "http://localhost:3002/library"}
+    )
+    assert response.status_code == 200
+    client.headers["X-CSRF-Token"] = response.json()["csrf_token"]
+    # Referer is not a substitute for Origin on state-changing requests.
+    assert (
+        client.post(
+            "/api/v1/decks",
+            json={"name": "blocked"},
+            headers={"Referer": "http://localhost:3002/library"},
+        ).status_code
+        == 403
+    )
