@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Plus, Layers, BookOpen, ChevronRight } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
+import { cardEditorFields } from '@/services/cardEditorFields'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import { allResources, coreHttp, fieldLabels, resourceError, templateLabels, type ResourceDeck, type ResourceCard, type ResourceNoteType, type ResourceMedia } from '@/services/contentCore'
 
@@ -24,7 +25,7 @@ const tagDrafts = reactive<Record<string,string>>(Object.fromEntries(Object.keys
 const cardTypes = computed(() => noteTypes.value.flatMap(type => type.card_templates.map(template => ({ ...template, noteTypeKey: type.key }))))
 const activeTemplate = computed(() => cardTypes.value.find(t => t.key === typeKey.value))
 const activeType = computed(() => noteTypes.value.find(t => t.key === activeTemplate.value?.noteTypeKey))
-const editorFields = computed(() => activeType.value?.fields.map(field => ({ ...field, required: field.required || !!activeTemplate.value?.required_fields.includes(field.key) })) || [])
+const editorFields = computed(() => cardEditorFields(activeType.value?.fields || [], activeTemplate.value))
 const fields = computed(() => drafts[typeKey.value]!)
 const standardDecks = computed(() => decks.value.filter(d => d.kind === 'standard'))
 const currentCards = computed(() => cards.value.filter(c => c.deck_id === selectedDeck.value))
@@ -284,7 +285,7 @@ onMounted(load)
             v-for="type in cardTypes"
             :key="type.key"
             :value="type.key"
-          >{{ type.noteTypeKey === 'vocabulary' ? '词汇' : '句子' }} · {{ templateLabels[type.key] }}</option></select></label>
+          >{{ templateLabels[type.key] }}</option></select></label>
         </div>
         <p
           v-if="!standardDecks.length"
@@ -297,7 +298,7 @@ onMounted(load)
             v-for="field in editorFields"
             :key="`${typeKey}-${field.key}`"
             class="field-row"
-          ><span class="editor-label">{{ fieldLabels[field.key] || field.key }} <span
+          ><span class="editor-label">{{ field.label }} <span
              v-if="field.required"
              class="required-mark"
            >*</span><span
@@ -307,6 +308,7 @@ onMounted(load)
             <textarea
               v-if="field.kind === 'text'"
               v-model="fields[field.key]"
+              :aria-label="field.label"
               class="editor-input"
               :rows="field.key === 'phonetic' ? 1 : 2"
               :required="field.required"
@@ -315,6 +317,7 @@ onMounted(load)
             />
             <template v-else><select
               v-model="fields[field.key]"
+              :aria-label="field.label"
               class="editor-input"
               :required="field.required"
               :disabled="saving || !media.some(m => m.kind === field.kind)"
@@ -325,7 +328,11 @@ onMounted(load)
             >{{ asset.name }}</option></select><span
               v-if="!media.some(m => m.kind === field.kind)"
               class="field-help"
-            >暂无可选{{ fieldLabels[field.key] }}。{{ field.kind === 'audio' ? '可先添加文本卡片；音频上传功能尚未开放。' : '图片上传功能尚未开放。' }}</span></template>
+            >暂无可选{{ fieldLabels[field.key] }}。{{ field.kind === 'audio' ? (field.required ? '此类型需要音频；音频上传功能尚未开放。' : '可暂不选择；音频上传功能尚未开放。') : '图片上传功能尚未开放。' }}</span></template>
+            <span
+              v-if="field.help"
+              class="field-help"
+            >{{ field.help }}</span>
           </label>
           <label class="field-row"><span class="editor-label">标签 <span class="optional-mark">选填</span></span><input
             v-model="tagDrafts[typeKey]"
@@ -352,7 +359,7 @@ onMounted(load)
             :key="template.key"
             class="field-help"
           >
-            {{ templateLabels[template.key] }}：还需{{ template.required_fields.filter(f => !fields[f]?.trim()).map(f => fieldLabels[f]).join('、') }}
+            {{ templateLabels[template.key] }}：还需{{ template.required_fields.filter(f => !fields[f]?.trim()).map(f => editorFields.find(field => field.key === f)?.label || fieldLabels[f]).join('、') }}
           </p>
         </div>
         <p
