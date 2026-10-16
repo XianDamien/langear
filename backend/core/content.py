@@ -256,7 +256,7 @@ class ContentService:
             "cards": [self.render(card) for card in cards],
         }
 
-    def generate(self, note, deck_id):
+    def generate(self, note, deck_id, card_template_key=None):
         deck = self.repo.standard_deck(deck_id)
         existing = set(
             self.db.scalars(
@@ -267,6 +267,8 @@ class ContentService:
         )
         created, skipped = [], []
         for template in self.templates_for(note.note_type_id):
+            if card_template_key is not None and template.key != card_template_key:
+                continue
             missing_fields = [
                 key
                 for key in template.required_fields
@@ -306,6 +308,29 @@ class ContentService:
         nt = self.note_type(body.note_type_key)
         fields, media = self.validate_fields(nt.id, body.fields)
         self.repo.standard_deck(body.deck_id)
+        if body.card_template_key is not None:
+            template = next(
+                (
+                    t
+                    for t in self.templates_for(nt.id)
+                    if t.key == body.card_template_key
+                ),
+                None,
+            )
+            if template is None:
+                raise DomainError(
+                    422, "CARD_TEMPLATE_INVALID", "Choose a template for this NoteType."
+                )
+            missing_fields = [
+                key for key in template.required_fields if not present(fields.get(key))
+            ]
+            if missing_fields:
+                raise DomainError(
+                    422,
+                    "NOTE_FIELDS_INVALID",
+                    "Required fields are missing for this card type.",
+                    {"missing_fields": missing_fields},
+                )
         note = Note(
             collection_id=self.collection.id,
             note_type_id=nt.id,
@@ -317,7 +342,7 @@ class ContentService:
         self.db.add(note)
         self.db.flush()
         self.sync_media(note, media)
-        generation = self.generate(note, body.deck_id)
+        generation = self.generate(note, body.deck_id, body.card_template_key)
         return {**self.note_data(note), **generation}
 
     def edit_note(self, note_id, body):
