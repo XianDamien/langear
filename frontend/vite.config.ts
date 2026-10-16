@@ -35,6 +35,11 @@ export default defineConfig(({ mode }) => {
       port: 3002,
       strictPort: true,
       proxy: {
+        '/content-api': {
+          target: proxyTarget,
+          changeOrigin: true,
+          secure: targetUrl.origin !== 'https://8.159.139.145:7145',
+        },
         '/api': {
           target: proxyTarget,
           changeOrigin: true,

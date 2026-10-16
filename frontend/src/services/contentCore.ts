@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 export const contentCoreEnabled = import.meta.env.VITE_CONTENT_CORE === 'true'
-export interface ResourceDeck { id: string; name: string; parent_id: string | null; kind: 'standard' | 'filtered' }
+export interface ResourceDeck { id: string; name: string; parent_id: string | null; kind: 'standard' | 'filtered'; deck_guid?: string }
 export interface ResourceTemplate { key: string; required_fields: string[] }
 export interface ResourceField { key: string; kind: 'text' | 'audio' | 'image'; required: boolean; ord: number }
 export interface ResourceNoteType { key: string; display_name: string; fields: ResourceField[]; card_templates: ResourceTemplate[] }
@@ -25,7 +25,7 @@ coreHttp.interceptors.request.use(async config => {
 })
 export function resourceError(error: unknown): string {
   const code = axios.isAxiosError(error) ? error.response?.data?.error?.code : undefined
-  const messages: Record<string,string> = { RESOURCE_CONFLICT: '名称已存在，请换一个名字。', UNAUTHENTICATED: '登录已过期，请重新登录。', NOTE_FIELDS_INVALID: '请检查必填内容。', INVALID_CREDENTIALS: '用户名、邮箱或密码不正确。', RATE_LIMITED: '操作过于频繁，请稍后重试。', CSRF_INVALID: '登录状态已更新，请刷新页面后重试。' }
+  const messages: Record<string,string> = { ACCOUNT_NOT_IMPORTED: '此账号尚未接入内容编辑，请联系管理员。', LEGACY_UNAVAILABLE: '账号服务暂时不可用，请重试。', RESOURCE_CONFLICT: '名称已存在，请换一个名字。', UNAUTHENTICATED: '登录已过期，请重新登录。', NOTE_FIELDS_INVALID: '请检查必填内容。', INVALID_CREDENTIALS: '用户名、邮箱或密码不正确。', RATE_LIMITED: '操作过于频繁，请稍后重试。', CSRF_INVALID: '登录状态已更新，请刷新页面后重试。' }
   return messages[code] || '操作未完成，请检查网络后重试。'
 }
 export async function allResources<T>(path: string, key: string): Promise<T[]> {

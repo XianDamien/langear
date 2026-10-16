@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { logoutLibraryContent } from '@/services/libraryContent'
 import { contentCoreEnabled } from '@/services/contentCore'
 import { useCoreAuthStore } from '@/stores/coreAuth'
 import { useRouter } from 'vue-router'
@@ -22,8 +23,10 @@ const authStore = useAuthStore()
 const coreAuth = useCoreAuthStore()
 const router = useRouter()
 async function signOut() {
-  if (!contentCoreEnabled) { authStore.logout(); return }
-  try { await coreAuth.logout(); await router.push('/login') }
+  try {
+    if (!contentCoreEnabled) { await logoutLibraryContent(); authStore.logout(); return }
+    await coreAuth.logout(); await router.push('/login')
+  }
   catch { ElMessage.error('退出未完成，请重试。') }
 }
 
