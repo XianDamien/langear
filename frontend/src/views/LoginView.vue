@@ -121,7 +121,7 @@ async function submit() {
           v-if="contentCoreEnabled"
           class="mb-5 text-sm text-slate-500"
         >
-          使用题库账号登录；首次使用请创建账号。
+          支持使用原有用户名或邮箱登录。
         </p>
         <p
           v-if="formError"
@@ -153,13 +153,13 @@ async function submit() {
             v-if="mode === 'register' || contentCoreEnabled"
             class="block"
           >
-            <span class="text-sm font-bold text-slate-700">邮箱</span>
+            <span class="text-sm font-bold text-slate-700">{{ contentCoreEnabled && mode === 'login' ? '用户名或邮箱' : '邮箱' }}</span>
             <input
               v-model.trim="form.email"
               class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
-              autocomplete="email"
+              :autocomplete="mode === 'login' ? 'username' : 'email'"
               :required="contentCoreEnabled"
-              type="email"
+              :type="contentCoreEnabled && mode === 'login' ? 'text' : 'email'"
             >
           </label>
 
@@ -185,7 +185,7 @@ async function submit() {
               autocomplete="current-password"
               type="password"
               required
-              :minlength="contentCoreEnabled ? 12 : mode === 'register' ? 8 : undefined"
+              :minlength="mode === 'register' ? (contentCoreEnabled ? 12 : 8) : undefined"
             >
           </label>
 

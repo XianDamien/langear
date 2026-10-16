@@ -7,7 +7,7 @@ export interface ResourceField { key: string; kind: 'text' | 'audio' | 'image'; 
 export interface ResourceNoteType { key: string; display_name: string; fields: ResourceField[]; card_templates: ResourceTemplate[] }
 export interface ResourceCard { id: string; note_id: string; deck_id: string; card_template_key: string; front: Record<string,string>; back: Record<string,string> }
 export interface ResourceMedia { id: string; kind: 'audio' | 'image'; name: string }
-export interface CoreIdentity { user: { id: string; email: string }; collection: { id: string }; csrf_token?: string }
+export interface CoreIdentity { user: { id: string; email: string | null; username?: string | null }; collection: { id: string }; csrf_token?: string }
 
 export const coreHttp = axios.create({ baseURL: '/api/v1', withCredentials: true, timeout: 30000 })
 let csrfToken = ''
@@ -25,7 +25,7 @@ coreHttp.interceptors.request.use(async config => {
 })
 export function resourceError(error: unknown): string {
   const code = axios.isAxiosError(error) ? error.response?.data?.error?.code : undefined
-  const messages: Record<string,string> = { RESOURCE_CONFLICT: '名称已存在，请换一个名字。', UNAUTHENTICATED: '登录已过期，请重新登录。', NOTE_FIELDS_INVALID: '请检查必填内容。', INVALID_CREDENTIALS: '邮箱或密码不正确。', RATE_LIMITED: '操作过于频繁，请稍后重试。', CSRF_INVALID: '登录状态已更新，请刷新页面后重试。' }
+  const messages: Record<string,string> = { RESOURCE_CONFLICT: '名称已存在，请换一个名字。', UNAUTHENTICATED: '登录已过期，请重新登录。', NOTE_FIELDS_INVALID: '请检查必填内容。', INVALID_CREDENTIALS: '用户名、邮箱或密码不正确。', RATE_LIMITED: '操作过于频繁，请稍后重试。', CSRF_INVALID: '登录状态已更新，请刷新页面后重试。' }
   return messages[code] || '操作未完成，请检查网络后重试。'
 }
 export async function allResources<T>(path: string, key: string): Promise<T[]> {
