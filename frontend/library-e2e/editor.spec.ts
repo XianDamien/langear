@@ -34,7 +34,7 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await expect(dialog.getByLabel('归属牌组')).toHaveValue(deckId)
     await dialog.getByLabel('单词', { exact: false }).fill('journey')
     await dialog.getByLabel('释义', { exact: false }).fill('旅程')
-    await expect(dialog.locator('.template-chip')).toHaveText(['英译中', '中译英'])
+    await expect(dialog.locator('.template-chip')).toHaveText(['英译中'])
     await page.route('**/content-api/v1/notes', route => route.abort())
     await dialog.getByRole('button', { name: '添加', exact: true }).click()
     await expect(dialog.getByRole('alert')).toBeVisible()
@@ -42,18 +42,45 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await page.unroute('**/content-api/v1/notes')
     await dialog.getByRole('button', { name: '添加', exact: true }).click()
     await expect(dialog).not.toBeVisible()
-    await expect(deck.locator('.personal-card')).toHaveCount(2)
+    await expect(deck.locator('.personal-card')).toHaveCount(1)
     await page.getByRole('button', { name: '添加卡片', exact: true }).click()
     dialog = page.getByRole('dialog')
-    await dialog.getByLabel('卡片类型').selectOption('sentence')
+    await dialog.getByLabel('卡片类型').selectOption('sentence_translation')
     await dialog.getByLabel('英文', { exact: false }).fill('Every journey begins with a single step.')
     await dialog.getByLabel('中文', { exact: false }).fill('千里之行，始于足下。')
     await expect(dialog.locator('.template-chip')).toHaveText(['翻译'])
     await dialog.getByRole('button', { name: '添加', exact: true }).click()
-    await expect(deck.locator('.personal-card')).toHaveCount(3)
+    await expect(deck.locator('.personal-card')).toHaveCount(2)
+    for (const [key, label] of [
+      ['vocabulary_chinese_to_english', '中译英'],
+      ['sentence_retelling', '复述'],
+      ['sentence_dictation', '听写'],
+    ]) {
+      await page.getByRole('button', { name: '添加卡片', exact: true }).click()
+      dialog = page.getByRole('dialog')
+      await expect(dialog.getByLabel('卡片类型').locator('option')).toHaveCount(5)
+      await dialog.getByLabel('卡片类型').selectOption(key!)
+      if (key!.startsWith('vocabulary')) {
+        await dialog.getByLabel('单词', { exact: false }).fill('journey')
+        await dialog.getByLabel('释义', { exact: false }).fill('旅程')
+      } else {
+        await dialog.getByLabel('英文', { exact: false }).fill('Every journey begins with a single step.')
+        await expect(dialog.getByRole('button', { name: '添加', exact: true })).toBeDisabled()
+        await expect(dialog.getByLabel('参考音频', { exact: false })).toHaveAttribute('required', '')
+        await dialog.getByLabel('参考音频', { exact: false }).selectOption({ index: 1 })
+      }
+      await expect(dialog.locator('.template-chip')).toHaveText([label!])
+      const saved = page.waitForResponse(r => r.url().endsWith('/content-api/v1/notes') && r.status() === 201)
+      await dialog.getByRole('button', { name: '添加', exact: true }).click()
+      const body = await (await saved).json()
+      expect(body.cards).toHaveLength(1)
+      expect(body.cards[0].card_template_key).toBe(key)
+      await expect(dialog).not.toBeVisible()
+    }
+    await expect(deck.locator('.personal-card')).toHaveCount(5)
     await page.reload()
     await deck.getByRole('button').click()
-    await expect(deck.locator('.personal-card')).toHaveCount(3)
+    await expect(deck.locator('.personal-card')).toHaveCount(5)
     await page.screenshot({ path: '/tmp/langear-library-buttons-desktop.png', fullPage: false })
     await page.getByRole('button', { name: '添加牌组', exact: true }).click()
     dialog = page.getByRole('dialog')

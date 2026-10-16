@@ -18,16 +18,19 @@ const saving = ref(false)
 const formError = ref('')
 const deckName = ref('')
 const targetDeck = ref('')
-const typeKey = ref('vocabulary')
-const drafts = reactive<Record<string, Record<string,string>>>({ vocabulary: {}, sentence: {} })
-const tagDrafts = reactive<Record<string,string>>({ vocabulary: '', sentence: '' })
-const activeType = computed(() => noteTypes.value.find(t => t.key === typeKey.value))
+const typeKey = ref('vocabulary_english_to_chinese')
+const drafts = reactive<Record<string, Record<string,string>>>(Object.fromEntries(Object.keys(templateLabels).map(key => [key, {}])))
+const tagDrafts = reactive<Record<string,string>>(Object.fromEntries(Object.keys(templateLabels).map(key => [key, ''])))
+const cardTypes = computed(() => noteTypes.value.flatMap(type => type.card_templates.map(template => ({ ...template, noteTypeKey: type.key }))))
+const activeTemplate = computed(() => cardTypes.value.find(t => t.key === typeKey.value))
+const activeType = computed(() => noteTypes.value.find(t => t.key === activeTemplate.value?.noteTypeKey))
+const editorFields = computed(() => activeType.value?.fields.map(field => ({ ...field, required: field.required || !!activeTemplate.value?.required_fields.includes(field.key) })) || [])
 const fields = computed(() => drafts[typeKey.value]!)
 const standardDecks = computed(() => decks.value.filter(d => d.kind === 'standard'))
 const currentCards = computed(() => cards.value.filter(c => c.deck_id === selectedDeck.value))
 const selectedName = computed(() => decks.value.find(d => d.id === selectedDeck.value)?.name)
-const generated = computed(() => activeType.value?.card_templates.filter(t => t.required_fields.every(f => fields.value[f]?.trim())) || [])
-const skipped = computed(() => activeType.value?.card_templates.filter(t => !generated.value.includes(t)) || [])
+const generated = computed(() => activeTemplate.value && activeTemplate.value.required_fields.every(f => fields.value[f]?.trim()) ? [activeTemplate.value] : [])
+const skipped = computed(() => activeTemplate.value && !generated.value.length ? [activeTemplate.value] : [])
 const canSaveCard = computed(() => !!targetDeck.value && !!activeType.value && activeType.value.fields.every(f => !f.required || fields.value[f.key]?.trim()) && generated.value.length > 0)
 watch(typeKey, () => { formError.value = '' })
 
@@ -73,7 +76,7 @@ async function saveCard() {
   saving.value = true; formError.value = ''
   try {
     const { data } = await coreHttp.post<{cards: ResourceCard[]}>('/notes', {
-      deck_id: targetDeck.value, note_type_key: typeKey.value,
+      deck_id: targetDeck.value, note_type_key: activeType.value!.key, card_template_key: typeKey.value,
       fields: Object.fromEntries(Object.entries(fields.value).filter(([, value]) => value.trim())),
       tags: (tagDrafts[typeKey.value] || '').split(/[,，\s]+/).filter(Boolean),
     })
@@ -278,10 +281,10 @@ onMounted(load)
             class="editor-input"
             :disabled="saving"
           ><option
-            v-for="type in noteTypes"
+            v-for="type in cardTypes"
             :key="type.key"
             :value="type.key"
-          >{{ type.key === 'vocabulary' ? '词汇 · 双向卡片' : '句子 · 复述 / 翻译 / 听写' }}</option></select></label>
+          >{{ type.noteTypeKey === 'vocabulary' ? '词汇' : '句子' }} · {{ templateLabels[type.key] }}</option></select></label>
         </div>
         <p
           v-if="!standardDecks.length"
@@ -291,7 +294,7 @@ onMounted(load)
         </p>
         <div class="editor-fields">
           <label
-            v-for="field in activeType?.fields"
+            v-for="field in editorFields"
             :key="`${typeKey}-${field.key}`"
             class="field-row"
           ><span class="editor-label">{{ fieldLabels[field.key] || field.key }} <span
@@ -313,6 +316,7 @@ onMounted(load)
             <template v-else><select
               v-model="fields[field.key]"
               class="editor-input"
+              :required="field.required"
               :disabled="saving || !media.some(m => m.kind === field.kind)"
             ><option :value="undefined">暂不选择</option><option
               v-for="asset in media.filter(m => m.kind === field.kind)"
