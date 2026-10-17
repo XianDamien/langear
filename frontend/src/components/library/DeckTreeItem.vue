@@ -49,10 +49,6 @@ function handleChevronClick() {
 
 function handleRowClick() {
   if (props.mode === 'library') {
-    if (props.deck.type === 'lesson' && !props.deck.children?.length) {
-      emit('selectLesson', props.deck.id)
-      return
-    }
     toggle()
     return
   }
@@ -84,10 +80,11 @@ function handlePlayClick() {
   <div :style="{ paddingLeft: `${(depth ?? 0) * 16}px` }">
     <div
       :class="[
-        'mb-2 flex items-center justify-between border border-slate-200 p-3 transition-colors',
+        'mb-2 flex min-h-[70px] items-center justify-between border border-slate-200 p-3 transition-colors',
+        mode === 'library' && !deck.children?.length ? 'cursor-default' : 'cursor-pointer',
         deck.type === 'lesson'
-          ? 'cursor-pointer bg-white hover:border-brand-accent'
-          : 'cursor-pointer bg-slate-50 hover:bg-slate-100',
+          ? 'bg-white hover:border-brand-accent'
+          : 'bg-slate-50 hover:bg-slate-100',
       ]"
       @click="handleRowClick"
     >
@@ -108,42 +105,36 @@ function handlePlayClick() {
         </template>
         <div
           v-else
-          class="w-4"
+          class="w-4 shrink-0"
         />
 
         <div class="min-w-0">
           <button
             type="button"
-            class="max-w-full truncate text-left font-bold"
-            :class="deck.type === 'lesson' ? 'text-base' : 'text-lg'"
+            :disabled="mode === 'library' && !deck.children?.length"
+            class="block max-w-full truncate text-left font-bold"
+            :class="deck.type === 'lesson' ? 'text-base leading-6' : 'text-lg leading-7'"
             @click.stop="handleRowClick"
           >
             {{ deck.name }}
           </button>
 
           <div
-            v-if="isCore"
-            class="text-sm text-slate-500"
+            class="min-h-4 text-slate-500"
+            :class="deck.type === 'lesson' ? 'text-sm leading-5' : 'text-xs leading-4'"
           >
-            {{ deck.totalCards }} 张卡片
-          </div>
-          <div
-            v-else-if="deck.type === 'lesson'"
-            class="text-sm text-slate-500"
-          >
-            <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·
-            <span class="font-pixel text-brand-accent">复习 {{ deck.reviewCards }}</span> ·
-            <span class="text-green-600">完成 {{ deck.completedCards }}</span>
-          </div>
-
-          <div
-            v-else
-            class="text-xs text-slate-500 uppercase"
-          >
-            <template v-if="mode === 'library' && selectionStatus !== 'none'">
+            <template v-if="isCore">
+              {{ deck.totalCards }} 张卡片
+            </template>
+            <template v-else-if="deck.type === 'lesson'">
+              <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·
+              <span class="font-pixel text-brand-accent">复习 {{ deck.reviewCards }}</span> ·
+              <span class="text-green-600">完成 {{ deck.completedCards }}</span>
+            </template>
+            <template v-else-if="mode === 'library' && selectionStatus !== 'none'">
               {{ selectionStatus === 'full' ? '已选' : '' }}{{ selectedLessonCount }}/{{ totalLessonCount }}
             </template>
-            <template v-if="mode === 'my-courses'">
+            <template v-else-if="mode === 'my-courses'">
               {{ totalLessonCount }} 节
             </template>
           </div>
@@ -151,6 +142,16 @@ function handlePlayClick() {
       </div>
 
       <div class="ml-3 flex shrink-0 items-center gap-2">
+        <button
+          v-if="mode === 'my-courses'"
+          type="button"
+          class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent"
+          :title="`${deck.name} 设置`"
+          :aria-label="`${deck.name} 设置`"
+          @click.stop="emit('editDeckSettings', deck.id)"
+        >
+          <Settings :size="16" />
+        </button>
         <template v-if="mode === 'library'">
           <RetroButton
             :variant="selectionStatus === 'full' ? 'primary' : 'secondary'"
@@ -163,16 +164,6 @@ function handlePlayClick() {
           </RetroButton>
         </template>
         <template v-else>
-          <button
-            v-if="!isCore"
-            type="button"
-            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent"
-            :title="`${deck.name} 设置`"
-            :aria-label="`${deck.name} 设置`"
-            @click.stop="emit('editDeckSettings', deck.id)"
-          >
-            <Settings :size="16" />
-          </button>
           <RetroButton
             variant="primary"
             size="sm"

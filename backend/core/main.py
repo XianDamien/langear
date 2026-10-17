@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException
 from core import auth, schemas
 from core.config import get_settings
 from core.content import ContentService
+from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_settings
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
 from core.models import (
@@ -488,3 +489,13 @@ def media_asset_url(asset_id: UUID, service=Depends(content)):
         missing()
     from core.media import sign_media
     return {"url": sign_media(asset.object_key), "kind": asset.kind, "expires_in": 900}
+
+
+@app.get("/api/v1/decks/{deck_id}/settings")
+def deck_settings(deck_id: UUID, service=Depends(content)):
+    return get_deck_settings(service, deck_id)
+
+
+@app.put("/api/v1/decks/{deck_id}/settings")
+def update_deck_settings(deck_id: UUID, body: DeckSettingsUpdate, service=Depends(content)):
+    return save_deck_settings(service, deck_id, body)

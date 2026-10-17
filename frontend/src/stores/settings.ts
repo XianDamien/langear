@@ -10,7 +10,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const relearningSteps = ref('15')
   const maximumInterval = ref(36500)
   const defaultSourceScope = ref('')
-  const deckId = ref<number | undefined>()
+  const deckId = ref<number | string | undefined>()
+  const schedulingEnabled = ref<boolean | undefined>()
   const deckTitle = ref('')
   const dailyNewLimit = ref<number | undefined>()
   const dailyReviewLimit = ref<number | undefined>()
@@ -22,6 +23,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function apply(data: SettingsData) {
     deckId.value = data.deckId
+    schedulingEnabled.value = data.schedulingEnabled
     deckTitle.value = data.deckTitle ?? ''
     dailyNewLimit.value = data.dailyNewLimit
     dailyReviewLimit.value = data.dailyReviewLimit
@@ -32,7 +34,7 @@ export const useSettingsStore = defineStore('settings', () => {
     defaultSourceScope.value = data.defaultSourceScope
   }
 
-  async function load(requestedDeckId?: number) {
+  async function load(requestedDeckId?: number | string) {
     const version = ++loadVersion
     loading.value = true
     loadError.value = null
@@ -82,7 +84,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     desiredRetention, learningSteps, relearningSteps, maximumInterval,
-    deckId, deckTitle, dailyNewLimit, dailyReviewLimit,
+    deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled,
     defaultSourceScope, saving, loading, loadError, saveError, load, save,
   }
 })

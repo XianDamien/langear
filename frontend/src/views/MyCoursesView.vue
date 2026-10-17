@@ -31,7 +31,10 @@ const {
   loading: coursesLoading,
 } = storeToRefs(userCoursesStore)
 
-const myCourseTree = computed(() => buildSelectedTree(deckTree.value, selectedLessonIdSet.value))
+const myCourseTree = computed(() => [
+  ...(libraryEditorEnabled ? coreDecks.myDecks : []),
+  ...buildSelectedTree(deckTree.value, selectedLessonIdSet.value),
+])
 const pageLoading = computed(() => loading.value || coursesLoading.value || (libraryEditorEnabled && coreDecks.loading))
 
 onMounted(() => {
@@ -54,6 +57,10 @@ function handleEditDeckSettings(deckId: string) {
 function handlePlayDeck(deckId: string) {
   const deck = findDeckById(myCourseTree.value, deckId)
   if (!deck) return
+  if (deck.origin === 'core') {
+    router.push({ name: 'DeckReview', params: { deckId } })
+    return
+  }
 
   const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
   if (lessonId) {
@@ -91,7 +98,7 @@ function handlePlayDeck(deckId: string) {
     </div>
 
     <div
-      v-else-if="!myCourseTree.length && (!libraryEditorEnabled || !coreDecks.myDecks.length) && !coreError"
+      v-else-if="!myCourseTree.length && !coreError"
       class="border-2 border-dashed border-slate-200 p-8 text-center"
     >
       <p class="mb-4 text-slate-500">
@@ -110,24 +117,13 @@ function handlePlayDeck(deckId: string) {
       v-else
       class="space-y-2"
     >
-      <template v-if="libraryEditorEnabled">
-        <DeckTreeItem
-          v-for="deck in coreDecks.myDecks"
-          :key="deck.id"
-          :deck="deck"
-          mode="my-courses"
-          :selected-lesson-id-set="selectedLessonIdSet"
-          :selected-core-deck-ids="coreDecks.joinedIds"
-          :depth="0"
-          @select-lesson="router.push({ name: 'DeckReview', params: { deckId: $event } })"
-        />
-      </template>
       <DeckTreeItem
         v-for="deck in myCourseTree"
-        :key="deck.id"
+        :key="`${deck.origin || 'legacy'}:${deck.id}`"
         :deck="deck"
         mode="my-courses"
         :selected-lesson-id-set="selectedLessonIdSet"
+        :selected-core-deck-ids="coreDecks.joinedIds"
         :depth="0"
         @select-lesson="handleSelectLesson"
         @play-deck="handlePlayDeck"

@@ -25,7 +25,7 @@ export const useContentDecksStore = defineStore('contentDecks', () => {
   }
   const personalDecks = computed<Deck[]>(() => decks.value
     .filter(d => d.kind === 'standard' && (!d.deck_guid?.startsWith('legacy:') || cards.value.some(c => c.deck_id === d.id)))
-    .map(d => ({ id: d.id, name: deckPath(d), origin: 'core', type: 'lesson', description: '',
+    .map(d => ({ id: d.id, name: deckPath(d), origin: 'core', type: 'source', description: '',
       totalCards: cards.value.filter(c => c.deck_id === d.id).length,
       newCards: 0, reviewCards: 0, completedCards: 0 })))
   const myDecks = computed(() => personalDecks.value.filter(d => joinedIds.value.has(d.id)))

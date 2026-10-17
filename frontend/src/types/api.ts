@@ -241,7 +241,8 @@ export interface LessonSummary {
 }
 
 export interface SettingsData {
-  deckId?: number
+  deckId?: number | string
+  schedulingEnabled?: boolean
   deckTitle?: string
   dailyNewLimit?: number
   dailyReviewLimit?: number
@@ -253,7 +254,8 @@ export interface SettingsData {
 }
 
 export interface BackendSettingsData {
-  deck_id?: number
+  deck_id?: number | string
+  scheduling_enabled?: boolean
   deck_title?: string
   daily_new_limit?: number
   daily_review_limit?: number
