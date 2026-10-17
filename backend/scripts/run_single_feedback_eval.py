@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from app.adapters.gemini_adapter import GenerationConfig
+from app.adapters.ai_feedback_adapter import GenerationConfig
 from app.evals.single_feedback import (
     DEFAULT_SINGLE_FEEDBACK_DATASET_ROOT,
     PromptEvalConfig,
@@ -30,7 +30,7 @@ def parse_variant(raw: str) -> PromptVariant:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Gemini single-feedback prompt evals on a fixed local dataset.",
+        description="Run single-feedback prompt evals on a fixed local dataset.",
     )
     parser.add_argument(
         "--dataset-root",
@@ -66,9 +66,14 @@ def parse_args() -> argparse.Namespace:
         help="Maximum number of samples to run from the selected dataset slice.",
     )
     parser.add_argument(
+        "--provider",
+        default=None,
+        help="Provider id for this run; defaults to AI_FEEDBACK_PROVIDER.",
+    )
+    parser.add_argument(
         "--model-id",
         default=None,
-        help="Override GEMINI_MODEL_ID for this run only.",
+        help="Override the selected provider's model id for this run only.",
     )
     parser.add_argument(
         "--temperature",
@@ -102,6 +107,7 @@ def main() -> None:
         split=args.split or None,
         sample_ids=tuple(args.sample_ids),
         limit=args.limit,
+        provider=args.provider,
         model_id=args.model_id,
         generation_config=GenerationConfig(
             temperature=args.temperature,

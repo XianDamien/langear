@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -17,14 +17,16 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from app.adapters.ai_feedback_adapter import (
+    AIFeedbackProvider,
+    GenerationConfig,
+    create_ai_feedback_provider,
+)
 from app.database_url import build_default_sqlite_database_url, resolve_database_url
 from app.models.card import Card
 from app.models.deck import Deck
 from app.models.review_log import ReviewLog
 from app.utils.timezone import app_now, from_storage_local, to_utc
-
-if TYPE_CHECKING:
-    from app.adapters.gemini_adapter import GeminiAdapter
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATABASE_URL = build_default_sqlite_database_url(BACKEND_ROOT)
@@ -70,8 +72,9 @@ class PromptEvalConfig:
     split: str | None = "eval"
     sample_ids: tuple[str, ...] = ()
     limit: int | None = None
+    provider: str | None = None
     model_id: str | None = None
-    generation_config: Any = None
+    generation_config: GenerationConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -98,7 +101,7 @@ class DatasetSample:
 
 
 AudioDownloader = Callable[[str, Path], dict[str, Any]]
-AdapterFactory = Callable[[], "GeminiAdapter"]
+AdapterFactory = Callable[[], AIFeedbackProvider]
 
 
 def export_single_feedback_dataset(
@@ -236,8 +239,6 @@ def run_single_feedback_eval(
     adapter_factory: AdapterFactory | None = None,
 ) -> dict[str, Any]:
     """Run one or more prompt variants against a fixed local dataset."""
-    from app.adapters.gemini_adapter import GenerationConfig, GeminiAdapter
-
     dataset_root = config.dataset_root.resolve()
     manifest_path = dataset_root / "dataset_manifest.json"
     if not manifest_path.exists():
@@ -258,9 +259,14 @@ def run_single_feedback_eval(
 
     generation_config = config.generation_config or GenerationConfig()
 
-    adapter = adapter_factory() if adapter_factory else GeminiAdapter()
+    adapter = (
+        adapter_factory()
+        if adapter_factory
+        else create_ai_feedback_provider(config.provider)
+    )
     if config.model_id:
         adapter.model_id = config.model_id
+    provider_id = adapter.provider_id
 
     selected_sample_fingerprint = _sha256_json(
         [
@@ -297,6 +303,8 @@ def run_single_feedback_eval(
             sample_record: dict[str, Any] = {
                 "sample_id": sample.sample_id,
                 "variant": variant.name,
+                "provider_id": provider_id,
+                "model_id": adapter.model_id,
                 "status": "completed",
                 "input_fingerprint": sample.metadata["input_fingerprint"],
                 "input": {
@@ -343,6 +351,8 @@ def run_single_feedback_eval(
         _write_jsonl(variant_dir / "results.jsonl", results)
         variant_summary = {
             "name": variant.name,
+            "provider_id": provider_id,
+            "model_id": adapter.model_id,
             "prompt_dir": str(prompt_dir),
             "prompt_fingerprint": prompt_fingerprint,
             "prompt_metadata": prompt_template.metadata,
@@ -363,6 +373,7 @@ def run_single_feedback_eval(
         )["dataset_fingerprint"],
         "selected_sample_fingerprint": selected_sample_fingerprint,
         "sample_count": len(samples),
+        "provider_id": provider_id,
         "model_id": adapter.model_id,
         "generation_config": {
             key: value

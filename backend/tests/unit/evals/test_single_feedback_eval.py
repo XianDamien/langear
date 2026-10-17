@@ -200,6 +200,7 @@ def test_run_single_feedback_eval_records_variant_outputs(tmp_path: Path):
     _write_prompt_dir(prompt_dir)
 
     fake_adapter = Mock()
+    fake_adapter.provider_id = "gemini"
     fake_adapter.model_id = "gemini-test-model"
     fake_adapter.load_prompt_from_dir.return_value = PromptTemplate(
         system="system",
@@ -234,8 +235,18 @@ def test_run_single_feedback_eval_records_variant_outputs(tmp_path: Path):
         ).read_text(encoding="utf-8")
     )
     comparison = json.loads((run_root / "comparison.json").read_text(encoding="utf-8"))
+    variant_manifest = json.loads(
+        (run_root / "variants" / "baseline" / "variant_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert manifest["sample_count"] == 1
+    assert manifest["provider_id"] == "gemini"
+    assert sample_result["provider_id"] == "gemini"
+    assert sample_result["model_id"] == "gemini-test-model"
+    assert variant_manifest["provider_id"] == "gemini"
+    assert variant_manifest["model_id"] == "gemini-test-model"
     assert sample_result["status"] == "completed"
     assert sample_result["output"]["transcription_text"] == "Hello world"
     assert comparison["sf-000001"]["baseline"].endswith("sf-000001.json")

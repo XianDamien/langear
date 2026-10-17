@@ -385,7 +385,9 @@ class TestGeminiAdapter:
 
         object.__setattr__(module.settings, "gemini_api_key", "test-api-key")
         object.__setattr__(module.settings, "gemini_model_id", "gemini-test-model")
-        object.__setattr__(module.settings, "gemini_prompt_version", "v999_not_exist")
+        monkeypatch.setattr(
+            module.settings, "ai_feedback_prompt_version", "v999_not_exist"
+        )
 
         with pytest.raises(AIFeedbackError) as exc_info:
             GeminiAdapter()

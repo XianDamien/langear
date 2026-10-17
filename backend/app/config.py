@@ -33,14 +33,20 @@ class Settings(BaseSettings):
     # Business timezone
     app_timezone: str = "Asia/Shanghai"
 
-    # Google Gemini API
-    gemini_api_key: str
+    # AI feedback provider selection and shared prompt version.
+    ai_feedback_provider: str = "gemini"
+    ai_feedback_prompt_version: str = "v1"
+
+    # Google Gemini provider settings.
+    gemini_api_key: str | None = None
     gemini_model_id: str = "gemini-3.1-flash-lite-preview"
-    gemini_prompt_version: str = "v1"
+    gemini_prompt_version: str | None = None  # Legacy alias for shared prompt version.
     google_gemini_base_url: str | None = None
 
-    # AI feedback provider
-    ai_feedback_provider: str = "gemini"
+    # Qwen Omni feedback (independent of ASR credentials).
+    qwen_omni_api_key: str | None = None
+    qwen_omni_model_id: str = "qwen3.8-omni-flash"
+    qwen_omni_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     # Alibaba Cloud OSS
     oss_access_key_id: str
@@ -102,10 +108,33 @@ class Settings(BaseSettings):
             else None
         )
         provider = self.ai_feedback_provider.strip().lower()
-        if provider == "gemini" and not self.gemini_model_id.strip():
-            raise ValueError(
-                "GEMINI_MODEL_ID is required when AI_FEEDBACK_PROVIDER is 'gemini'"
-            )
+        shared_prompt_version = self.ai_feedback_prompt_version.strip()
+        legacy_prompt_version = (self.gemini_prompt_version or "").strip()
+        if (
+            "ai_feedback_prompt_version" not in self.model_fields_set
+            and legacy_prompt_version
+        ):
+            shared_prompt_version = legacy_prompt_version
+        self.ai_feedback_prompt_version = shared_prompt_version or "v1"
+        self.gemini_api_key = (
+            self.gemini_api_key.strip()
+            if self.gemini_api_key and self.gemini_api_key.strip()
+            else None
+        )
+        if provider == "qwen_omni":
+            if not (self.qwen_omni_api_key or "").strip():
+                raise ValueError("QWEN_OMNI_API_KEY is required when AI_FEEDBACK_PROVIDER is 'qwen_omni'")
+            if not self.qwen_omni_model_id.strip():
+                raise ValueError("QWEN_OMNI_MODEL_ID is required when AI_FEEDBACK_PROVIDER is 'qwen_omni'")
+        if provider == "gemini":
+            if not self.gemini_api_key:
+                raise ValueError(
+                    "GEMINI_API_KEY is required when AI_FEEDBACK_PROVIDER is 'gemini'"
+                )
+            if not self.gemini_model_id.strip():
+                raise ValueError(
+                    "GEMINI_MODEL_ID is required when AI_FEEDBACK_PROVIDER is 'gemini'"
+                )
         return self
 
 

@@ -225,3 +225,86 @@ def test_invalid_app_timezone_input_is_ignored():
     )
 
     assert settings.app_timezone == "Asia/Shanghai"
+
+
+@pytest.mark.unit
+def test_non_gemini_provider_does_not_require_gemini_credentials(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    settings = Settings(
+        _env_file=None,
+        database_url="sqlite:///data/langear.db",
+        ai_feedback_provider="aliyun",
+        oss_access_key_id="id",
+        oss_access_key_secret="secret",
+        oss_endpoint="oss-cn-shanghai.aliyuncs.com",
+        oss_bucket_name="bucket",
+        dashscope_api_key="dashscope-key",
+    )
+
+    assert settings.gemini_api_key is None
+    assert settings.ai_feedback_prompt_version == "v1"
+
+
+@pytest.mark.unit
+def test_gemini_prompt_version_remains_a_legacy_alias():
+    settings = Settings(
+        _env_file=None,
+        database_url="sqlite:///data/langear.db",
+        gemini_api_key="test-key",
+        gemini_prompt_version="  v2  ",
+        ai_feedback_provider="gemini",
+        oss_access_key_id="id",
+        oss_access_key_secret="secret",
+        oss_endpoint="oss-cn-shanghai.aliyuncs.com",
+        oss_bucket_name="bucket",
+        dashscope_api_key="dashscope-key",
+    )
+
+    assert settings.ai_feedback_prompt_version == "v2"
+
+
+@pytest.mark.unit
+def test_shared_prompt_version_takes_precedence_over_legacy_alias():
+    settings = Settings(
+        _env_file=None,
+        database_url="sqlite:///data/langear.db",
+        gemini_api_key="test-key",
+        gemini_prompt_version="v1",
+        ai_feedback_prompt_version="v3",
+        ai_feedback_provider="gemini",
+        oss_access_key_id="id",
+        oss_access_key_secret="secret",
+        oss_endpoint="oss-cn-shanghai.aliyuncs.com",
+        oss_bucket_name="bucket",
+        dashscope_api_key="dashscope-key",
+    )
+
+    assert settings.ai_feedback_prompt_version == "v3"
+
+
+@pytest.mark.parametrize("key,model,expected_error", [
+    (None, "qwen3.8-omni-flash", "QWEN_OMNI_API_KEY is required"),
+    ("test-key", "  ", "QWEN_OMNI_MODEL_ID is required"),
+    ("test-key", "qwen3.8-omni-flash", None),
+])
+def test_qwen_settings_validate_independently_of_gemini(key, model, expected_error):
+    values = dict(
+        _env_file=None,
+        database_url="sqlite:///:memory:",
+        ai_feedback_provider="qwen_omni",
+        gemini_api_key=None,
+        qwen_omni_api_key=key,
+        qwen_omni_model_id=model,
+        oss_access_key_id="id",
+        oss_access_key_secret="secret",
+        oss_endpoint="oss-cn-shanghai.aliyuncs.com",
+        oss_bucket_name="bucket",
+        dashscope_api_key="unchanged-asr-key",
+    )
+    if expected_error:
+        with pytest.raises(ValueError, match=expected_error):
+            Settings(**values)
+    else:
+        config = Settings(**values)
+        assert config.gemini_api_key is None
+        assert config.dashscope_api_key == "unchanged-asr-key"
