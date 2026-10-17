@@ -71,7 +71,8 @@ onBeforeUnmount(() => { generation++ })
 
 <template>
   <div
-    class="flex min-h-screen flex-col bg-brand-dark text-slate-900"
+    class="flex flex-col bg-brand-dark text-slate-900"
+    :class="isVocabulary || !current ? 'min-h-screen' : 'h-[100dvh] overflow-hidden'"
     data-testid="deck-review"
   >
     <header class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-brand-panel px-4 py-3 shadow-mech-sm">
@@ -103,7 +104,7 @@ onBeforeUnmount(() => { generation++ })
         撤销评分
       </RetroButton>
     </header>
-    <main class="mx-auto flex w-full flex-1 flex-col items-center justify-center px-4 py-6 sm:max-w-3xl">
+    <main class="mx-auto flex w-full flex-1 flex-col items-center px-4 py-6" :class="isVocabulary || !current ? 'justify-center sm:max-w-3xl' : 'min-h-0 max-w-6xl'">
       <p class="mb-4 text-center text-xs text-slate-500">
         翻卡练习 · 暂不记录评分和复习进度
       </p>
@@ -135,7 +136,8 @@ onBeforeUnmount(() => { generation++ })
       </div>
       <div
         v-else-if="current"
-        class="flex w-full flex-1 flex-col items-center justify-center py-4"
+        class="flex w-full flex-1 flex-col items-center"
+        :class="isVocabulary ? 'justify-center py-4' : 'min-h-0'"
       >
         <p class="mb-3 text-center text-sm font-bold text-brand-accent">
           {{ templateLabels[current.card_template_key] }}

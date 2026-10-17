@@ -3,8 +3,8 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Mic, Square } from 'lucide-vue-next'
 import FlashcardContainer from '@/components/study/modules/FlashcardContainer.vue'
 import StudyAudioPlayer from '@/components/study/StudyAudioPlayer.vue'
-import TranscriptComparisonPanel from '@/components/study/TranscriptComparisonPanel.vue'
 import ReviewRatingButtons from './ReviewRatingButtons.vue'
+import SentenceTextPracticeCard from './SentenceTextPracticeCard.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import { useRecorder } from '@/composables/useRecorder'
 import { libraryContent } from '@/services/libraryContent'
@@ -13,15 +13,11 @@ import type { ResourceCard } from '@/services/contentCore'
 const props = defineProps<{ card: ResourceCard; isFlipped: boolean }>()
 const emit = defineEmits<{ flip: [] }>()
 const recorder = useRecorder()
-const answer = ref('')
 const audioUrl = ref<string | null>(null)
 const audioError = ref(false)
-const showTranslation = ref(false)
 const referencePlayer = ref<InstanceType<typeof StudyAudioPlayer>>()
 const recordingPlayer = ref<InstanceType<typeof StudyAudioPlayer>>()
 const retelling = computed(() => props.card.card_template_key === 'sentence_retelling')
-const translation = computed(() => props.card.card_template_key === 'sentence_translation')
-const inputLabel = computed(() => translation.value ? '我的译文' : '我的听写')
 let generation = 0
 async function loadAudio() {
   const request = ++generation
@@ -36,8 +32,6 @@ async function loadAudio() {
 }
 watch(() => props.card.id, () => {
   recorder.reset()
-  answer.value = ''
-  showTranslation.value = false
   void loadAudio()
 }, { immediate: true })
 onBeforeUnmount(() => { generation++ })
@@ -50,21 +44,26 @@ async function toggleRecording() {
 </script>
 
 <template>
-  <FlashcardContainer :is-flipped="isFlipped" class="min-h-[32rem] w-full">
+  <SentenceTextPracticeCard
+    v-if="!retelling"
+    :card="card"
+    :is-flipped="isFlipped"
+    :audio-url="audioUrl"
+    :audio-error="audioError"
+    @retry-audio="loadAudio"
+    @flip="emit('flip')"
+  />
+  <FlashcardContainer v-else :is-flipped="isFlipped" class="h-full min-h-0 w-full">
     <template #front>
       <div class="mx-auto w-full max-w-xl space-y-5 text-left">
-        <p v-if="translation" class="whitespace-pre-wrap text-xl leading-relaxed text-slate-900">
-          {{ card.front.chinese }}
-        </p>
         <StudyAudioPlayer
-          v-else
           ref="referencePlayer"
           compact
           label="原音频"
           :src="audioUrl"
           @play="recordingPlayer?.pause()"
         />
-        <p v-if="audioError && !translation" role="alert" class="text-sm text-amber-700">
+        <p v-if="audioError" role="alert" class="text-sm text-amber-700">
           音频加载失败 <button type="button" class="underline" @click="loadAudio">重试</button>
         </p>
         <template v-if="retelling">
@@ -88,16 +87,6 @@ async function toggleRecording() {
             @play="referencePlayer?.pause()"
           />
         </template>
-        <label v-else class="block text-sm font-semibold text-slate-500">
-          {{ inputLabel }}
-          <textarea
-            v-model="answer"
-            :aria-label="inputLabel"
-            rows="5"
-            class="mt-2 w-full resize-y rounded border border-slate-200 p-3 text-base font-normal text-slate-900 focus:border-brand-accent focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-            :placeholder="translation ? '输入英文译文…' : '输入听到的英文…'"
-          />
-        </label>
         <RetroButton class="w-full rounded-md" :disabled="recorder.isRecording.value" @click="emit('flip')">
           显示答案
         </RetroButton>
@@ -117,19 +106,6 @@ async function toggleRecording() {
           <StudyAudioPlayer ref="recordingPlayer" compact label="我的录音" :src="recorder.audioUrl.value" @play="referencePlayer?.pause()" />
           <p class="text-xs text-slate-500">录音仅在本次练习中保留；自动转写与 AI 反馈尚未接入。</p>
         </template>
-        <TranscriptComparisonPanel
-          v-else
-          :reference-audio-url="audioUrl"
-          :user-audio-url="null"
-          :original-text="card.back.english || ''"
-          :transcript-text="answer"
-          :translation-text="card.back.chinese || card.front.chinese || ''"
-          :show-translation="showTranslation"
-          :translation-loading="false"
-          :transcript-label="inputLabel"
-          :show-user-audio="false"
-          @toggle-translation="showTranslation = !showTranslation"
-        />
         <section v-if="card.back.note" class="rounded-md border border-slate-200 bg-white p-3">
           <h3 class="mb-2 text-xs font-bold text-slate-500">笔记</h3>
           <p class="whitespace-pre-wrap text-sm leading-6">{{ card.back.note }}</p>

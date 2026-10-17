@@ -36,7 +36,12 @@ function normalizeToken(raw: string): string {
   return cleaned || trimmed
 }
 
-function tokenize(text: string): Token[] {
+function tokenize(text: string, strict: boolean): Token[] {
+  if (strict) {
+    return (text.match(/\s+|[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu) || []).map((raw, index) => ({
+      raw, normalized: raw, index,
+    }))
+  }
   return text
     .trim()
     .split(/\s+/)
@@ -116,9 +121,10 @@ function diffTokens(original: Token[], transcript: Token[]): DiffOperation[] {
 export function buildTranscriptDiff(
   originalText: string,
   transcriptText: string,
+  strict = false,
 ): TranscriptDiffRows {
-  const originalTokens = tokenize(originalText)
-  const transcriptTokens = tokenize(transcriptText)
+  const originalTokens = tokenize(originalText, strict)
+  const transcriptTokens = tokenize(transcriptText, strict)
   const operations = diffTokens(originalTokens, transcriptTokens)
 
   const original: DiffTokenView[] = []

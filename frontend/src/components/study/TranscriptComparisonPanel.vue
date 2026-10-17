@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   verbs?: string[]
   transcriptLabel?: string
   showUserAudio?: boolean
+  comparisonMode?: 'retelling' | 'translation' | 'dictation'
 }>(), { showUserAudio: true })
 
 const emit = defineEmits<{
@@ -34,14 +35,20 @@ async function jumpToUserAudio(timestamp: number) {
 
 defineExpose({ jumpToUserAudio })
 
-const diffRows = computed(() => buildTranscriptDiff(props.originalText, props.transcriptText))
+const strict = computed(() => props.comparisonMode === 'dictation')
+const showDiff = computed(() => props.comparisonMode !== 'translation')
+const interactive = computed(() => !props.comparisonMode || props.comparisonMode === 'retelling')
+const preserveFormatting = computed(() => !interactive.value)
+const originalLabel = computed(() => props.comparisonMode === 'translation' ? '参考译文' : strict.value ? '标准答案' : '原文')
+const diffRows = computed(() => buildTranscriptDiff(props.originalText, props.transcriptText, preserveFormatting.value))
 
 function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
   const classes = [
-    'inline rounded px-0.5 py-0.5 text-[15px] leading-7 transition-colors',
+    'inline rounded py-0.5 text-[15px] leading-7 transition-colors',
   ]
+  if (!preserveFormatting.value) classes.push('px-0.5')
 
-  if (token.status === 'match') {
+  if (!showDiff.value || token.status === 'match') {
     classes.push('text-slate-700')
   } else if (token.status === 'remove') {
     classes.push(
@@ -60,7 +67,7 @@ function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
     } else if (props.verbs?.includes(normalized)) {
       classes.push('ring-1 ring-brand-accent/30')
     }
-    classes.push('cursor-pointer hover:bg-orange-50 hover:text-brand-accent focus-visible:outline-brand-accent')
+    if (interactive.value) classes.push('cursor-pointer hover:bg-orange-50 hover:text-brand-accent focus-visible:outline-brand-accent')
   }
 
   return classes
@@ -74,17 +81,19 @@ function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
   >
     <div class="grid items-start gap-4 py-4 md:grid-cols-2 md:gap-6" data-testid="original-row">
       <div class="min-w-0">
-        <h3 class="mb-1.5 text-xs font-semibold text-slate-500">原文</h3>
-        <div class="break-words" data-testid="original-text">
+        <h3 class="mb-1.5 text-xs font-semibold text-slate-500">{{ originalLabel }}</h3>
+        <div class="break-words" :class="{ 'whitespace-pre-wrap': preserveFormatting }" data-testid="original-text">
           <template v-for="token in diffRows.original" :key="`original-${token.index}-${token.raw}`">
             <button
+              v-if="interactive"
               type="button"
               :class="tokenClasses(token, 'original')"
               @click="emit('wordClick', token.raw)"
-            >{{ token.raw }}</button>{{ ' ' }}
+            >{{ token.raw }}</button><span v-else :class="tokenClasses(token, 'original')">{{ token.raw }}</span>{{ preserveFormatting ? '' : ' ' }}
           </template>
         </div>
         <button
+          v-if="translationText || interactive"
           type="button"
           class="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500 transition hover:text-brand-accent"
           :aria-expanded="showTranslation"
@@ -102,6 +111,7 @@ function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
         </p>
       </div>
       <StudyAudioPlayer
+        v-if="referenceAudioUrl || interactive"
         ref="referencePlayer"
         compact
         class="md:mt-5"
@@ -115,11 +125,11 @@ function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
       <div class="min-w-0">
         <div class="mb-1.5 flex items-center gap-2">
           <h3 class="text-xs font-semibold text-slate-500">{{ transcriptLabel || '转写' }}</h3>
-          <span class="text-xs text-slate-400">{{ diffRows.counts.changed }} 处差异</span>
+          <span v-if="showDiff" class="text-xs text-slate-400" data-testid="text-difference-count">{{ diffRows.counts.changed }} 处差异</span>
         </div>
-        <div v-if="diffRows.transcript.length > 0" class="break-words">
+        <div v-if="diffRows.transcript.length > 0" class="break-words" :class="{ 'whitespace-pre-wrap': preserveFormatting }">
           <template v-for="token in diffRows.transcript" :key="`transcript-${token.index}-${token.raw}`">
-            <span :class="tokenClasses(token, 'transcript')">{{ token.raw }}</span>{{ ' ' }}
+            <span :class="tokenClasses(token, 'transcript')">{{ token.raw }}</span>{{ preserveFormatting ? '' : ' ' }}
           </template>
         </div>
         <p v-else class="text-sm text-slate-400">{{ transcriptLabel ? '未填写' : '暂无转写' }}</p>

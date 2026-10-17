@@ -58,6 +58,7 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await expect(dialog.locator('.field-row .editor-input').nth(1)).toHaveAttribute('aria-label', '英文参考译文')
     await dialog.getByLabel('英文', { exact: false }).fill('Every journey begins with a single step.')
     await dialog.getByLabel('中文', { exact: false }).fill('千里之行，始于足下。')
+    await dialog.getByLabel('参考音频', { exact: false }).selectOption({ index: 1 })
     await expect(dialog.locator('.template-chip')).toHaveText(['翻译'])
     await dialog.getByRole('button', { name: '添加', exact: true }).click()
     await expect(deck).toContainText('2 张卡片')
@@ -153,8 +154,18 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
       await joinedDeck.getByRole('button', { name: '开始', exact: true }).click()
       await expect(page.getByText('1 / 1', { exact: true })).toBeVisible()
       const key = card.card_template_key as string
-      if (key === 'sentence_translation') await page.getByLabel('我的译文', { exact: true }).fill('Every journey begins with a single step.')
-      if (key === 'sentence_dictation') await page.getByLabel('我的听写', { exact: true }).fill('Every journey begins with a single step.')
+      if (key === 'sentence_translation' || key === 'sentence_dictation') {
+        await expect(page.getByRole('button', { name: '显示答案', exact: true })).toBeDisabled()
+        await expect(page.getByTestId('card-front-container')).not.toContainText('Every journey begins with a single step.')
+        await page.getByLabel(key === 'sentence_translation' ? '我的译文' : '我的听写', { exact: true }).fill('Every journey begins with a single step.')
+        await page.screenshot({ path: `/tmp/langear-${key}-front.png`, animations: 'disabled' })
+        if (key === 'sentence_dictation') await expect(page.getByRole('button', { name: '播放原音频', exact: true })).toBeEnabled()
+        await page.setViewportSize({ width: 390, height: 600 })
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        const flipBounds = await page.getByRole('button', { name: '显示答案', exact: true }).boundingBox()
+        expect(flipBounds!.y + flipBounds!.height).toBeLessThanOrEqual(600)
+        await page.screenshot({ path: `/tmp/langear-${key}-mobile-front.png`, animations: 'disabled' })
+      }
       if (key === 'sentence_retelling') {
         await page.getByTestId('sentence-record-toggle').click()
         await expect(page.getByTestId('sentence-record-toggle')).toContainText('停止录音')
@@ -164,6 +175,23 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
       }
       await page.getByRole('button', { name: '显示答案', exact: true }).click()
       await expect(page.getByTestId('card-back-container')).toContainText(key.startsWith('sentence') ? 'Every journey begins with a single step.' : 'journey')
+      if (key === 'sentence_translation') {
+        await expect(page.getByTestId('text-difference-count')).toHaveCount(0)
+        const reference = page.getByTestId('original-row').locator('audio')
+        await expect(reference).toHaveAttribute('src', /.+/)
+        await expect.poll(() => reference.evaluate((audio: HTMLAudioElement) => audio.readyState)).toBeGreaterThanOrEqual(1)
+        await page.getByRole('button', { name: '播放原音频', exact: true }).click()
+        await expect.poll(() => reference.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0)
+        await page.getByRole('button', { name: '暂停原音频', exact: true }).click()
+      }
+      if (key === 'sentence_dictation') await expect(page.getByTestId('text-difference-count')).toHaveText('0 处差异')
+      if (key === 'sentence_translation' || key === 'sentence_dictation') {
+        const bounds = await page.getByTestId('study-rating-bar').boundingBox()
+        expect(bounds!.y).toBeGreaterThanOrEqual(0)
+        expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(600)
+        await page.screenshot({ path: `/tmp/langear-${key}-mobile-back.png`, animations: 'disabled' })
+        await page.setViewportSize({ width: 1280, height: 720 })
+      }
       await expect(page.getByRole('button', { name: '下一张', exact: true })).toHaveCount(0)
       await page.screenshot({ path: `/tmp/langear-${key}.png`, animations: 'disabled' })
     }

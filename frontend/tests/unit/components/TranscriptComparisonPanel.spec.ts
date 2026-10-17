@@ -50,4 +50,26 @@ describe('TranscriptComparisonPanel audio pairing', () => {
     expect(wrapper.emitted('wordClick')).toEqual([['The']])
     wrapper.unmount()
   })
+
+  it.each(['hello, world!', 'Hello world!', 'Hello,  world!'])('detects strict dictation differences in %s', text => {
+    const wrapper = mount(TranscriptComparisonPanel, { props: {
+      ...props, comparisonMode: 'dictation', originalText: 'Hello, world!', transcriptText: text, showUserAudio: false,
+    } })
+    expect(wrapper.get('[data-testid="text-difference-count"]').text()).not.toBe('0 处差异')
+    expect(wrapper.get('[data-testid="original-text"]').text()).toBe('Hello, world!')
+    wrapper.unmount()
+  })
+
+  it('shows alternative translations without marking them as dictation errors', () => {
+    const wrapper = mount(TranscriptComparisonPanel, { props: {
+      ...props, comparisonMode: 'translation', transcriptLabel: '我的译文', originalText: 'Hello.', transcriptText: 'Hi.',
+      referenceAudioUrl: null, translationText: '', showUserAudio: false,
+    } })
+    expect(wrapper.text()).toContain('参考译文')
+    expect(wrapper.text()).toContain('我的译文')
+    expect(wrapper.find('[data-testid="text-difference-count"]').exists()).toBe(false)
+    expect(wrapper.findAll('.line-through')).toHaveLength(0)
+    expect(wrapper.findAll('audio')).toHaveLength(0)
+    wrapper.unmount()
+  })
 })
