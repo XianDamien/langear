@@ -45,9 +45,13 @@ export function useRecorder() {
     return '录音启动失败，请重试'
   }
 
-  async function startRecording(onRealtimePcmChunk?: (pcmBase64: string) => void): Promise<boolean> {
+  async function startRecording(onRealtimePcmChunk?: (pcmBase64: string) => void, demoCardId?: string): Promise<boolean> {
     if (isE2EMode) {
-      const blob = new Blob(['langear-e2e-audio'], { type: 'audio/webm' })
+      if (!demoCardId) return false
+      const { getMockRecording } = await import('@/services/mock/study')
+      const response = await fetch(getMockRecording(demoCardId).audioUrl)
+      if (!response.ok) return false
+      const blob = await response.blob()
       recordingBlob.value = blob
       if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
       audioUrl.value = URL.createObjectURL(blob)

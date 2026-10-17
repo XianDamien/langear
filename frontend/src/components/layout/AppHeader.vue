@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { logoutLibraryContent } from '@/services/libraryContent'
+import { contentCoreEnabled } from '@/services/contentCore'
+import { useCoreAuthStore } from '@/stores/coreAuth'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { onMounted } from 'vue'
 import { LogOut, Menu, User, X } from 'lucide-vue-next'
 import LanguageSelector from '../ui/LanguageSelector.vue'
@@ -15,9 +20,18 @@ const emit = defineEmits<{
 
 const langPair = defineModel<string>('langPair', { default: 'en-zh' })
 const authStore = useAuthStore()
+const coreAuth = useCoreAuthStore()
+const router = useRouter()
+async function signOut() {
+  try {
+    if (!contentCoreEnabled) { await logoutLibraryContent(); authStore.logout(); return }
+    await coreAuth.logout(); await router.push('/login')
+  }
+  catch { ElMessage.error('退出未完成，请重试。') }
+}
 
 onMounted(() => {
-  void authStore.loadCurrentUser()
+  if (!contentCoreEnabled) void authStore.loadCurrentUser()
 })
 </script>
 
@@ -40,13 +54,13 @@ onMounted(() => {
       <LanguageSelector v-model="langPair" />
       <div class="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-700">
         <User class="h-4 w-4 text-brand-accent" />
-        <span>{{ authStore.user?.username || '已登录' }}</span>
+        <span>{{ (contentCoreEnabled ? (coreAuth.user?.username || coreAuth.user?.email) : authStore.user?.username) || '已登录' }}</span>
       </div>
       <RetroButton
         variant="secondary"
         size="sm"
         :icon="LogOut"
-        @click="authStore.logout()"
+        @click="signOut"
       >
         退出
       </RetroButton>

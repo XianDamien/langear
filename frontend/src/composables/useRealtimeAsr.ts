@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { buildE2ERealtimeSessionId, E2E_TRANSCRIPT, isE2EMode } from '@/utils/e2e'
+import { buildE2ERealtimeSessionId, isE2EMode } from '@/utils/e2e'
 
 export type RealtimeAsrStatus =
   | 'idle'
@@ -41,6 +41,7 @@ export function useRealtimeAsr() {
   const errorCode = ref<string | null>(null)
   const errorMessage = ref<string | null>(null)
 
+  let demoTranscript = ''
   let socket: WebSocket | null = null
   let seq = 0
   let startTs = 0
@@ -170,6 +171,8 @@ export function useRealtimeAsr() {
     startTs = Date.now()
 
     if (isE2EMode) {
+      const { getMockRecording } = await import('@/services/mock/study')
+      demoTranscript = getMockRecording(cardId).transcript
       realtimeSessionId.value = buildE2ERealtimeSessionId(lessonId, cardId)
       status.value = 'streaming'
       return true
@@ -225,7 +228,7 @@ export function useRealtimeAsr() {
 
   function appendAudioChunk(chunkBase64: string) {
     if (isE2EMode) {
-      partialTranscript.value = E2E_TRANSCRIPT
+      partialTranscript.value = demoTranscript
       status.value = 'streaming'
       return
     }
@@ -248,8 +251,8 @@ export function useRealtimeAsr() {
 
   async function commit(): Promise<boolean> {
     if (isE2EMode) {
-      finalTranscript.value = E2E_TRANSCRIPT
-      partialTranscript.value = E2E_TRANSCRIPT
+      finalTranscript.value = demoTranscript
+      partialTranscript.value = demoTranscript
       status.value = 'ready'
       return true
     }

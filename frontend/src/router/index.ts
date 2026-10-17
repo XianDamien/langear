@@ -1,4 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { contentCoreEnabled } from '@/services/contentCore'
+import { useCoreAuthStore } from '@/stores/coreAuth'
+import { getUseMockMode } from '@/config/runtimeFlags'
 import { hasAccessToken } from '@/services/authToken'
 
 const router = createRouter({
@@ -6,7 +9,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/dashboard',
+      redirect: contentCoreEnabled ? '/library' : '/dashboard',
     },
     {
       path: '/login',
@@ -22,7 +25,7 @@ const router = createRouter({
     {
       path: '/library',
       name: 'Library',
-      component: () => import('@/views/LibraryView.vue'),
+      component: contentCoreEnabled ? () => import('@/views/ResourceLibraryView.vue') : () => import('@/views/LibraryView.vue'),
     },
     {
       path: '/my-courses',
@@ -33,6 +36,12 @@ const router = createRouter({
       path: '/study/:lessonId',
       name: 'Study',
       component: () => import('@/views/StudySessionView.vue'),
+      meta: { fullscreen: true },
+    },
+    {
+      path: '/review/:deckId',
+      name: 'DeckReview',
+      component: () => import('@/views/ReviewSessionView.vue'),
       meta: { fullscreen: true },
     },
     {
@@ -58,7 +67,16 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  if (getUseMockMode()) return to.name === 'Login' ? { name: 'Dashboard' } : true
+  if (contentCoreEnabled) {
+    const auth = useCoreAuthStore()
+    if (to.name === 'Login') return true
+    try { await auth.check() }
+    catch { return { name: 'Login', query: { redirect: to.fullPath } } }
+    if (to.name !== 'Library') return { name: 'Library' }
+    return true
+  }
   if (to.meta.public) {
     if (to.name === 'Login' && hasAccessToken()) {
       return { name: 'Dashboard' }

@@ -8,37 +8,35 @@ const props = defineProps<{
 
 const cardClass = computed(() =>
   props.isFlipped
-    ? 'flex h-full min-h-0 flex-col overflow-hidden p-4 sm:p-6 lg:p-8 transition-all duration-300'
-    : 'flex h-full min-h-0 flex-col items-center justify-center p-6 text-center sm:p-8 transition-all duration-300',
+    ? 'flex h-full min-h-0 flex-col p-4 sm:p-5'
+    : 'flex h-full min-h-0 flex-col items-center justify-center p-4 text-center sm:p-5',
 )
 </script>
 
 <template>
-  <RetroCard :class="cardClass">
+  <RetroCard
+    :title="isFlipped ? 'Answer' : 'Question'"
+    :class="cardClass"
+  >
     <div
       v-if="!isFlipped"
-      class="w-full flex flex-col items-center justify-center"
+      class="flex max-h-full w-full flex-col items-center overflow-y-auto overscroll-contain"
       data-testid="card-front-container"
     >
       <slot name="front" />
     </div>
     <div
       v-else
-      class="flex h-full min-h-0 w-full flex-col text-left animate-fadeIn"
+      class="flex h-full min-h-0 w-full flex-col text-left"
       data-testid="card-back-container"
     >
       <slot name="back" />
     </div>
+    <div
+      v-if="$slots.actions"
+      class="mt-6 w-full shrink-0 border-t border-slate-200 pt-4"
+    >
+      <slot name="actions" />
+    </div>
   </RetroCard>
 </template>
-
-<style scoped>
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.4s ease-out;
-}
-</style>

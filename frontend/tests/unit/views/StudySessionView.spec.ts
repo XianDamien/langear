@@ -179,7 +179,10 @@ describe('StudySessionView', () => {
     vi.unstubAllEnvs()
   })
 
-  it('blocks recording while reference audio is playing and allows it afterwards', async () => {
+  it('blocks recording while speech playback is active and allows it afterwards', async () => {
+    const session = buildMockStudySession(1001)
+    session.cards[0]!.audio_path = ''
+    vi.mocked(fetchStudySession).mockResolvedValue({ data: session } as Awaited<ReturnType<typeof fetchStudySession>>)
     const router = createStudyRouter()
 
     await router.push('/study/1001')
@@ -297,7 +300,7 @@ describe('StudySessionView', () => {
       expect(ossPutMock).toHaveBeenCalledTimes(1)
       expect(submitReviewAsync).toHaveBeenCalledTimes(1)
       expect(pollSubmissionResult).toHaveBeenCalledWith(9001)
-      expect(wrapper.get('[data-testid="task-nav-status-1"]').text()).toContain('完成')
+      expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
     })
 
     expect(wrapper.get('[data-testid="card-back-container"]').exists()).toBe(true)
@@ -310,8 +313,9 @@ describe('StudySessionView', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="study-lesson-title"]').text()).toContain('2')
-    expect(wrapper.get('[data-testid="task-nav-item-2"]').text()).toContain(secondCard.front_text)
-    expect(wrapper.get('[data-testid="task-nav-status-1"]').text()).toContain('完成')
+    expect(wrapper.get('[data-testid="task-nav-item-2"]').text()).toContain('第2句')
+    expect(wrapper.get('[data-testid="study-task-nav"]').html()).not.toContain(secondCard.front_text)
+    expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
     expect(wrapper.get('[data-testid="card-front-container"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="feedback-panel"]').exists()).toBe(false)
 
@@ -320,7 +324,7 @@ describe('StudySessionView', () => {
 
     await vi.waitFor(() => {
       expect(wrapper.get('[data-testid="card-back-container"]').exists()).toBe(true)
-      expect(wrapper.get('[data-testid="task-nav-status-1"]').text()).toContain('完成')
+      expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
       expect(wrapper.get('[data-testid="feedback-panel"]').text()).toContain(completedFeedback)
       expect(
         wrapper.get('[data-testid="transcription-result"]').text().replace(/\s+/g, ''),

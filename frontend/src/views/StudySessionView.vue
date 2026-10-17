@@ -3,6 +3,7 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { List, X } from 'lucide-vue-next'
 import { useStudyStore } from '@/stores/study'
 import { useStudyTasksStore } from '@/stores/studyTasks'
 import { useRecorder } from '@/composables/useRecorder'
@@ -47,6 +48,8 @@ const recorder = useRecorder()
 const audioPlayer = useAudioPlayer()
 const realtimeAsr = useRealtimeAsr()
 
+const taskNavOpen = ref(false)
+const taskNavToggle = ref<HTMLButtonElement | null>(null)
 const isSummaryOpen = ref(false)
 const summaryText = ref<string | null>(null)
 const isSummaryLoading = ref(false)
@@ -79,6 +82,15 @@ function toSubmissionDisplayError(error: unknown): SubmissionDisplayError {
 }
 
 const sessionTitle = computed(() => lessonName.value || '学习任务')
+const completedCount = computed(() => cards.value.filter(
+  card => taskMap.value[card.id]?.reviewStatus === 'completed',
+).length)
+const progressPercent = computed(() => cards.value.length ? completedCount.value / cards.value.length * 100 : 0)
+
+function closeTaskNav() {
+  taskNavOpen.value = false
+  taskNavToggle.value?.focus()
+}
 
 const ratingDisabled = computed(() =>
   studyStore.submitState === 'submitting' ||
@@ -305,7 +317,7 @@ async function toggleRecording() {
     const connected = await startRealtimeForCurrentCard()
     if (!connected) return
 
-    const started = await recorder.startRecording(handleRealtimePcmChunk)
+    const started = await recorder.startRecording(handleRealtimePcmChunk, currentCard.value?.id)
     if (!started) {
       realtimeAsr.endSession()
       realtimeAsr.reset()
@@ -417,6 +429,7 @@ async function handleFlip() {
 }
 
 function handleSelectCard(index: number) {
+  if (taskNavOpen.value) closeTaskNav()
   if (index === currentIndex.value) return
   studyStore.selectCard(index)
 }
@@ -455,8 +468,8 @@ function handleWordClick(word: string) {
 }
 
 function handleShowTranslation() {
-  studyStore.showTranslation = true
-  if (currentCard.value?.backTranslation) return
+  studyStore.showTranslation = !studyStore.showTranslation
+  if (!studyStore.showTranslation || currentCard.value?.backTranslation) return
   isTranslationLoading.value = true
   setTimeout(() => {
     isTranslationLoading.value = false
@@ -485,97 +498,132 @@ function exitStudy() {
 
 <template>
   <div
-    class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-4 sm:px-6 sm:py-6"
+    class="mx-auto flex h-[100dvh] w-full max-w-6xl flex-col px-3 py-3 sm:px-5 sm:py-4"
     data-testid="study-session-view"
+    @keydown.esc="taskNavOpen && closeTaskNav()"
   >
-    <div class="mb-4 grid grid-cols-[minmax(5rem,1fr)_auto_minmax(5rem,1fr)] items-center gap-3 sm:mb-6">
-      <div class="flex min-w-[5rem]">
-        <RetroButton
-          variant="ghost"
-          size="sm"
-          class="w-[5rem] justify-center"
-          @click="exitStudy"
+    <header class="mb-4 shrink-0">
+      <div class="flex items-center gap-3">
+        <RetroButton variant="ghost" size="sm" @click="exitStudy">退出</RetroButton>
+        <h1
+          class="min-w-0 flex-1 truncate text-sm font-bold text-brand-accent sm:text-lg"
+          data-testid="study-lesson-title"
         >
-          退出
-        </RetroButton>
+          {{ sessionTitle }}
+          <span class="ml-2 font-normal text-slate-400">{{ currentIndex + 1 }} / {{ cards.length }}</span>
+        </h1>
+        <span class="shrink-0 text-xs text-slate-500">已练 {{ completedCount }} / {{ cards.length }}</span>
+        <button
+          ref="taskNavToggle"
+          type="button"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 md:hidden"
+          aria-label="句子导航"
+          aria-controls="study-sidebar"
+          :aria-expanded="taskNavOpen"
+          @click="taskNavOpen = !taskNavOpen"
+        >
+          <List :size="18" />
+        </button>
       </div>
       <div
-        class="min-w-0 text-center text-lg font-bold uppercase text-brand-accent sm:text-xl"
-        data-testid="study-lesson-title"
+        class="mt-3 h-1 overflow-hidden rounded-full bg-slate-200"
+        role="progressbar"
+        aria-label="句子练习进度"
+        :aria-valuenow="completedCount"
+        :aria-valuemax="cards.length || 1"
+        :aria-valuemin="0"
+        :aria-valuetext="`已练 ${completedCount} / ${cards.length}`"
       >
-        {{ sessionTitle }}
-        <span class="font-pixel">{{ currentIndex + 1 }}</span>
-        /
-        <span class="font-pixel">{{ cards.length }}</span>
+        <div class="h-full rounded-full bg-brand-accent transition-all" :style="{ width: `${progressPercent}%` }" />
       </div>
+    </header>
+
+    <div class="relative flex min-h-0 flex-1 gap-5 pt-3">
+      <button
+        v-if="taskNavOpen"
+        type="button"
+        class="absolute inset-0 z-20 bg-slate-900/20 md:hidden"
+        aria-label="关闭句子导航"
+        @click="closeTaskNav"
+      />
+      <aside
+        id="study-sidebar"
+        class="absolute inset-y-0 left-0 z-30 w-60 shrink-0 flex-col border border-slate-200 bg-white shadow-mech md:static md:z-auto md:flex md:w-52 md:shadow-none lg:w-56"
+        :class="taskNavOpen ? 'flex' : 'hidden'"
+        aria-label="句子任务导航"
+      >
+        <div class="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+          <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <List :size="16" />
+            句子列表
+          </h2>
+          <button type="button" class="p-1 text-slate-500 md:hidden" aria-label="收起句子导航" @click="closeTaskNav">
+            <X :size="16" />
+          </button>
+        </div>
+        <StudyTaskNav
+          v-if="cards.length > 0"
+          :cards="cards"
+          :current-index="currentIndex"
+          @select="handleSelectCard"
+        />
+      </aside>
+
       <div
-        class="min-w-[5rem]"
-        aria-hidden="true"
-      />
-    </div>
+        v-if="loading"
+        class="flex-1 flex items-center justify-center text-slate-500"
+        data-testid="study-loading"
+      >
+        加载中...
+      </div>
 
-    <StudyTaskNav
-      v-if="cards.length > 0"
-      :cards="cards"
-      :current-index="currentIndex"
-      :task-map="taskMap"
-      @select="handleSelectCard"
-    />
+      <div
+        v-else-if="currentCard"
+        class="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        data-testid="study-card"
+      >
+        <RetellingCard
+          :card="currentCard"
+          :is-flipped="isFlipped"
+          :audio-playing="audioPlaying"
+          :is-recording="recorder.isRecording.value"
+          :live-transcript="liveTranscript"
+          :user-transcript="userTranscript"
+          :user-audio-url="userAudioUrl"
+          :upload-state="uploadState"
+          :upload-progress="recorder.uploadProgress.value"
+          :feedback="lastFeedback"
+          :async-submit-state="asyncSubmitState"
+          :error-code="currentTask?.errorCode"
+          :error-message="currentTask?.errorMessage"
+          :show-translation="showTranslation"
+          :translation-loading="isTranslationLoading"
+          :notes="notes"
+          :rating-disabled="ratingDisabled"
+          @play-reference="playCurrentAudio"
+          @toggle-recording="toggleRecording"
+          @flip="handleFlip"
+          @show-translation="handleShowTranslation"
+          @word-click="handleWordClick"
+          @grade="handleGrade"
+          @update:notes="studyStore.notes = $event"
+        />
 
-    <div
-      v-if="loading"
-      class="flex-1 flex items-center justify-center text-slate-500"
-      data-testid="study-loading"
-    >
-      加载中...
-    </div>
+        <WordExplanation
+          v-if="selectedWord"
+          :word="selectedWord"
+          :explanation="wordExplanation"
+          @close="studyStore.selectedWord = null"
+        />
 
-    <div
-      v-else-if="currentCard"
-      class="relative flex flex-1 min-h-0 flex-col pb-4"
-      data-testid="study-card"
-    >
-      <RetellingCard
-        :card="currentCard"
-        :is-flipped="isFlipped"
-        :audio-playing="audioPlaying"
-        :is-recording="recorder.isRecording.value"
-        :live-transcript="liveTranscript"
-        :user-transcript="userTranscript"
-        :user-audio-url="userAudioUrl"
-        :upload-state="uploadState"
-        :upload-progress="recorder.uploadProgress.value"
-        :feedback="lastFeedback"
-        :async-submit-state="asyncSubmitState"
-        :error-code="currentTask?.errorCode"
-        :error-message="currentTask?.errorMessage"
-        :show-translation="showTranslation"
-        :translation-loading="isTranslationLoading"
-        :notes="notes"
-        :rating-disabled="ratingDisabled"
-        @play-reference="playCurrentAudio"
-        @toggle-recording="toggleRecording"
-        @flip="handleFlip"
-        @show-translation="handleShowTranslation"
-        @word-click="handleWordClick"
-        @grade="handleGrade"
-        @update:notes="studyStore.notes = $event"
-      />
-
-      <WordExplanation
-        v-if="selectedWord"
-        :word="selectedWord"
-        :explanation="wordExplanation"
-        @close="studyStore.selectedWord = null"
-      />
-
-      <SummaryModal
-        v-if="isSummaryOpen"
-        :loading="isSummaryLoading"
-        :summary-text="summaryText"
-        @generate="handleSummary"
-        @exit="exitSummary"
-      />
+        <SummaryModal
+          v-if="isSummaryOpen"
+          :loading="isSummaryLoading"
+          :summary-text="summaryText"
+          @generate="handleSummary"
+          @exit="exitSummary"
+        />
+      </div>
     </div>
   </div>
 </template>

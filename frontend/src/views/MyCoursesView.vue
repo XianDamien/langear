@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useContentDecksStore } from '@/stores/contentDecks'
+import { libraryEditorEnabled } from '@/services/libraryContent'
+import { resourceError } from '@/services/contentCore'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
@@ -12,6 +15,13 @@ import {
   findFirstSelectedLessonId,
 } from '@/utils/deckSelection'
 
+const coreDecks = useContentDecksStore()
+const coreError = ref('')
+async function loadCore() {
+  if (!libraryEditorEnabled) return
+  coreError.value = ''
+  try { await coreDecks.load() } catch (error) { coreError.value = resourceError(error) }
+}
 const router = useRouter()
 const deckStore = useDeckStore()
 const userCoursesStore = useUserCoursesStore()
@@ -22,13 +32,14 @@ const {
 } = storeToRefs(userCoursesStore)
 
 const myCourseTree = computed(() => buildSelectedTree(deckTree.value, selectedLessonIdSet.value))
-const pageLoading = computed(() => loading.value || coursesLoading.value)
+const pageLoading = computed(() => loading.value || coursesLoading.value || (libraryEditorEnabled && coreDecks.loading))
 
 onMounted(() => {
   if (!deckTree.value.length) {
     deckStore.load()
   }
   userCoursesStore.load()
+  loadCore()
 })
 
 function handleSelectLesson(lessonId: string) {
@@ -59,6 +70,20 @@ function handlePlayDeck(deckId: string) {
     </h2>
 
     <div
+      v-if="coreError"
+      role="alert"
+      class="mb-4 text-amber-700"
+    >
+      自建牌组加载失败：{{ coreError }}
+      <button
+        type="button"
+        class="underline"
+        @click="loadCore"
+      >
+        重试
+      </button>
+    </div>
+    <div
       v-if="pageLoading"
       class="py-20 text-center text-slate-500"
     >
@@ -66,18 +91,18 @@ function handlePlayDeck(deckId: string) {
     </div>
 
     <div
-      v-else-if="!myCourseTree.length"
+      v-else-if="!myCourseTree.length && (!libraryEditorEnabled || !coreDecks.myDecks.length) && !coreError"
       class="border-2 border-dashed border-slate-200 p-8 text-center"
     >
       <p class="mb-4 text-slate-500">
-        你还没有加入任何课程。去题库挑选一些 lesson 吧。
+        你还没有加入任何课程。去题库资源挑选一些 lesson 吧。
       </p>
       <RetroButton
         variant="primary"
         size="sm"
         @click="router.push('/library')"
       >
-        去题库添加课程
+        去题库资源添加课程
       </RetroButton>
     </div>
 
@@ -85,6 +110,18 @@ function handlePlayDeck(deckId: string) {
       v-else
       class="space-y-2"
     >
+      <template v-if="libraryEditorEnabled">
+        <DeckTreeItem
+          v-for="deck in coreDecks.myDecks"
+          :key="deck.id"
+          :deck="deck"
+          mode="my-courses"
+          :selected-lesson-id-set="selectedLessonIdSet"
+          :selected-core-deck-ids="coreDecks.joinedIds"
+          :depth="0"
+          @select-lesson="router.push({ name: 'DeckReview', params: { deckId: $event } })"
+        />
+      </template>
       <DeckTreeItem
         v-for="deck in myCourseTree"
         :key="deck.id"

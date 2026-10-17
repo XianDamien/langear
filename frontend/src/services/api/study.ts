@@ -1,5 +1,6 @@
 import type { AxiosRequestConfig, AxiosResponse } from 'axios'
 import OSS from 'ali-oss'
+import { getUseMockMode } from '@/config/runtimeFlags'
 import http from '../http'
 import { normalizeOssRegion } from '@/services/ossRegion'
 import type {
@@ -26,6 +27,12 @@ export function getSTSToken() {
  * Used for user recordings playback when blob URL is unavailable.
  */
 export async function getOSSSignedUrl(ossPath: string): Promise<string> {
+  if (getUseMockMode()) {
+    const cardId = /^recordings\/e2e\/(\d+)\.webm$/.exec(ossPath)?.[1]
+    if (!cardId) throw new Error('Unknown demo recording path')
+    const { getMockRecording } = await import('../mock/study')
+    return getMockRecording(cardId).audioUrl
+  }
   const { data: sts } = await getSTSToken()
   const client = new OSS({
     region: normalizeOssRegion(sts.region),

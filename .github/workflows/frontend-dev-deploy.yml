@@ -19,6 +19,18 @@ env:
 jobs:
   verify-and-package:
     runs-on: ubuntu-latest
+    services:
+      core-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lan30_test_ci
+          POSTGRES_USER: core_test
+          POSTGRES_PASSWORD: isolated-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U core_test -d lan30_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -42,6 +54,11 @@ jobs:
         run: |
           uv sync --locked
           uv run bash ../scripts/release/test-backend.sh -q
+      - name: Collection core PostgreSQL integration tests
+        working-directory: backend
+        env:
+          CORE_TEST_DATABASE_URL: postgresql+psycopg://core_test:isolated-ci-only@127.0.0.1:5432/lan30_test_ci
+        run: uv run bash ../scripts/release/test-core.sh -q
       - name: Frontend tests and build
         working-directory: frontend
         env:

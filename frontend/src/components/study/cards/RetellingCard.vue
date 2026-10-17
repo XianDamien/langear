@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import FlashcardContainer from '../modules/FlashcardContainer.vue'
 import AudioRecorderPanel from '../modules/AudioRecorderPanel.vue'
-import DualAudioPlayer from '../modules/DualAudioPlayer.vue'
 import AIFeedbackPanel from '../modules/AIFeedbackPanel.vue'
 import StudyNotesPanel from '../modules/StudyNotesPanel.vue'
 import TranscriptComparisonPanel from '../TranscriptComparisonPanel.vue'
@@ -52,7 +51,7 @@ const emit = defineEmits<{
   'update:notes': [value: string]
 }>()
 
-const audioPlayerRef = ref<InstanceType<typeof DualAudioPlayer> | null>(null)
+const audioPlayerRef = ref<InstanceType<typeof TranscriptComparisonPanel> | null>(null)
 
 function handleFlipClick() {
   if (props.isRecording) {
@@ -86,31 +85,32 @@ function handleTimestampClick(timestamp: number) {
       
       <p
         v-if="recordingDisabled"
-        class="mt-4 text-center text-sm text-brand-alert"
+        data-testid="record-hint"
+        class="mt-3 text-center text-sm text-brand-alert"
       >
         建议完整听完原音频之后再录音
       </p>
 
-      <RetroButton
-        variant="primary"
-        class="mt-8 w-full max-w-md"
-        :disabled="uploadState === 'uploading'"
-        data-testid="flip-button"
-        @click="handleFlipClick"
-      >
-        翻面复盘
-      </RetroButton>
+      <div class="mt-4 flex w-full justify-center border-t border-slate-200 pt-3">
+        <RetroButton
+          variant="primary"
+          class="w-full max-w-md rounded-md"
+          :disabled="uploadState === 'uploading'"
+          data-testid="flip-button"
+          @click="handleFlipClick"
+        >
+          翻面复盘
+        </RetroButton>
+      </div>
     </template>
 
     <template #back>
-      <div class="flex-1 min-h-0 space-y-5 overflow-y-auto pr-1 sm:pr-2">
-        <DualAudioPlayer
+      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
+        data-testid="study-card-content">
+        <TranscriptComparisonPanel
           ref="audioPlayerRef"
           :reference-audio-url="card.frontAudio || null"
           :user-audio-url="userAudioUrl"
-        />
-
-        <TranscriptComparisonPanel
           :original-text="card.backText"
           :transcript-text="userTranscript"
           :translation-text="card.backTranslation || ''"
@@ -136,7 +136,8 @@ function handleTimestampClick(timestamp: number) {
         />
       </div>
 
-      <div class="mt-4 border-t border-slate-200/80 pt-4">
+      <div class="mt-3 shrink-0 border-t border-slate-200 pt-3"
+        data-testid="study-rating-bar">
         <GradeButtons
           :disabled="ratingDisabled"
           @grade="emit('grade', $event)"

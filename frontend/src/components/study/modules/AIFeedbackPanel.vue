@@ -39,10 +39,10 @@ const alternativePhrases = computed(() => {
 
 <template>
   <div
-    class="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-mech"
+    class="rounded-md border border-slate-200 bg-white p-3 sm:p-4"
     data-testid="feedback-panel"
   >
-    <h3 class="mb-4 text-xs font-bold uppercase text-slate-500">
+    <h3 class="mb-3 text-xs font-bold uppercase text-slate-500">
       AI 评测反馈
     </h3>
 
@@ -76,9 +76,9 @@ const alternativePhrases = computed(() => {
     <!-- Feedback Content -->
     <template v-else-if="feedback">
       <!-- V3 Structure (New) -->
-      <div v-if="isV3" class="space-y-6">
+      <div v-if="isV3" class="space-y-3">
         <!-- Overall Rating -->
-        <div class="rounded-2xl bg-slate-50 p-4 border border-slate-100">
+        <div class="rounded-md bg-slate-50 p-3 border border-slate-100">
           <p class="text-sm leading-relaxed text-slate-700">
             {{ feedback.feedback.overall_rating }}
           </p>

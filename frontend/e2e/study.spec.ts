@@ -10,7 +10,8 @@ async function completeFirstStudyCard(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('study-session-view')).toBeVisible()
   await expect(page.getByTestId('study-lesson-title')).toContainText('Lesson 1')
   await expect(page.getByTestId('task-nav-item-1')).toBeVisible()
-  await expect(page.getByTestId('card-front')).toBeVisible()
+  await expect(page.getByTestId('card-front-container')).toBeVisible()
+  await expect(page.getByTestId('study-task-nav')).not.toContainText('quick brown fox')
 
   await page.getByTestId('record-toggle').click()
   await expect(page.getByTestId('record-toggle')).toContainText('停止')
@@ -21,8 +22,7 @@ async function completeFirstStudyCard(page: import('@playwright/test').Page) {
 
   await page.getByTestId('flip-button').click()
 
-  await expect(page.getByTestId('card-back')).toBeVisible()
-  await expect(page.getByTestId('task-nav-status-1')).toContainText(/评测中|完成/)
+  await expect(page.getByTestId('card-back-container')).toBeVisible()
   await expect(page.getByTestId('feedback-panel')).toContainText('AI 评测反馈')
 }
 
@@ -30,9 +30,120 @@ test('核心学习链路可以在 Mock E2E 模式下完成评测并展示反馈'
   await installBrowserMocks(page)
   await completeFirstStudyCard(page)
 
-  await expect(page.getByTestId('feedback-panel')).toContainText('发音整体清晰', {
+  await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致', {
     timeout: 15_000,
   })
   await expect(page.getByTestId('transcription-result')).toContainText(transcriptPattern)
-  await expect(page.getByTestId('task-nav-status-1')).toContainText('完成')
+  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
+})
+
+
+test('原文下方展开和收起中文，播放器与对应文本配对', async ({ page }) => {
+  await installBrowserMocks(page)
+  await completeFirstStudyCard(page)
+
+  const original = page.getByTestId('original-row')
+  const transcriptRow = page.getByTestId('transcript-row')
+  await expect(original.getByRole('slider', { name: '原音频进度' })).toBeVisible()
+  await expect(transcriptRow.getByRole('slider', { name: '我的录音进度' })).toBeVisible()
+  await original.getByRole('button', { name: '显示中文' }).click()
+  const translation = page.getByTestId('original-translation')
+  await expect(translation).toBeVisible()
+  const originalBounds = await page.getByTestId('original-text').boundingBox()
+  const translationBounds = await translation.boundingBox()
+  expect(translationBounds!.y).toBeGreaterThan(originalBounds!.y + originalBounds!.height)
+  await original.getByRole('button', { name: '隐藏中文' }).click()
+  await expect(translation).toHaveCount(0)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(original.getByRole('button', { name: '显示中文' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('演示音频可播放，刷新恢复反馈，第二张卡使用自己的转写', async ({ page }) => {
+  await installBrowserMocks(page)
+  await completeFirstStudyCard(page)
+  await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
+  const audios = page.locator('[data-testid="transcription-result"] audio')
+  await expect.poll(async () => audios.evaluateAll(elements => elements.every(element => {
+    const audio = element as HTMLAudioElement
+    return Number.isFinite(audio.duration) && audio.duration > 0
+  }))).toBe(true)
+  await page.getByRole('button', { name: '播放原音频', exact: true }).click()
+  await expect.poll(async () => audios.nth(0).evaluate(element => !(element as HTMLAudioElement).paused)).toBe(true)
+  await page.getByRole('button', { name: '播放我的录音', exact: true }).click()
+  await expect.poll(async () => audios.evaluateAll(elements =>
+    (elements[0] as HTMLAudioElement).paused && !(elements[1] as HTMLAudioElement).paused,
+  )).toBe(true)
+  await page.getByRole('slider', { name: '我的录音进度' }).fill('1')
+  await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).currentTime)).toBeGreaterThanOrEqual(1)
+
+  await page.reload()
+  await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
+  await expect(page.getByTestId('transcript-row')).toContainText(transcriptPattern)
+  await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).duration)).toBeGreaterThan(1)
+
+  await page.getByTestId('task-nav-item-2').click()
+  await page.getByTestId('record-toggle').click()
+  await expect(page.getByTestId('live-transcript')).toContainText('Learning a language requires practice.')
+  await page.getByTestId('record-toggle').click()
+  await page.getByTestId('flip-button').click()
+  await expect(page.getByTestId('feedback-panel')).toContainText('转写中缺少「patience and」')
+  await expect(page.getByTestId('transcript-row')).toContainText('Learning a language requires practice.')
+  await expect(page.getByTestId('feedback-panel')).not.toContainText('extra seats')
+})
+
+test('侧栏切卡，进度条更新，评分栏在短屏和手机上保持可见', async ({ page }) => {
+  await installBrowserMocks(page)
+  await page.setViewportSize({ width: 1280, height: 650 })
+  await completeFirstStudyCard(page)
+  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
+  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
+
+  const sidebar = await page.locator('#study-sidebar').boundingBox()
+  const card = await page.getByTestId('study-card').boundingBox()
+  expect(sidebar!.x + sidebar!.width).toBeLessThan(card!.x)
+  const assertRatingVisible = async () => {
+    const bounds = await page.getByTestId('study-rating-bar').boundingBox()
+    expect(bounds!.y).toBeGreaterThanOrEqual(0)
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height)
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true)
+  }
+  await assertRatingVisible()
+  await page.getByTestId('study-card-content').evaluate(element => { element.scrollTop = element.scrollHeight })
+  await assertRatingVisible()
+
+  await page.setViewportSize({ width: 390, height: 600 })
+  await assertRatingVisible()
+  await expect(page.locator('#study-sidebar')).toBeHidden()
+  await page.getByRole('button', { name: '句子导航', exact: true }).click()
+  await expect(page.locator('#study-sidebar')).toBeVisible()
+  await page.getByTestId('task-nav-item-2').click()
+  await expect(page.locator('#study-sidebar')).toBeHidden()
+  await expect(page.getByTestId('card-front-container')).toBeVisible()
+  await page.getByRole('button', { name: '句子导航', exact: true }).click()
+  await page.getByTestId('task-nav-item-1').click()
+  await expect(page.getByTestId('card-back-container')).toBeVisible()
+  await assertRatingVisible()
+  await page.getByRole('button', { name: '句子导航', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('#study-sidebar')).toBeHidden()
+})
+
+
+test('句子导航只显示序号和真实时长，当前句波形动画沿时间线切换', async ({ page }) => {
+  await page.goto('/study/1001')
+  const nav = page.getByTestId('study-task-nav')
+  const first = page.getByTestId('task-nav-item-1')
+  const second = page.getByTestId('task-nav-item-2')
+  await expect(first).toContainText(/第1句 — \d+\.\d{2}s/)
+  await expect(second).toContainText(/第2句 — \d+\.\d{2}s/)
+  await expect(nav).not.toContainText(/待练|完成|quick|Learning/)
+  await expect(first).toHaveAttribute('aria-current', 'step')
+  expect(await first.locator('.sentence-wave i').first().evaluate(el => getComputedStyle(el).animationName)).toContain('sentence-wave')
+  expect(await nav.locator('li').first().evaluate(el => getComputedStyle(el, '::after').width)).toBe('1px')
+  await second.click()
+  await expect(second).toHaveAttribute('aria-current', 'step')
+  await expect(first.locator('.sentence-wave')).toHaveCount(0)
+  await expect(second.locator('.sentence-wave')).toHaveCount(1)
 })

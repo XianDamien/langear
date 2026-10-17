@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { Plus } from 'lucide-vue-next'
+import RetroButton from '@/components/ui/RetroButton.vue'
+import { libraryEditorEnabled } from '@/services/libraryContent'
+import LibraryContentEditor from '@/components/library/LibraryContentEditor.vue'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import LessonPickerModal from '@/components/library/LessonPickerModal.vue'
 import { useLessonPicker } from '@/composables/useLessonPicker'
@@ -10,6 +14,7 @@ import { useDeckStore } from '@/stores/deck'
 import { useUserCoursesStore } from '@/stores/userCourses'
 import { collectLessonIds, findDeckById, getNodeSelectionStatus } from '@/utils/deckSelection'
 
+const editor = ref<InstanceType<typeof LibraryContentEditor>>()
 const router = useRouter()
 const deckStore = useDeckStore()
 const userCoursesStore = useUserCoursesStore()
@@ -81,9 +86,33 @@ async function handlePickerSave(lessonIds: number[]) {
 
 <template>
   <div class="animate-fadeIn">
-    <h2 class="mb-6 text-3xl font-bold uppercase text-brand-accent">
-      题库
-    </h2>
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <h2 class="text-3xl font-bold uppercase text-brand-accent">
+        题库资源
+      </h2>
+      <div
+        v-if="libraryEditorEnabled"
+        class="flex flex-wrap gap-3"
+      >
+        <RetroButton
+          variant="secondary"
+          :icon="Plus"
+          @click="editor?.openDeck()"
+        >
+          添加牌组
+        </RetroButton>
+        <RetroButton
+          :icon="Plus"
+          @click="editor?.openCard()"
+        >
+          添加卡片
+        </RetroButton>
+      </div>
+    </header>
+    <LibraryContentEditor
+      v-if="libraryEditorEnabled"
+      ref="editor"
+    />
 
     <div
       v-if="pageLoading"

@@ -148,3 +148,38 @@ export function buildMockRatingSrs(rating: FsrsRating) {
     ),
   }
 }
+
+// Each demo recording is synthesized from this transcript, rather than microphone input.
+export function getMockRecording(cardId: string | number) {
+  const card = Object.values(mockLessonCards)
+    .flatMap(lesson => lesson.cards)
+    .find(item => item.id === String(cardId))
+  if (!card) throw new Error(`Unknown demo card: ${cardId}`)
+  return {
+    transcript: card.id === '2002' ? 'Learning a language requires practice.' : card.backText,
+    audioUrl: `/mock/audio/${card.id}-recording.wav`,
+  }
+}
+
+export function buildMockFeedback(cardId: string | number, transcript: string) {
+  const card = Object.values(mockLessonCards)
+    .flatMap(lesson => lesson.cards)
+    .find(item => item.id === String(cardId))
+  if (!card) throw new Error(`Unknown demo card: ${cardId}`)
+  const normalized = (text: string) => text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean)
+  const spokenWords = new Set(normalized(transcript))
+  const missing = normalized(card.backText).filter(word => !spokenWords.has(word))
+  return {
+    overall_rating: missing.length
+      ? `本句转写与原文存在差异，请重点核对「${missing.join(' ')}」。以下为演示反馈。`
+      : '本句转写与原文一致，内容完整。可对照原音频回听句子的重音和节奏。以下为演示反馈。',
+    issues: missing.length ? [{
+      target_word: missing.join(' '),
+      problem: `转写中缺少「${missing.join(' ')}」。`,
+      suggestion: `对照原句「${card.backText}」补全后再练习一次。`,
+      ipa: null,
+      timestamp: null,
+    }] : [],
+    'alternative phrases and sentences': [],
+  }
+}
