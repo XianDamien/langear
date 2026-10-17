@@ -59,6 +59,8 @@ class RuntimeQueue:
 
 QUEUES = {}
 RUNTIME_LOCK = RLock()
+# Like Anki's default: use imminent learning cards once ordinary work runs out.
+LEARN_AHEAD = timedelta(minutes=20)
 
 
 def conflict(code, message="Review state changed; rebuild or reload the current card."):
@@ -306,6 +308,14 @@ class ReviewService(ContentService):
                     self.consume(
                         usage, card.original_deck_id or card.deck_id, card.queue
                     )
+        # Keep the stored FSRS due time. Early learning is a queue policy, and
+        # must never jump ahead of due cards or available new/review work.
+        ahead = sorted(
+            (c for c in cards if c.queue == "learning"
+             and self.now < c.due_at <= self.now + LEARN_AHEAD),
+            key=lambda c: (c.due_at, c.id),
+        )
+        result.extend(c for c in ahead if self.render(c)["renderable"])
         return result
 
     def counts(self, q):

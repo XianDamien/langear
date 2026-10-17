@@ -1,9 +1,27 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from core.models import MediaAsset
+from core.models import Card, MediaAsset
+from core.review import ReviewService
+from core.scheduling import study_day
 from core_tests.test_review import make_note, queue, next_card, flip, rate
+
+
+@pytest.fixture
+def learning_time(monkeypatch):
+    now = datetime(2026, 10, 17, 6, tzinfo=UTC)
+    original = ReviewService.__init__
+
+    def initialize(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self.now = now
+        self.day = study_day(now, self.collection.timezone)
+
+    monkeypatch.setattr(ReviewService, '__init__', initialize)
+    return now
 
 
 def test_card_picker_selection_invalidates_queue(client, account):
@@ -25,16 +43,87 @@ def test_card_picker_selection_invalidates_queue(client, account):
     assert next_card(client, queue(client, account))['new_remaining'] == 2
 
 
-def test_rating_exposes_waiting_and_undo_status(client, account):
+def test_again_continues_learning_without_changing_due_time(client, account, engine, learning_time):
     make_note(client, account)
     q = queue(client, account)
-    assert next_card(client, q)['can_undo'] is False
-    flipped = flip(client, q, next_card(client, q)).json()
+    current = next_card(client, q)
+    assert current['can_undo'] is False
+    flipped = flip(client, q, current).json()
     assert rate(client, q, flipped, 'again').status_code == 200
     result = next_card(client, q)
-    assert result['empty_reason'] == 'waiting'
-    assert result['next_due_at']
+    assert result['card'] is not None
+    assert result['card']['id'] == current['card']['id']
+    assert result['review_token'] != current['review_token']
+    assert 'attempt' not in result and 'back' not in result['card']
+    assert result['empty_reason'] is None
+    assert result['learning_remaining'] == 1
     assert result['can_undo'] is True
+    assert result == next_card(client, q)
+    with Session(engine) as db:
+        due = db.get(Card, UUID(current['card']['id'])).due_at
+        assert due == learning_time + timedelta(minutes=15)
+    assert datetime.fromisoformat(result['next_due_at']) == due
+    # Rebuilding the disposable queue retains early learning eligibility.
+    rebuilt = next_card(client, queue(client, account))
+    assert rebuilt['card']['id'] == current['card']['id']
+    repeated = flip(client, rebuilt['queue_id'], rebuilt).json()
+    assert repeated['attempt']['id'] != flipped['attempt']['id']
+    assert rate(client, rebuilt['queue_id'], repeated, 'easy').status_code == 200
+    assert next_card(client, rebuilt['queue_id'])['card'] is None
+
+
+@pytest.mark.parametrize('regular_queue', ['new', 'review'])
+def test_learning_ahead_follows_available_regular_work(client, account, engine, learning_time, regular_queue):
+    make_note(client, account)
+    make_note(client, account)
+    with Session(engine) as db, db.begin():
+        first, second = list(db.scalars(select(Card).order_by(Card.new_position)))
+        first_id, second_id = str(first.id), str(second.id)
+        first.type = first.queue = 'learning'
+        first.new_position = None
+        first.due_at = learning_time + timedelta(minutes=15)
+        first.due_day = None
+        if regular_queue == 'review':
+            second.type = second.queue = 'review'
+            second.new_position = None
+            second.due_day = study_day(learning_time, 'Asia/Shanghai')
+    q = queue(client, account)
+    result = next_card(client, q)
+    assert result['card']['id'] == second_id
+    assert result['learning_remaining'] == 1
+    # When ordinary work is no longer available, use the learning-ahead card.
+    with Session(engine) as db, db.begin():
+        db.get(Card, UUID(second_id)).queue = 'suspended'
+    assert next_card(client, q)['card']['id'] == first_id
+
+
+def test_learning_ahead_orders_by_due_and_respects_window(client, account, engine, learning_time):
+    for _ in range(4):
+        make_note(client, account)
+    with Session(engine) as db, db.begin():
+        cards = list(db.scalars(select(Card).order_by(Card.new_position)))
+        ids = [str(card.id) for card in cards]
+        for card, minutes in zip(cards[:3], [20, 5, 21]):
+            card.type = card.queue = 'learning'
+            card.new_position = None
+            card.due_at = learning_time + timedelta(minutes=minutes)
+            card.due_day = None
+        cards[3].type = 'learning'
+        cards[3].new_position = None
+        cards[3].queue = 'day_learning'
+        cards[3].due_day = study_day(learning_time, 'Asia/Shanghai') + 1
+    q = queue(client, account)
+    result = next_card(client, q)
+    assert result['card']['id'] == ids[1]
+    assert result['learning_remaining'] == 2
+    for card_id, expected in [(ids[1], ids[0]), (ids[0], None)]:
+        with Session(engine) as db, db.begin():
+            db.get(Card, UUID(card_id)).queue = 'suspended'
+        result = next_card(client, q)
+        assert (result['card']['id'] if result['card'] else None) == expected
+    assert result['empty_reason'] == 'waiting'
+    assert result['learning_remaining'] == 0
+    assert datetime.fromisoformat(result['next_due_at']) == learning_time + timedelta(minutes=21)
 
 
 def test_upload_verification_ownership_claim_and_recovery(client, account, engine, monkeypatch):

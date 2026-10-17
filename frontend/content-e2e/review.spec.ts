@@ -32,6 +32,16 @@ test('真实 Review：五种卡片、评分、幂等重试、刷新、撤销、�
   await expect(page.getByText('记忆联想', { exact: true })).toBeVisible()
   await page.reload()
   await expect(page.getByText('记忆联想', { exact: true })).toBeVisible()
+  // Again schedules 15 minutes ahead; with no other work, learn ahead now.
+  await page.getByTestId('rate-again').click()
+  await expect(page.getByRole('button', { name: '显示答案', exact: true })).toBeVisible()
+  await expect(page.getByText('journey', { exact: true })).toBeVisible()
+  await expect(page.getByText('记忆联想', { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('review-empty')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '显示答案', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '显示答案', exact: true }).click()
+  await expect(page.getByText('记忆联想', { exact: true })).toBeVisible()
   const keys: string[] = []
   let failResponse = true
   await page.route('**/review/queues/*/attempts/*/rating', async route => {
