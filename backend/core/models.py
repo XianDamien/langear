@@ -299,6 +299,9 @@ class MediaAsset(Entity, Scoped, Base):
     kind: Mapped[str] = mapped_column(String(16))
     scope: Mapped[str] = mapped_column(String(16), default="private")
     lifecycle: Mapped[str] = mapped_column(String(20), default="ready")
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    content_type: Mapped[str | None] = mapped_column(String(80))
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
     __table_args__ = (
         UniqueConstraint("collection_id", "id"),
         UniqueConstraint("collection_id", "id", "scope"),

@@ -1,72 +1,32 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Undo2 } from 'lucide-vue-next'
 import ReviewRatingButtons from '@/components/review/ReviewRatingButtons.vue'
+import ReviewPausedCards from '@/components/review/ReviewPausedCards.vue'
+import ReviewAttemptStatus from '@/components/review/ReviewAttemptStatus.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import ReviewPracticeCard from '@/components/review/ReviewPracticeCard.vue'
 import ReviewCardFront from '@/components/review/ReviewCardFront.vue'
 import ReviewCardBack from '@/components/review/ReviewCardBack.vue'
 import SentencePracticeCard from '@/components/review/SentencePracticeCard.vue'
 import PracticeFields from '@/components/study/modules/PracticeFields.vue'
-import { contentResources, libraryContent } from '@/services/libraryContent'
-import { resourceError, templateLabels, type ResourceCard, type ResourceDeck } from '@/services/contentCore'
+import { useReviewSession } from '@/composables/useReviewSession'
+import { templateLabels } from '@/services/contentCore'
 
+const showPaused = ref(false)
 const route = useRoute()
 const router = useRouter()
-const deck = ref<ResourceDeck>()
-const cards = ref<ResourceCard[]>([])
-const index = ref(0)
-const flipped = ref(false)
-const wordBackUsed = ref(false)
-const loading = ref(true)
-const error = ref('')
-const current = computed(() => cards.value[index.value])
+const { deck, state, card: current, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
+const flipped = computed(() => !!state.value?.attempt)
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
   english: current.value?.back.word || '', chinese: current.value?.back.meaning,
-  mnemonic: current.value?.back.mnemonic,
-  phonetic: current.value?.back.phonetic, note: current.value?.back.note,
+  mnemonic: current.value?.back.mnemonic, phonetic: current.value?.back.phonetic, note: current.value?.back.note,
 }))
 const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
-const previousWordIndex = computed(() => {
-  if (wordBackUsed.value) return -1
-  for (let i = index.value - 1; i >= 0; i--) {
-    if (cards.value[i]?.card_template_key.startsWith('vocabulary_')) return i
-  }
-  return -1
-})
-function previousWord() {
-  if (previousWordIndex.value < 0) return
-  index.value = previousWordIndex.value
-  wordBackUsed.value = true
-  flipped.value = false
-}
-let generation = 0
-async function load() {
-  const request = ++generation
-  const id = String(route.params.deckId)
-  loading.value = true
-  error.value = ''
-  deck.value = undefined
-  cards.value = []
-  index.value = 0
-  flipped.value = false
-  wordBackUsed.value = false
-  try {
-    const [response, rows] = await Promise.all([
-      libraryContent.get<ResourceDeck>(`/decks/${id}`),
-      contentResources<ResourceCard>('/cards', 'cards', { deck_id: id, exclude_imported: true, study_only: true }),
-    ])
-    if (request !== generation) return
-    deck.value = response.data
-    cards.value = rows
-  } catch (cause) {
-    if (request === generation) error.value = resourceError(cause)
-  } finally { if (request === generation) loading.value = false }
-}
-watch(() => route.params.deckId, load, { immediate: true })
-onBeforeUnmount(() => { generation++ })
+const dueLabel = computed(() => state.value?.next_due_at ? new Date(state.value.next_due_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
+watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
 </script>
 
 <template>
@@ -82,86 +42,154 @@ onBeforeUnmount(() => { generation++ })
           size="sm"
           :icon="ArrowLeft"
           class="shrink-0 whitespace-nowrap"
+          :disabled="busy"
           @click="router.push('/library')"
         >
           返回题库
         </RetroButton>
-        <h1 class="truncate text-lg font-bold text-slate-900">
+        <h1 class="truncate text-lg font-bold">
           {{ deck?.name || '复习' }}
         </h1>
-        <span
-          v-if="cards.length"
-          class="shrink-0 text-xs text-slate-500"
-        >{{ index + 1 }} / {{ cards.length }}</span>
       </div>
+      <button
+        type="button"
+        class="shrink-0 text-xs text-slate-500 underline"
+        :disabled="busy || loading"
+        @click="showPaused = true"
+      >
+        暂停/跳过
+      </button>
       <RetroButton
         variant="secondary"
         size="sm"
         :icon="Undo2"
-        disabled
-        title="评分功能尚未启用"
+        class="shrink-0 whitespace-nowrap"
+        :disabled="busy || loading || !state?.can_undo || !!error"
+        @click="undo"
       >
         撤销评分
       </RetroButton>
     </header>
-    <main class="mx-auto flex w-full flex-1 flex-col items-center px-4 py-6" :class="isVocabulary || !current ? 'justify-center sm:max-w-3xl' : 'min-h-0 max-w-6xl'">
-      <p class="mb-4 text-center text-xs text-slate-500">
-        翻卡练习 · 暂不记录评分和复习进度
+    <main
+      class="mx-auto flex w-full flex-1 flex-col items-center px-4 py-4"
+      :class="isVocabulary || !current ? 'justify-center sm:max-w-3xl' : 'min-h-0 max-w-6xl'"
+    >
+      <p
+        v-if="state"
+        class="mb-3 shrink-0 text-center text-xs text-slate-500"
+        aria-label="剩余卡片"
+      >
+        新学 {{ state.new_remaining }} · 学习中 {{ state.learning_remaining }} · 待复习 {{ state.review_remaining }}
       </p>
       <p
         v-if="loading"
         role="status"
-        class="py-20 text-center text-slate-500"
+        class="py-20 text-slate-500"
       >
-        正在加载卡片…
+        正在恢复复习队列…
       </p>
       <div
-        v-else-if="error"
+        v-if="error"
         role="alert"
-        class="space-y-4 py-20 text-center"
+        class="mb-3 w-full shrink-0 rounded border border-amber-300 bg-amber-50 p-3 text-center text-sm"
       >
-        <p>{{ error }}</p>
+        <p>{{ error }}</p><button
+          type="button"
+          class="mt-2 underline"
+          :disabled="busy || loading"
+          @click="retry"
+        >
+          {{ needsRecovery ? '恢复队列' : '重试' }}
+        </button>
+      </div>
+      <p
+        v-if="uploadProgress !== null"
+        role="status"
+        class="mb-3 text-sm"
+      >
+        正在保存录音 {{ uploadProgress }}%
+      </p>
+      <div
+        v-if="!loading && !current && state"
+        class="space-y-4 py-16 text-center text-slate-500"
+        data-testid="review-empty"
+      >
+        <p v-if="state.empty_reason === 'no_cards'">
+          这个牌组没有选中的可学卡片，请返回题库选择卡片。
+        </p>
+        <p v-else-if="state.empty_reason === 'waiting'">
+          当前卡片已完成，下一张将在 {{ dueLabel }} 到期。
+        </p>
+        <p v-else>
+          今日暂无可学卡片。已评分的进度已保存。
+        </p>
         <RetroButton
           class="mx-auto"
-          @click="load"
+          :disabled="busy || !!error"
+          @click="load(String(route.params.deckId))"
         >
-          重试
+          检查到期卡片
         </RetroButton>
       </div>
       <div
-        v-else-if="!cards.length"
-        class="py-20 text-center text-slate-500"
-      >
-        这个牌组还没有卡片。请返回题库添加卡片。
-      </div>
-      <div
-        v-else-if="current"
+        v-else-if="!loading && current"
         class="flex w-full flex-1 flex-col items-center"
         :class="isVocabulary ? 'justify-center py-4' : 'min-h-0'"
       >
-        <p class="mb-3 text-center text-sm font-bold text-brand-accent">
-          {{ templateLabels[current.card_template_key] }}
-        </p>
+        <div class="mb-3 flex w-full shrink-0 items-center justify-center gap-4 text-sm">
+          <span class="font-bold text-brand-accent">{{ templateLabels[current.card_template_key] }}</span>
+          <template v-if="!flipped">
+            <button
+              type="button"
+              class="text-xs text-slate-500 underline"
+              :disabled="busy || !!error"
+              @click="schedule('bury')"
+            >
+              今日跳过
+            </button>
+            <button
+              type="button"
+              class="text-xs text-slate-500 underline"
+              :disabled="busy || !!error"
+              @click="schedule('suspend')"
+            >
+              暂停此卡
+            </button>
+          </template>
+        </div>
         <SentencePracticeCard
           v-if="!isVocabulary"
-          :key="current.id"
+          :key="state?.review_token || current.id"
           :card="current"
           :is-flipped="flipped"
-          @flip="flipped = true"
-        />
+          :busy="busy || !!error"
+          :attempt="state?.attempt"
+          @flip="flip"
+        >
+          <template #feedback>
+            <ReviewAttemptStatus
+              v-if="state?.attempt"
+              :attempt="state.attempt"
+            />
+          </template>
+          <template #rating>
+            <ReviewRatingButtons
+              :options="state?.rating_options"
+              :disabled="busy || !!error"
+              @rate="rate"
+            />
+          </template>
+        </SentencePracticeCard>
         <ReviewPracticeCard
           v-else
-          :key="current.id"
+          :key="state?.review_token || current.id"
           :is-flipped="flipped"
         >
           <template #front>
-            <ReviewCardFront
-              v-if="isVocabulary"
-              :card="current"
-            />
+            <ReviewCardFront :card="current" />
           </template>
           <template #back>
-            <template v-if="isVocabulary">
+            <template v-if="flipped">
               <ReviewCardBack :back-snapshot="wordAnswer" />
               <PracticeFields
                 v-if="Object.keys(wordMedia).length"
@@ -170,44 +198,29 @@ onBeforeUnmount(() => { generation++ })
             </template>
           </template>
           <template #actions>
-            <template v-if="isVocabulary">
-              <button
-                v-if="!flipped"
-                type="button"
-                class="w-full rounded-md bg-brand-accent px-2 py-2 font-bold uppercase text-white shadow-mech-sm transition-all hover:brightness-95 active:translate-y-0.5"
-                @click="flipped = true"
-              >
-                显示答案
-              </button>
-              <ReviewRatingButtons v-else />
-            </template>
+            <RetroButton
+              v-if="!flipped"
+              class="w-full rounded-md"
+              :disabled="busy || !!error"
+              @click="flip()"
+            >
+              {{ busy ? '保存中…' : '显示答案' }}
+            </RetroButton>
+            <ReviewRatingButtons
+              v-else
+              :options="state?.rating_options"
+              :disabled="busy || !!error"
+              @rate="rate"
+            />
           </template>
         </ReviewPracticeCard>
-        <div
-          v-if="isVocabulary"
-          class="mt-4 w-full max-w-xl text-center"
-        >
-          <p
-            v-if="flipped"
-            class="mb-3 text-xs text-slate-500"
-          >
-            评分尚未启用，当前仅支持翻卡练习。
-          </p>
-          <nav
-            v-if="previousWordIndex >= 0"
-            aria-label="单词回退"
-            class="text-sm text-slate-500"
-          >
-            <button
-              type="button"
-              class="hover:text-brand-accent"
-              @click="previousWord"
-            >
-              上一张
-            </button>
-          </nav>
-        </div>
       </div>
     </main>
+    <ReviewPausedCards
+      v-if="showPaused"
+      :deck-id="String(route.params.deckId)"
+      @close="showPaused = false"
+      @changed="load(String(route.params.deckId))"
+    />
   </div>
 </template>

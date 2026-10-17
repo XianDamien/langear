@@ -10,6 +10,7 @@ from core.schemas import Body
 class Scope(Body):
     deck_id: UUID
     include_descendants: bool = True
+    exclude_imported: bool = False
 
 
 class QueueCreate(Body):

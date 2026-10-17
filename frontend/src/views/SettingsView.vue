@@ -11,6 +11,7 @@ const route = useRoute()
 const { desiredRetention, learningSteps, relearningSteps, maximumInterval, defaultSourceScope, saving, loading, loadError, saveError } =
   storeToRefs(settingsStore)
 const { deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled } = storeToRefs(settingsStore)
+const coreDeck = computed(() => typeof deckId.value === 'string')
 const retentionPercent = computed({
   get: () => Number((desiredRetention.value * 100).toFixed(4)),
   set: (value: number) => { desiredRetention.value = value / 100 },
@@ -81,15 +82,15 @@ async function handleSave() {
               id="desired-retention"
               v-model.number="retentionPercent"
               type="number"
-              min="1"
-              max="99.9"
+              :min="coreDeck ? 70 : 1"
+              :max="coreDeck ? 99 : 99.9"
               step="0.1"
               required
               class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
             >
           </div>
 
-          <div>
+          <div v-if="!coreDeck">
             <label for="maximum-interval" class="block text-sm font-bold uppercase text-slate-500 mb-2">
               最大复习间隔（天）
             </label>
@@ -105,11 +106,11 @@ async function handleSave() {
             >
           </div>
 
-          <div>
+          <div v-if="!coreDeck">
             <label for="learning-steps" class="block text-sm font-bold text-slate-500 mb-2">学习步长（分钟）</label>
             <input id="learning-steps" v-model.trim="learningSteps" type="text" placeholder="例如 1,15；留空表示无步长" class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
           </div>
-          <div>
+          <div v-if="!coreDeck">
             <label for="relearning-steps" class="block text-sm font-bold text-slate-500 mb-2">重学步长（分钟）</label>
             <input id="relearning-steps" v-model.trim="relearningSteps" type="text" placeholder="例如 15；留空表示无步长" class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
           </div>

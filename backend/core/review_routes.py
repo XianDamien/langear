@@ -67,8 +67,8 @@ def rate(
 
 
 @router.post("/review/queues/{queue_id}/undo")
-def undo(queue_id: UUID, collection: Identity):
-    return transact(collection, "undo", queue_id)
+def undo(queue_id: UUID, collection: Identity, key: Annotated[UUID | None, Header(alias="Idempotency-Key")] = None):
+    return transact(collection, "undo", queue_id, key)
 
 
 @router.get("/attempts/{attempt_id}")
@@ -89,3 +89,13 @@ def scheduling(deck_id: UUID, collection: Identity):
 @router.patch("/decks/{deck_id}/scheduling")
 def update_scheduling(deck_id: UUID, body: SchedulingPatch, collection: Identity):
     return transact(collection, "update_settings", deck_id, body)
+
+
+@router.get("/review/deck-counts")
+def deck_counts(collection: Identity):
+    return transact(collection, "deck_counts")
+
+
+@router.get("/review/paused-cards")
+def paused_cards(deck_id: UUID, collection: Identity):
+    return transact(collection, "paused_cards", deck_id)

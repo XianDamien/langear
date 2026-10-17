@@ -125,6 +125,7 @@ function handlePlayClick() {
           >
             <template v-if="isCore">
               {{ deck.totalCards }} 张卡片
+              <span v-if="mode === 'my-courses' && deck.reviewCountsAvailable" class="ml-2">新 {{ deck.newCards }} · 待学 {{ deck.reviewCards }}</span>
             </template>
             <template v-else-if="deck.type === 'lesson'">
               <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·

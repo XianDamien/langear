@@ -1,16 +1,19 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReviewSessionView from '@/views/ReviewSessionView.vue'
-import { contentResources, libraryContent } from '@/services/libraryContent'
+import { libraryContent } from '@/services/libraryContent'
+import type { ReviewNext } from '@/services/review'
 
-vi.mock('@/services/libraryContent', () => ({
-  contentResources: vi.fn(), libraryContent: { get: vi.fn() },
-}))
-const cards = [
-  { id: 'a', deck_id: 'deck-a', note_id: 'n1', card_template_key: 'vocabulary_english_to_chinese', front: { word: 'journey' }, back: { word: 'journey', meaning: '旅程' } },
-  { id: 'b', deck_id: 'deck-a', note_id: 'n2', card_template_key: 'sentence_translation', front: { chinese: '你好' }, back: { english: 'Hello' } },
-]
+vi.mock('@/services/libraryContent', () => ({ libraryContent: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
+const options = ['again', 'hard', 'good', 'easy'].map(rating => ({ rating, display_interval: '15m' }))
+const card = { id: 'a', deck_id: 'deck-a', note_id: 'n1', card_template_key: 'vocabulary_english_to_chinese', front: { word: 'journey' }, card_schedule_revision: 0, input_requirement: { type: 'none', required: false } }
+const counts = { new_remaining: 1, review_remaining: 0, learning_remaining: 0, can_undo: false, next_due_at: null, empty_reason: null }
+let current: Record<string, unknown>
+let attempt: Record<string, unknown>
+const httpGet = vi.mocked(libraryContent.get)
+const httpPost = vi.mocked(libraryContent.post)
+const httpPut = vi.mocked(libraryContent.put)
 async function start() {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/review/:deckId', component: ReviewSessionView },
@@ -25,106 +28,130 @@ async function start() {
   }
   return { wrapper, router, click }
 }
-describe('deck flip practice', () => {
-  it('shows the mnemonic only on the answer and offers no forward navigation for words', async () => {
-    vi.mocked(libraryContent.get).mockResolvedValue({ data: { id: 'deck-a', name: 'Practice' } })
-    vi.mocked(contentResources).mockResolvedValue([{ ...cards[0]!, back: { word: 'journey', meaning: '旅程', mnemonic: '记忆联想', note: '常用搭配' } }])
+beforeEach(() => {
+  sessionStorage.clear()
+  current = { ...counts, queue_id: 'q', review_token: 'token', card: { ...card } }
+  attempt = { id: 'attempt', card_id: 'a', review_token: 'token', front_snapshot: card.front,
+    back_snapshot: { word: 'journey', meaning: '旅程', mnemonic: '记忆联想', note: '常用搭配' }, input_snapshot: { type: 'none' },
+    asr_status: 'skipped', ai_status: 'skipped', rating: null, media_asset_id: null, deterministic_result: null }
+  httpGet.mockImplementation(async path => ({ data: path.startsWith('/decks/') ? { id: path.split('/')[2], name: 'Practice' } : path.startsWith('/media-assets') ? { url: '/reference.wav' } : current }))
+  httpPost.mockImplementation(async (path, body) => {
+    if (path === '/review/queues') return { data: { ...counts, queue_id: 'q', current: null } }
+    if (path.endsWith('/flip')) {
+      attempt.input_snapshot = (body as { input: unknown }).input
+      current = { ...current, attempt, card_schedule_revision: 0, rating_options: options, can_undo: false }
+      return { data: { attempt, card_schedule_revision: 0, rating_options: options } }
+    }
+    if (path.endsWith('/undo')) {
+      current = { ...counts, queue_id: 'q', review_token: 'token', card, attempt, card_schedule_revision: 2, rating_options: options }
+      return { data: { attempt, card_schedule_revision: 2, rating_options: options } }
+    }
+    return { data: {} }
+  })
+  httpPut.mockImplementation(async () => {
+    current = { ...counts, queue_id: 'q', review_token: null, card: null, new_remaining: 0, can_undo: true, empty_reason: 'waiting', next_due_at: '2026-10-17T10:15:00Z' }
+    return { data: { attempt_id: 'attempt', rating: 'good' } }
+  })
+})
+describe('server-backed review', () => {
+  it('loads only the front, reveals snapshots, rates and undoes without local navigation', async () => {
     const { wrapper, click } = await start()
-    expect(contentResources).toHaveBeenCalledWith('/cards', 'cards', { deck_id: 'deck-a', exclude_imported: true, study_only: true })
-    expect(wrapper.text()).toContain('journey')
+    expect(httpGet).not.toHaveBeenCalledWith('/cards', expect.anything())
     expect(wrapper.text()).not.toContain('记忆联想')
     await click('显示答案')
-    expect(wrapper.text()).toContain('旅程')
     expect(wrapper.text()).toContain('记忆联想')
-    expect(wrapper.text()).toContain('常用搭配')
-    const ratings = wrapper.get('[aria-label="复习评分（尚未启用）"]')
-    expect(ratings.findAll('button')).toHaveLength(4)
-    for (const button of ratings.findAll('button')) expect(button.attributes('disabled')).toBeDefined()
-    expect(wrapper.findAll('button').some(b => ['下一张', '上一张', '查看题面', '完成本轮'].includes(b.text()))).toBe(false)
+    expect(wrapper.text()).toContain('旅程')
+    expect(wrapper.get('[data-testid="rate-good"]').text()).toContain('15m')
+    await wrapper.get('[data-testid="rate-good"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="review-empty"]').text()).toContain('下一张')
+    expect(httpPut).toHaveBeenCalledWith('/review/queues/q/attempts/attempt/rating', { rating: 'good', card_schedule_revision: 0 }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{14}7/) } }))
+    await click('撤销评分')
+    expect(wrapper.text()).toContain('记忆联想')
+    expect(wrapper.get('[data-testid="rate-easy"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
-  it('compares the typed translation without sentence navigation', async () => {
-    vi.mocked(libraryContent.get).mockResolvedValue({ data: { id: 'deck-a', name: 'Mixed' } })
-    vi.mocked(contentResources).mockResolvedValue([cards[1]!, cards[0]!])
+  it('preserves raw translation text and restores it from the saved Attempt after refresh', async () => {
+    current.card = { ...card, card_template_key: 'sentence_translation', front: { chinese: '你好' }, input_requirement: { type: 'text', required: true } }
+    attempt.front_snapshot = { chinese: '你好' }
+    attempt.back_snapshot = { english: 'Hello', reference_audio: 'audio' }
     const { wrapper, click } = await start()
-    expect(wrapper.get('[data-testid="translation-prompt"]').text()).toBe('你好')
-    expect(wrapper.findAll('button').find(button => button.text() === '显示答案')!.attributes('disabled')).toBeDefined()
-    await wrapper.get('textarea').setValue('   ')
-    expect(wrapper.findAll('button').find(button => button.text() === '显示答案')!.attributes('disabled')).toBeDefined()
-    await wrapper.get('textarea').setValue('Hi')
+    expect(wrapper.text()).not.toContain('Hello')
+    expect(wrapper.find('audio').exists()).toBe(false)
+    await wrapper.get('textarea').setValue('  Hi  ')
     await click('显示答案')
+    expect(httpPost).toHaveBeenCalledWith('/review/queues/q/flip', expect.objectContaining({ input: { type: 'text', text: '  Hi  ' } }), expect.anything())
     expect(wrapper.text()).toContain('Hello')
     expect(wrapper.text()).toContain('Hi')
-    expect(wrapper.text()).toContain('我的译文')
-    expect(wrapper.text()).toContain('参考译文')
-    expect(wrapper.find('[data-testid="text-difference-count"]').exists()).toBe(false)
-    expect(wrapper.findAll('audio')).toHaveLength(0)
-    expect(wrapper.findAll('button').some(b => ['下一张', '上一张', '查看题面'].includes(b.text()))).toBe(false)
+    expect(wrapper.get('audio').attributes('src')).toBe('/reference.wav')
     wrapper.unmount()
+    const recovered = await start()
+    expect(recovered.wrapper.text()).toContain('Hi')
+    expect(recovered.wrapper.find('textarea').exists()).toBe(false)
+    expect(recovered.wrapper.get('[data-testid="rate-good"]').attributes('disabled')).toBeUndefined()
+    recovered.wrapper.unmount()
   })
-  it('plays translation reference audio only after revealing the answer', async () => {
-    vi.mocked(libraryContent.get).mockImplementation(async path => ({ data: path.startsWith('/media-assets') ? { url: '/translation-reference.wav' } : { id: 'deck-a', name: 'Translation' } }))
-    vi.mocked(contentResources).mockResolvedValue([{
-      ...cards[1]!, back: { english: 'Hello', reference_audio: 'translation-audio' },
-    }])
+  it('replays a lost rating response with the identical key, even after remounting', async () => {
     const { wrapper, click } = await start()
-    expect(wrapper.findAll('audio')).toHaveLength(0)
-    expect(wrapper.text()).not.toContain('Hello')
-    await wrapper.get('textarea').setValue('Hi')
     await click('显示答案')
-    expect(libraryContent.get).toHaveBeenCalledWith('/media-assets/translation-audio/url')
-    const audio = wrapper.get('audio').element
-    expect(audio.getAttribute('src')).toBe('/translation-reference.wav')
-    const play = vi.spyOn(audio, 'play').mockResolvedValue()
-    await wrapper.get('[aria-label="播放原音频"]').trigger('click')
-    expect(play).toHaveBeenCalledOnce()
-    expect(wrapper.find('[data-testid="text-difference-count"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it('uses audio-only dictation prompts and compares case, punctuation and spacing after input', async () => {
-    vi.mocked(libraryContent.get).mockImplementation(async path => ({ data: path.startsWith('/media-assets') ? { url: '/reference.wav' } : { id: 'deck-a', name: 'Dictation' } }))
-    vi.mocked(contentResources).mockResolvedValue([{
-      id: 'dictation', deck_id: 'deck-a', note_id: 'n3', card_template_key: 'sentence_dictation',
-      front: { reference_audio: 'audio-1' }, back: { english: 'Hello, world!', chinese: '你好，世界！', note: '注意标点', reference_audio: 'audio-1' },
-    }])
-    const { wrapper, click } = await start()
-    expect(wrapper.find('[data-testid="sentence-dictation-card"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('Hello')
-    expect(wrapper.text()).not.toContain('你好')
-    expect(wrapper.get('[aria-label="播放原音频"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('textarea').attributes('spellcheck')).toBe('false')
-    await wrapper.get('textarea').setValue('hello  world')
-    await click('显示答案')
-    expect(wrapper.text()).toContain('标准答案')
-    expect(wrapper.text()).toContain('我的听写')
-    expect(wrapper.text()).toContain('注意标点')
-    expect(wrapper.get('[data-testid="text-difference-count"]').text()).not.toBe('0 处差异')
-    expect(wrapper.get('[data-testid="original-text"]').text()).toBe('Hello, world!')
-    expect(wrapper.findAll('audio')).toHaveLength(1)
-    expect(wrapper.findAll('button').some(button => ['上一张', '下一张'].includes(button.text()))).toBe(false)
-    wrapper.unmount()
-  })
-  it('supports retry and empty decks without a false completion state', async () => {
-    vi.mocked(libraryContent.get).mockResolvedValue({ data: { id: 'deck-a', name: 'Empty' } })
-    vi.mocked(contentResources).mockRejectedValueOnce(new Error('offline')).mockResolvedValue([])
-    const { wrapper, click } = await start()
+    const success = httpPut.getMockImplementation()!
+    httpPut.mockImplementationOnce(async (...args) => {
+      await success(...args)
+      throw new Error('offline after commit')
+    })
+    await wrapper.get('[data-testid="rate-good"]').trigger('click')
+    await flushPromises()
+    const original = httpPut.mock.calls[0]
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    await click('重试')
-    expect(wrapper.text()).toContain('这个牌组还没有卡片')
-    expect(wrapper.text()).not.toContain('本轮翻卡完成')
+    wrapper.unmount()
+    const recovered = await start()
+    expect(httpPut.mock.calls[1]).toEqual(original)
+    expect(recovered.wrapper.get('[data-testid="review-empty"]').text()).toContain('下一张')
+    expect(sessionStorage.length).toBe(0)
+    recovered.wrapper.unmount()
+  })
+  it('uses authoritative normalized dictation differences rather than a second frontend diff', async () => {
+    current.card = { ...card, card_template_key: 'sentence_dictation', front: { reference_audio: 'audio' } }
+    attempt.front_snapshot = { reference_audio: 'audio' }
+    attempt.back_snapshot = { english: '“Hello”', chinese: '你好' }
+    attempt.deterministic_result = { kind: 'dictation_text_diff', exact_match: true, normalized_expected: '"Hello"', normalized_actual: '"Hello"', differences: [] }
+    const { wrapper, click } = await start()
+    expect(wrapper.text()).not.toContain('Hello')
+    await wrapper.get('textarea').setValue('"Hello"')
+    await click('显示答案')
+    expect(wrapper.get('[data-testid="text-difference-count"]').text()).toBe('0 处差异')
     wrapper.unmount()
   })
-  it('ignores late responses when navigating to another deck', async () => {
-    vi.mocked(libraryContent.get).mockResolvedValue({ data: { id: 'deck-b', name: 'Second' } })
-    let resolveOld!: (value: typeof cards) => void
-    vi.mocked(contentResources).mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve })).mockResolvedValue([])
-    const { wrapper, router } = await start()
+  it('shows recovered audio and allows rating independently of pending processing', async () => {
+    current.card = { ...card, card_template_key: 'sentence_retelling', front: { reference_audio: 'audio' } }
+    attempt = { ...attempt, front_snapshot: { reference_audio: 'audio' }, back_snapshot: { english: 'Hello' }, input_snapshot: { type: 'audio', temporary_media_asset_id: 'recording' }, media_asset_id: 'recording', asr_status: 'pending', ai_status: 'pending' }
+    current = { ...current, attempt, rating_options: options, card_schedule_revision: 0 }
+    const { wrapper } = await start()
+    expect(httpGet).toHaveBeenCalledWith('/media-assets/recording/url')
+    expect(wrapper.text()).toContain('转写：等待处理')
+    expect(wrapper.get('[data-testid="rate-good"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+  it('blocks revealing a retelling answer without a recording', async () => {
+    current.card = { ...card, card_template_key: 'sentence_retelling', front: { reference_audio: 'audio' } }
+    const { wrapper } = await start()
+    expect(wrapper.findAll('button').find(b => b.text() === '显示答案')!.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+  it('recovers an expired queue and ignores stale deck responses', async () => {
+    const { wrapper, click, router } = await start()
+    httpPost.mockRejectedValueOnce({ isAxiosError: true, response: { data: { error: { code: 'QUEUE_EXPIRED' } } } })
+    await click('显示答案')
+    await click('恢复队列')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    let release!: (value: { data: ReviewNext }) => void
+    httpGet.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
     await router.push('/review/deck-b')
+    await router.push('/review/deck-c')
     await flushPromises()
-    resolveOld(cards)
+    release({ data: { ...counts, queue_id: 'old', card: null, review_token: null, empty_reason: 'no_cards' } })
     await flushPromises()
-    expect(wrapper.text()).toContain('这个牌组还没有卡片')
-    expect(wrapper.text()).not.toContain('journey')
+    expect(wrapper.text()).toContain('journey')
     wrapper.unmount()
   })
 })

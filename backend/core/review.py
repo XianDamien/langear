@@ -101,6 +101,8 @@ def dictation(expected, actual):
         "kind": "dictation_text_diff",
         "evaluator_version": "1",
         "exact_match": expected == actual,
+        "normalized_expected": expected,
+        "normalized_actual": actual,
         "differences": differences,
     }
 
@@ -128,7 +130,7 @@ class ReviewService(ContentService):
                     self.collection.timezone,
                     self.collection.scheduling_config,
                     sorted(
-                        (str(d.id), str(d.parent_id), d.scheduling_config)
+                        (str(d.id), str(d.parent_id), d.in_my_courses, d.scheduling_config)
                         for d in self.decks.values()
                     ),
                 )
@@ -175,13 +177,17 @@ class ReviewService(ContentService):
             if scope["include_descendants"]
             else [root.id]
         )
-        return list(
-            self.db.scalars(
-                select(Card).where(
-                    Card.collection_id == self.collection.id, Card.deck_id.in_(ids)
-                )
-            )
+        query = select(Card).where(
+            Card.collection_id == self.collection.id, Card.deck_id.in_(ids)
         )
+        if scope.get("exclude_imported"):
+            query = query.join(Note, Card.note_id == Note.id).where(~Note.guid.startswith("legacy:"))
+        cards = list(self.db.scalars(query))
+        # Match the existing Card Picker: None means all, [] means no cards.
+        return [card for card in cards if
+            (selected := self.decks[card.deck_id].scheduling_config.get("study_card_ids")) is None
+            or str(card.id) in selected]
+
 
     def build(self, body):
         self.restore_buried()
@@ -304,7 +310,12 @@ class ReviewService(ContentService):
 
     def counts(self, q):
         cards = self.eligible(q)
+        all_cards = self.in_scope(q.scope)
+        future = [c.due_at for c in all_cards if c.queue == "learning" and c.due_at > self.now]
         return {
+            "can_undo": bool(q.undo and not self.pending()),
+            "next_due_at": min(future) if future else None,
+            "empty_reason": None if cards else "no_cards" if not all_cards else "waiting" if future else "done_today",
             "new_remaining": sum(c.queue == "new" for c in cards),
             "review_remaining": sum(c.queue == "review" for c in cards),
             "learning_remaining": sum(
@@ -367,6 +378,7 @@ class ReviewService(ContentService):
                 "answer_snapshot",
                 "input_snapshot",
                 "input_type",
+                "media_asset_id",
                 "rating",
                 "rated_at",
                 "asr_status",
@@ -460,6 +472,8 @@ class ReviewService(ContentService):
                     or media.lifecycle != "temporary"
                 ):
                     conflict("MEDIA_ALREADY_CLAIMED")
+                if media.uploaded_at is None:
+                    conflict("MEDIA_NOT_UPLOADED")
                 media.lifecycle = "ready"
             note = self.repo.get(Note, card.note_id)
             template = self.db.get(CardTemplate, card.card_template_id)
@@ -599,8 +613,12 @@ class ReviewService(ContentService):
         q.current, q.token = None, None
         return self.receipt(key, operation, fingerprint, response)
 
-    def undo(self, queue_id):
+    def undo(self, queue_id, key=None):
         q = self.queue(queue_id)
+        if key:
+            replay, fingerprint = self.replay(key, "undo", {"queue_id": queue_id})
+            if replay is not None:
+                return replay
         if not q.undo or self.pending():
             conflict("UNDO_NOT_AVAILABLE")
         context = q.undo
@@ -613,8 +631,8 @@ class ReviewService(ContentService):
             for c, row in zip(siblings, context["siblings"])
         ):
             conflict("UNDO_NOT_AVAILABLE")
-        for key, value in context["before"].items():
-            setattr(card, key, value)
+        for field, value in context["before"].items():
+            setattr(card, field, value)
         card.schedule_revision += 1
         for sibling, row in zip(siblings, context["siblings"]):
             sibling.queue, sibling.buried_on_day = row[1:3]
@@ -644,7 +662,8 @@ class ReviewService(ContentService):
             None,
         )
         self.db.flush()
-        return self.flipped(attempt)
+        response = self.flipped(attempt)
+        return self.receipt(key, "undo", fingerprint, response) if key else response
 
     def change_schedule(self, card_id, body):
         card = self.lock_card(card_id)
@@ -687,3 +706,19 @@ class ReviewService(ContentService):
         }
         QUEUES.pop(self.collection.id, None)
         return self.get_settings(deck_id)
+
+    def deck_counts(self):
+        self.restore_buried()
+        result = {}
+        for deck in self.decks.values():
+            if deck.kind != "standard":
+                continue
+            q = RuntimeQueue(uuid7(), {"deck_id": deck.id, "include_descendants": False, "exclude_imported": True}, [], self.day, self.stamp(), self.now + timedelta(hours=2))
+            result[str(deck.id)] = self.counts(q)
+        return {"decks": result}
+
+    def paused_cards(self, deck_id):
+        self.restore_buried()
+        cards = self.in_scope({"deck_id": deck_id, "include_descendants": True})
+        return {"cards": [{**self.front(card), "queue": card.queue}
+                          for card in cards if card.queue in ("suspended", "buried_user", "buried_sibling")]}

@@ -1,4 +1,5 @@
 import http from '../http'
+import { contentCoreEnabled, coreHttp } from '@/services/contentCore'
 import { libraryContent } from '@/services/libraryContent'
 import type { BackendSettingsData, SettingsData } from '@/types/api'
 
@@ -54,14 +55,14 @@ function toBackendSettings(data: SettingsData): BackendSettingsData {
 
 export async function fetchSettings(deckId?: number | string) {
   const path = settingsPath(deckId)
-  const client = typeof deckId === 'string' ? libraryContent : http
+  const client = typeof deckId === 'string' ? (contentCoreEnabled ? coreHttp : libraryContent) : http
   const response = await client.get<BackendSettingsData>(path)
   return { ...response, data: toFrontendSettings(response.data) }
 }
 
 export async function saveSettings(data: SettingsData) {
   const path = settingsPath(data.deckId)
-  const client = typeof data.deckId === 'string' ? libraryContent : http
+  const client = typeof data.deckId === 'string' ? (contentCoreEnabled ? coreHttp : libraryContent) : http
   const response = await client.put<BackendSettingsData>(path, toBackendSettings(data))
   return { ...response, data: toFrontendSettings(response.data) }
 }

@@ -6,8 +6,8 @@ from core.models import Collection, Deck
 
 VALUES = {
     "daily_new_limit": 7, "daily_review_limit": 45,
-    "desired_retention": 0.92, "maximum_interval": 1200,
-    "learning_steps": [1, 15], "relearning_steps": [],
+    "desired_retention": 0.92, "maximum_interval": 36500,
+    "learning_steps": [15], "relearning_steps": [15],
 }
 
 
@@ -23,7 +23,7 @@ def test_settings_persist_inherit_and_preserve_other_preferences(client, account
     assert client.put(path, json=VALUES).status_code == 200
     saved = client.get(path).json()
     assert all(saved[key] == value for key, value in VALUES.items())
-    assert saved["scheduling_enabled"] is False
+    assert saved["scheduling_enabled"] is True
     assert client.get(f"/api/v1/decks/{child}/settings").json()["daily_new_limit"] == 7
     assert client.get(f"/api/v1/decks/{sibling}/settings").json()["daily_new_limit"] == 20
     client.put(f"/api/v1/decks/{child}/settings", json={**VALUES, "daily_new_limit": 3})

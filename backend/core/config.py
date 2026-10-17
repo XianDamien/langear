@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     oss_access_key_secret: SecretStr | None = None
     oss_endpoint: str | None = None
     oss_bucket_name: str | None = None
+    upload_prefix: str = "dev/staging/review"
     legacy_identity_url: str | None = None
     legacy_import_source: str | None = None
     cookie_secure: bool = True

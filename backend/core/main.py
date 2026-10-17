@@ -21,6 +21,7 @@ from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
 from core.review_routes import router as review_router
+from core.uploads import router as upload_router
 from core.models import (
     Card,
     Collection,
@@ -539,3 +540,4 @@ def save_study_selection(deck_id: UUID, body: StudySelection, service=Depends(co
     service.db.flush()
     return {"card_ids": deck.scheduling_config["study_card_ids"], "joined": deck.in_my_courses}
 app.include_router(review_router)
+app.include_router(upload_router)

@@ -166,6 +166,7 @@ def test_audio_claim_is_atomic_and_scoped(client, account, engine):
         recording = MediaAsset(
             collection_id=collection,
             object_key="recording.mp3",
+            uploaded_at=datetime.now(UTC),
             kind="audio",
             lifecycle="temporary",
         )

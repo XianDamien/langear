@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import StudyAudioPlayer from './StudyAudioPlayer.vue'
 import { Languages } from 'lucide-vue-next'
+import type { DictationResult } from '@/services/review'
 import { buildTranscriptDiff, type DiffTokenView } from '@/utils/transcriptDiff'
 
 const props = withDefaults(defineProps<{
@@ -16,6 +17,7 @@ const props = withDefaults(defineProps<{
   verbs?: string[]
   transcriptLabel?: string
   showUserAudio?: boolean
+  deterministicResult?: DictationResult
   comparisonMode?: 'retelling' | 'translation' | 'dictation'
 }>(), { showUserAudio: true })
 
@@ -40,7 +42,15 @@ const showDiff = computed(() => props.comparisonMode !== 'translation')
 const interactive = computed(() => !props.comparisonMode || props.comparisonMode === 'retelling')
 const preserveFormatting = computed(() => !interactive.value)
 const originalLabel = computed(() => props.comparisonMode === 'translation' ? '参考译文' : strict.value ? '标准答案' : '原文')
-const diffRows = computed(() => buildTranscriptDiff(props.originalText, props.transcriptText, preserveFormatting.value))
+const diffRows = computed(() => {
+  const result = props.deterministicResult
+  if (!result) return buildTranscriptDiff(props.originalText, props.transcriptText, preserveFormatting.value)
+  const tokens = (text: string, side: 'expected' | 'actual'): DiffTokenView[] => Array.from(text).map((raw, index) => ({
+    raw, normalized: raw, index,
+    status: result.differences.some(diff => index >= diff[`${side}_range`].start && index < diff[`${side}_range`].end) ? 'replace' : 'match',
+  }))
+  return { original: tokens(result.normalized_expected, 'expected'), transcript: tokens(result.normalized_actual, 'actual'), counts: { changed: result.differences.length } }
+})
 
 function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
   const classes = [

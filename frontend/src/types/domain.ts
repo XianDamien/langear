@@ -1,5 +1,6 @@
 export interface Deck {
   origin?: 'core'
+  reviewCountsAvailable?: boolean
   id: string
   name: string
   description: string

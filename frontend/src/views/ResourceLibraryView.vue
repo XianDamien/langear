@@ -172,6 +172,7 @@ onMounted(load)
         aria-label="牌组卡片"
       >
         <header class="card-list-heading">
+          <RouterLink v-if="selectedDeck" :to="`/review/${selectedDeck}`" class="text-sm text-brand-accent underline">开始复习</RouterLink>
           <h3>{{ selectedName || '开始整理你的题库' }}</h3><span>{{ currentCards.length }} 张卡片</span>
         </header>
         <div
