@@ -14,7 +14,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "python-dotenv>=1.0.0",
-    "fsrs>=6.3.0",
+    "fsrs==6.3.0",
     "oss2>=2.18.0",
     "python-multipart>=0.0.6",
     "dashscope>=1.25.6",

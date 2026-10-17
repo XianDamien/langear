@@ -242,6 +242,7 @@ class Card(Entity, Scoped, Base):
     learning_steps_remaining: Mapped[int] = mapped_column(Integer, default=0)
     interval_days: Mapped[float] = mapped_column(Float, default=0)
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    buried_on_day: Mapped[int | None] = mapped_column(Integer)
     schedule_revision: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (
         UniqueConstraint("collection_id", "id"),
@@ -365,6 +366,15 @@ class Attempt(Entity, Scoped, Base):
     ai_status: Mapped[str] = mapped_column(String(16), default="skipped")
     ai_feedback: Mapped[dict | None] = mapped_column(JSONB)
     deterministic_result: Mapped[dict | None] = mapped_column(JSONB)
+    card_schedule_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    quota_kind: Mapped[str | None] = mapped_column(String(16))
+    quota_deck_id: Mapped[UUID | None] = mapped_column(Uuid)
+    rating_result: Mapped[dict | None] = mapped_column(JSONB)
+    previous_interval_days: Mapped[float | None] = mapped_column(Float)
+    scheduled_interval_days: Mapped[float | None] = mapped_column(Float)
+    review_kind: Mapped[str | None] = mapped_column(String(16))
+    fsrs_algorithm_version: Mapped[str | None] = mapped_column(String(40))
+    fsrs_config_version: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (
         UniqueConstraint("collection_id", "id"),
         UniqueConstraint("collection_id", "review_token"),
@@ -412,3 +422,25 @@ class LegacyImport(Base):
     )
     report: Mapped[dict] = mapped_column(JSONB)
     archive: Mapped[dict] = mapped_column(JSONB)
+
+
+class ReviewReceipt(Entity, Scoped, Base):
+    """Durable idempotency receipts, never a persistent runtime queue."""
+    __tablename__ = "review_receipts"
+    key: Mapped[UUID] = mapped_column(Uuid)
+    operation: Mapped[str] = mapped_column(String(100))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    response: Mapped[dict] = mapped_column(JSONB)
+    __table_args__ = (UniqueConstraint("collection_id", "key"),)
+
+
+class ProcessingOutbox(Entity, Scoped, Base):
+    __tablename__ = "processing_outbox"
+    attempt_id: Mapped[UUID] = mapped_column(Uuid)
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "kind"),
+        ForeignKeyConstraint(["collection_id", "attempt_id"], ["attempts.collection_id", "attempts.id"], ondelete="CASCADE"),
+        CheckConstraint("kind IN ('asr','ai')", name="ck_outbox_kind"),
+    )

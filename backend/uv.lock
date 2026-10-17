@@ -1013,7 +1013,7 @@ requires-dist = [
     { name = "argon2-cffi", specifier = "==25.1.0" },
     { name = "dashscope", specifier = ">=1.25.6" },
     { name = "fastapi", specifier = ">=0.121.0" },
-    { name = "fsrs", specifier = ">=6.3.0" },
+    { name = "fsrs", specifier = "==6.3.0" },
     { name = "google-genai", specifier = ">=1.68.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "oss2", specifier = ">=2.18.0" },

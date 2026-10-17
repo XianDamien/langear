@@ -20,6 +20,7 @@ from core.content import ContentService
 from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_settings
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
+from core.review_routes import router as review_router
 from core.models import (
     Card,
     Collection,
@@ -58,7 +59,9 @@ app.add_middleware(
     allow_origins=get_settings().allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID", "Authorization"],
+    allow_headers=[
+        "Content-Type", "X-CSRF-Token", "X-Request-ID", "Authorization", "Idempotency-Key"
+    ],
     expose_headers=["X-Request-ID"],
 )
 
@@ -535,3 +538,4 @@ def save_study_selection(deck_id: UUID, body: StudySelection, service=Depends(co
     deck.in_my_courses = selected != []
     service.db.flush()
     return {"card_ids": deck.scheduling_config["study_card_ids"], "joined": deck.in_my_courses}
+app.include_router(review_router)
