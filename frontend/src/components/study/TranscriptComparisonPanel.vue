@@ -4,7 +4,7 @@ import StudyAudioPlayer from './StudyAudioPlayer.vue'
 import { Languages } from 'lucide-vue-next'
 import { buildTranscriptDiff, type DiffTokenView } from '@/utils/transcriptDiff'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   referenceAudioUrl: string | null
   userAudioUrl: string | null
   originalText: string
@@ -14,7 +14,9 @@ const props = defineProps<{
   translationLoading: boolean
   nouns?: string[]
   verbs?: string[]
-}>()
+  transcriptLabel?: string
+  showUserAudio?: boolean
+}>(), { showUserAudio: true })
 
 const emit = defineEmits<{
   wordClick: [word: string]
@@ -112,7 +114,7 @@ function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
     <div class="grid items-start gap-4 border-t border-slate-200 py-4 md:grid-cols-2 md:gap-6" data-testid="transcript-row">
       <div class="min-w-0">
         <div class="mb-1.5 flex items-center gap-2">
-          <h3 class="text-xs font-semibold text-slate-500">转写</h3>
+          <h3 class="text-xs font-semibold text-slate-500">{{ transcriptLabel || '转写' }}</h3>
           <span class="text-xs text-slate-400">{{ diffRows.counts.changed }} 处差异</span>
         </div>
         <div v-if="diffRows.transcript.length > 0" class="break-words">
@@ -120,9 +122,10 @@ function tokenClasses(token: DiffTokenView, side: 'original' | 'transcript') {
             <span :class="tokenClasses(token, 'transcript')">{{ token.raw }}</span>{{ ' ' }}
           </template>
         </div>
-        <p v-else class="text-sm text-slate-400">暂无转写</p>
+        <p v-else class="text-sm text-slate-400">{{ transcriptLabel ? '未填写' : '暂无转写' }}</p>
       </div>
       <StudyAudioPlayer
+        v-if="showUserAudio !== false"
         ref="userPlayer"
         compact
         class="md:mt-5"

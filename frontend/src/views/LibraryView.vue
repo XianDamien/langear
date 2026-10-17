@@ -8,6 +8,7 @@ import { libraryEditorEnabled } from '@/services/libraryContent'
 import LibraryContentEditor from '@/components/library/LibraryContentEditor.vue'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import LessonPickerModal from '@/components/library/LessonPickerModal.vue'
+import CardPickerModal from '@/components/library/CardPickerModal.vue'
 import { useLessonPicker } from '@/composables/useLessonPicker'
 import { useContentDecksStore } from '@/stores/contentDecks'
 import { resourceError } from '@/services/contentCore'
@@ -28,6 +29,7 @@ async function loadCore() {
 }
 
 const editor = ref<InstanceType<typeof LibraryContentEditor>>()
+const cardPicker = ref<InstanceType<typeof CardPickerModal>>()
 const deckStore = useDeckStore()
 const userCoursesStore = useUserCoursesStore()
 const { deckTree, loading } = storeToRefs(deckStore)
@@ -62,10 +64,8 @@ onMounted(() => {
 
 async function handleToggleDeckSelection(deckId: string) {
   if (libraryEditorEnabled && coreDecks.personalDecks.some(deck => deck.id === deckId)) {
-    try {
-      const joined = await coreDecks.toggleMembership(deckId)
-      if (joined !== undefined) ElMessage.success(joined ? '已加入我的课程' : '已从我的课程移除')
-    } catch (error) { ElMessage.error(resourceError(error)) }
+    const deck = coreDecks.personalDecks.find(row => row.id === deckId)
+    if (deck) void cardPicker.value?.show(deck)
     return
   }
   const deck = findDeckById(deckTree.value, deckId)
@@ -73,12 +73,11 @@ async function handleToggleDeckSelection(deckId: string) {
 
   if (deck.type === 'lesson') {
     const lessonId = Number(deck.id)
-    if (selectedLessonIdSet.value.has(lessonId)) {
+    if (libraryEditorEnabled) void cardPicker.value?.show(deck)
+    else if (selectedLessonIdSet.value.has(lessonId)) {
       await userCoursesStore.removeLessons([lessonId])
-      ElMessage.success('已从我的课程移除该 lesson')
     } else {
       await userCoursesStore.addLessons([lessonId])
-      ElMessage.success('已加入我的课程')
     }
     return
   }
@@ -96,6 +95,18 @@ async function handleToggleDeckSelection(deckId: string) {
 async function handlePickerSave(lessonIds: number[]) {
   await savePickerSelection(lessonIds)
   ElMessage.success('我的课程已更新')
+}
+
+function handleSelectCards(deckId: string) {
+  const deck = findDeckById(deckTree.value, deckId)
+  if (deck) {
+    void cardPicker.value?.show(deck)
+  }
+}
+
+async function handleCardsSaved() {
+  await Promise.all([userCoursesStore.load(), loadCore()])
+  ElMessage.success('课程学习范围已更新')
 }
 </script>
 
@@ -174,8 +185,11 @@ async function handlePickerSave(lessonIds: number[]) {
       :lessons="pickerLessons"
       :selected-lesson-ids="pickerSelectedLessonIds"
       :saving="saving"
+      :allow-card-selection="libraryEditorEnabled"
       @close="closePicker"
       @save="handlePickerSave"
+      @select-cards="handleSelectCards"
     />
+    <CardPickerModal v-if="libraryEditorEnabled" ref="cardPicker" @saved="handleCardsSaved" />
   </div>
 </template>

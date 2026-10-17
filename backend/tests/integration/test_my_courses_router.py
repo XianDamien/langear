@@ -210,3 +210,39 @@ def test_concurrent_first_writes_persist_one_complete_selection(courses_client, 
     assert courses_client.get(PATH, headers=auth()).json()["data"]["lesson_ids"] in ([103], [104])
     with courses_sessions() as db:
         assert db.query(Setting).count() == 1
+
+
+def test_sentence_selection_is_atomic_personal_and_filters_session(courses_client, courses_sessions):
+    with courses_sessions.begin() as db:
+        db.add_all([Card(id=201, deck_id=103, card_index=0, front_text="Selected"),
+                    Card(id=202, deck_id=103, card_index=1, front_text="Not selected"),
+                    Card(id=203, deck_id=104, card_index=0, front_text="Other lesson")])
+    path = f"{PATH}/103/cards"
+    assert courses_client.get(path, headers=auth()).json()["data"]["card_ids"] is None
+    result = courses_client.put(path, headers=auth(), json={"card_ids": [201, 201]})
+    assert result.status_code == 200, result.text
+    assert result.json()["data"] == {"card_ids": [201], "lesson_ids": [103]}
+    assert courses_client.get(path, headers=auth()).json()["data"]["card_ids"] == [201]
+    assert courses_client.get(path, headers=auth(2)).json()["data"]["card_ids"] is None
+    assert courses_client.put(path, headers=auth(), json={"card_ids": [201, 203]}).status_code == 400
+    session = courses_client.get("/api/v1/study/session?lesson_id=103", headers=auth())
+    assert session.status_code == 200, session.text
+    assert [row["id"] for row in session.json()["data"]["cards"]] == [201]
+    assert courses_client.put(path, headers=auth(), json={"card_ids": None}).status_code == 200
+    session = courses_client.get("/api/v1/study/session?lesson_id=103", headers=auth())
+    assert {row["id"] for row in session.json()["data"]["cards"]} == {201, 202}
+    assert courses_client.put(path, headers=auth(), json={"card_ids": []}).json()["data"]["lesson_ids"] == []
+    assert courses_client.get(path, headers=auth()).json()["data"]["card_ids"] == []
+    with courses_sessions() as db:
+        assert db.query(Card).count() == 3
+        assert db.query(UserDeckCard).count() == 0
+
+
+@pytest.mark.parametrize("payload", [{}, {"card_ids": [True]}, {"card_ids": ["201"]}, {"card_ids": [-1]}])
+def test_sentence_scope_rejects_malformed_input(courses_client, payload):
+    assert courses_client.put(f"{PATH}/103/cards", headers=auth(), json=payload).status_code == 422
+
+
+def test_sentence_scope_requires_authentication(courses_client):
+    assert courses_client.get(f"{PATH}/103/cards").status_code == 401
+    assert courses_client.put(f"{PATH}/103/cards", json={"card_ids": None}).status_code == 401

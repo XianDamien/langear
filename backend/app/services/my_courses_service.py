@@ -2,6 +2,7 @@
 
 from sqlalchemy.orm import Session
 
+from app.models.card import Card
 from app.models.deck import Deck
 from app.models.user import User
 from app.repositories.settings_repo import SettingsRepository
@@ -59,6 +60,44 @@ class MyCoursesService:
             self.settings.set(self._key(user_id), selected)
             self.db.commit()
             return selected
+        except Exception:
+            self.db.rollback()
+            raise
+
+    @staticmethod
+    def card_key(user_id: int, lesson_id: int) -> str:
+        return f"my_courses:{user_id}:lesson:{lesson_id}:card_ids"
+
+    def get_card_ids(self, user_id: int, lesson_id: int) -> list[int] | None:
+        self._require_user(user_id)
+        if lesson_id > 2**31 - 1 or not self._existing_lesson_ids([lesson_id]):
+            raise ValueError("Lesson not found")
+        # None follows all original cards, including future additions. [] is an
+        # explicitly empty scope; it must never fall back to the whole lesson.
+        return self.settings.get(self.card_key(user_id, lesson_id))
+
+    def replace_card_ids(self, user_id: int, lesson_id: int, card_ids: list[int] | None) -> dict:
+        try:
+            self._require_user(user_id, for_update=True)
+            self.get_card_ids(user_id, lesson_id)
+            selected = sorted(set(card_ids)) if card_ids is not None else None
+            if selected is not None:
+                if any(card_id > 2**31 - 1 for card_id in selected):
+                    raise ValueError("Invalid card IDs")
+                existing = {
+                    row[0] for row in self.db.query(Card.id).filter(Card.deck_id == lesson_id, Card.id.in_(selected)).all()
+                }
+                if existing != set(selected):
+                    raise ValueError("Cards must belong to the selected lesson")
+            self.settings.set(self.card_key(user_id, lesson_id), selected)
+            lessons = set(self.get_lesson_ids(user_id))
+            if selected == []:
+                lessons.discard(lesson_id)
+            else:
+                lessons.add(lesson_id)
+            self.settings.set(self._key(user_id), sorted(lessons))
+            self.db.commit()
+            return {"card_ids": selected, "lesson_ids": sorted(lessons)}
         except Exception:
             self.db.rollback()
             raise

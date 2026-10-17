@@ -141,7 +141,12 @@ class StudySessionService:
         )
         new_remaining = max(0, configuration["daily_new_limit"] - usage["new"])
         review_remaining = max(0, configuration["daily_review_limit"] - usage["review"])
-        cards = self.db.query(Card).filter(Card.deck_id == lesson_id).order_by(Card.card_index, Card.id).all()
+        from app.services.my_courses_service import MyCoursesService
+        selected = MyCoursesService(self.db).get_card_ids(user_id, lesson_id)
+        query = self.db.query(Card).filter(Card.deck_id == lesson_id)
+        if selected is not None:
+            query = query.filter(Card.id.in_(selected))
+        cards = query.order_by(Card.card_index, Card.id).all()
         states = PersonalSRSRepository(self.db).for_cards(user_id, [card.id for card in cards])
         rows = [(card, states.get(card.id)) for card in cards]
         new = [(card, srs) for card, srs in rows if srs is None or srs.last_review is None]

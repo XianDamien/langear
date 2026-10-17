@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
+test.use({ permissions: ['microphone'], launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } })
 
 test('原题库页添加牌组、混合卡片、失败重试、刷新与原导航', async ({ page }) => {
+  test.setTimeout(240_000)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const deckName = `题库编辑验收 ${Date.now()}`
@@ -93,6 +95,7 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await expect(deck).toContainText('5 张卡片')
     await expect(deck.locator('.personal-card')).toHaveCount(0)
     await deck.getByRole('button', { name: '加入', exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '整组加入', exact: true }).click()
     await expect(deck.getByRole('button', { name: '已加入', exact: true })).toBeVisible()
     await expect(page).toHaveURL(/library/)
     await page.reload()
@@ -136,6 +139,39 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await page.getByRole('button', { name: '显示答案', exact: true }).click()
     await expect(page.getByTestId('card-back-container')).toContainText('把 journey 联想成一次旅程')
     await page.screenshot({ path: '/tmp/langear-review-fixed-back.png', animations: 'disabled' })
+    // Select one original card at a time so every actual template is exercised
+    // without adding a sentence navigation control or creating copies.
+    const originals = await page.evaluate(async (id) => (await (await fetch(`/content-api/v1/cards?deck_id=${id}&limit=500`)).json()).cards, deckId)
+    for (const card of originals) {
+      await page.evaluate(async ({ deckId, cardId }) => {
+        const csrf = await (await fetch('/content-api/v1/auth/csrf')).json()
+        const response = await fetch(`/content-api/v1/decks/${deckId}/study-selection`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf.csrf_token }, body: JSON.stringify({ card_ids: [cardId] }) })
+        if (!response.ok) throw new Error(`Selection failed: ${response.status}`)
+      }, { deckId, cardId: card.id })
+      await page.getByRole('button', { name: '返回题库', exact: true }).click()
+      await page.getByRole('link', { name: '我的课程', exact: true }).click()
+      await joinedDeck.getByRole('button', { name: '开始', exact: true }).click()
+      await expect(page.getByText('1 / 1', { exact: true })).toBeVisible()
+      const key = card.card_template_key as string
+      if (key === 'sentence_translation') await page.getByLabel('我的译文', { exact: true }).fill('Every journey begins with a single step.')
+      if (key === 'sentence_dictation') await page.getByLabel('我的听写', { exact: true }).fill('Every journey begins with a single step.')
+      if (key === 'sentence_retelling') {
+        await page.getByTestId('sentence-record-toggle').click()
+        await expect(page.getByTestId('sentence-record-toggle')).toContainText('停止录音')
+        await page.waitForTimeout(400)
+        await page.getByTestId('sentence-record-toggle').click()
+        await expect(page.locator('audio[src^="blob:"]')).toHaveCount(1)
+      }
+      await page.getByRole('button', { name: '显示答案', exact: true }).click()
+      await expect(page.getByTestId('card-back-container')).toContainText(key.startsWith('sentence') ? 'Every journey begins with a single step.' : 'journey')
+      await expect(page.getByRole('button', { name: '下一张', exact: true })).toHaveCount(0)
+      await page.screenshot({ path: `/tmp/langear-${key}.png`, animations: 'disabled' })
+    }
+    expect(await page.evaluate(async (id) => (await (await fetch(`/content-api/v1/cards?deck_id=${id}&limit=500`)).json()).cards.length, deckId)).toBe(5)
+    // Direct API checks above rotate CSRF. Reload to restore the UI client's
+    // session token before testing its subsequent writes.
+    await page.reload()
+    await expect(page.getByRole('button', { name: '显示答案', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '返回题库', exact: true }).click()
     await page.getByRole('link', { name: '我的课程', exact: true }).click()
     const myDeck = page.locator('div.mb-2').filter({ has: page.getByRole('button', { name: deckName, exact: true }) })
@@ -148,6 +184,9 @@ test('原题库页添加牌组、混合卡片、失败重试、刷新与原导�
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.getByRole('button', { name: '返回题库', exact: true }).click()
     await deck.getByRole('button', { name: '已加入', exact: true }).click()
+    await expect(page.getByRole('dialog').getByRole('checkbox')).toHaveCount(5)
+    for (const box of await page.getByRole('dialog').getByRole('checkbox').all()) await box.uncheck()
+    await page.getByRole('dialog').getByRole('button', { name: '移除本课程', exact: true }).click()
     await expect(deck.getByRole('button', { name: '加入', exact: true })).toBeVisible()
     await page.getByRole('link', { name: '我的课程', exact: true }).click()
     await expect(page.getByRole('button', { name: deckName, exact: true })).toHaveCount(0)

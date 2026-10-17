@@ -1,3 +1,4 @@
+import { useStudyStore } from '@/stores/study'
 import { buildMockStudySession } from '@/services/mock/study'
 import { flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -309,17 +310,16 @@ describe('StudySessionView', () => {
       compactTranscript,
     )
 
-    await wrapper.get('[data-testid="task-nav-item-2"]').trigger('click')
+    expect(wrapper.find('[data-testid="study-task-nav"]').exists()).toBe(false)
+    useStudyStore().selectCard(1)
     await flushPromises()
 
     expect(wrapper.get('[data-testid="study-lesson-title"]').text()).toContain('2')
-    expect(wrapper.get('[data-testid="task-nav-item-2"]').text()).toContain('第2句')
-    expect(wrapper.get('[data-testid="study-task-nav"]').html()).not.toContain(secondCard.front_text)
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
     expect(wrapper.get('[data-testid="card-front-container"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="feedback-panel"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="task-nav-item-1"]').trigger('click')
+    useStudyStore().selectCard(0)
     await flushPromises()
 
     await vi.waitFor(() => {
