@@ -3,7 +3,6 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { List, X } from 'lucide-vue-next'
 import { useStudyStore } from '@/stores/study'
 import { useStudyTasksStore } from '@/stores/studyTasks'
 import { useRecorder } from '@/composables/useRecorder'
@@ -11,7 +10,6 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import RetellingCard from '@/components/study/cards/RetellingCard.vue'
-import StudyTaskNav from '@/components/study/StudyTaskNav.vue'
 import WordExplanation from '@/components/study/WordExplanation.vue'
 import SummaryModal from '@/components/summary/SummaryModal.vue'
 import type { SubmissionDisplayError } from '@/types/api'
@@ -48,8 +46,6 @@ const recorder = useRecorder()
 const audioPlayer = useAudioPlayer()
 const realtimeAsr = useRealtimeAsr()
 
-const taskNavOpen = ref(false)
-const taskNavToggle = ref<HTMLButtonElement | null>(null)
 const isSummaryOpen = ref(false)
 const summaryText = ref<string | null>(null)
 const isSummaryLoading = ref(false)
@@ -86,11 +82,6 @@ const completedCount = computed(() => cards.value.filter(
   card => taskMap.value[card.id]?.reviewStatus === 'completed',
 ).length)
 const progressPercent = computed(() => cards.value.length ? completedCount.value / cards.value.length * 100 : 0)
-
-function closeTaskNav() {
-  taskNavOpen.value = false
-  taskNavToggle.value?.focus()
-}
 
 const ratingDisabled = computed(() =>
   studyStore.submitState === 'submitting' ||
@@ -428,12 +419,6 @@ async function handleFlip() {
   })()
 }
 
-function handleSelectCard(index: number) {
-  if (taskNavOpen.value) closeTaskNav()
-  if (index === currentIndex.value) return
-  studyStore.selectCard(index)
-}
-
 watch(asyncSubmitState, (newState) => {
   if (newState === 'completed' && studyStore.isLastCard) {
     setTimeout(() => {
@@ -500,7 +485,6 @@ function exitStudy() {
   <div
     class="mx-auto flex h-[100dvh] w-full max-w-6xl flex-col px-3 py-3 sm:px-5 sm:py-4"
     data-testid="study-session-view"
-    @keydown.esc="taskNavOpen && closeTaskNav()"
   >
     <header class="mb-4 shrink-0">
       <div class="flex items-center gap-3">
@@ -513,17 +497,6 @@ function exitStudy() {
           <span class="ml-2 font-normal text-slate-400">{{ currentIndex + 1 }} / {{ cards.length }}</span>
         </h1>
         <span class="shrink-0 text-xs text-slate-500">已练 {{ completedCount }} / {{ cards.length }}</span>
-        <button
-          ref="taskNavToggle"
-          type="button"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 md:hidden"
-          aria-label="句子导航"
-          aria-controls="study-sidebar"
-          :aria-expanded="taskNavOpen"
-          @click="taskNavOpen = !taskNavOpen"
-        >
-          <List :size="18" />
-        </button>
       </div>
       <div
         class="mt-3 h-1 overflow-hidden rounded-full bg-slate-200"
@@ -539,35 +512,6 @@ function exitStudy() {
     </header>
 
     <div class="relative flex min-h-0 flex-1 gap-5 pt-3">
-      <button
-        v-if="taskNavOpen"
-        type="button"
-        class="absolute inset-0 z-20 bg-slate-900/20 md:hidden"
-        aria-label="关闭句子导航"
-        @click="closeTaskNav"
-      />
-      <aside
-        id="study-sidebar"
-        class="absolute inset-y-0 left-0 z-30 w-60 shrink-0 flex-col border border-slate-200 bg-white shadow-mech md:static md:z-auto md:flex md:w-52 md:shadow-none lg:w-56"
-        :class="taskNavOpen ? 'flex' : 'hidden'"
-        aria-label="句子任务导航"
-      >
-        <div class="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-600">
-            <List :size="16" />
-            句子列表
-          </h2>
-          <button type="button" class="p-1 text-slate-500 md:hidden" aria-label="收起句子导航" @click="closeTaskNav">
-            <X :size="16" />
-          </button>
-        </div>
-        <StudyTaskNav
-          v-if="cards.length > 0"
-          :cards="cards"
-          :current-index="currentIndex"
-          @select="handleSelectCard"
-        />
-      </aside>
 
       <div
         v-if="loading"

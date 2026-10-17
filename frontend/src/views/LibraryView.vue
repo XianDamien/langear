@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { Plus } from 'lucide-vue-next'
@@ -9,13 +8,28 @@ import { libraryEditorEnabled } from '@/services/libraryContent'
 import LibraryContentEditor from '@/components/library/LibraryContentEditor.vue'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import LessonPickerModal from '@/components/library/LessonPickerModal.vue'
+import CardPickerModal from '@/components/library/CardPickerModal.vue'
 import { useLessonPicker } from '@/composables/useLessonPicker'
+import { useContentDecksStore } from '@/stores/contentDecks'
+import { resourceError } from '@/services/contentCore'
 import { useDeckStore } from '@/stores/deck'
 import { useUserCoursesStore } from '@/stores/userCourses'
 import { collectLessonIds, findDeckById, getNodeSelectionStatus } from '@/utils/deckSelection'
 
+const coreDecks = useContentDecksStore()
+const coreError = ref('')
+const libraryDeckTree = computed(() => [
+  ...(libraryEditorEnabled ? coreDecks.personalDecks : []),
+  ...deckTree.value,
+])
+async function loadCore() {
+  if (!libraryEditorEnabled) return
+  coreError.value = ''
+  try { await coreDecks.load() } catch (error) { coreError.value = resourceError(error) }
+}
+
 const editor = ref<InstanceType<typeof LibraryContentEditor>>()
-const router = useRouter()
+const cardPicker = ref<InstanceType<typeof CardPickerModal>>()
 const deckStore = useDeckStore()
 const userCoursesStore = useUserCoursesStore()
 const { deckTree, loading } = storeToRefs(deckStore)
@@ -26,7 +40,7 @@ const {
   saving,
 } = storeToRefs(userCoursesStore)
 
-const pageLoading = computed(() => loading.value || coursesLoading.value)
+const pageLoading = computed(() => loading.value || coursesLoading.value || (libraryEditorEnabled && coreDecks.loading))
 const {
   pickerDeck,
   pickerLessons,
@@ -45,25 +59,25 @@ onMounted(() => {
     deckStore.load()
   }
   userCoursesStore.load()
+  loadCore()
 })
 
-function handleSelectLesson(lessonId: string) {
-  deckStore.selectLesson(lessonId)
-  router.push(`/study/${lessonId}`)
-}
-
 async function handleToggleDeckSelection(deckId: string) {
+  if (libraryEditorEnabled && coreDecks.personalDecks.some(deck => deck.id === deckId)) {
+    const deck = coreDecks.personalDecks.find(row => row.id === deckId)
+    if (deck) void cardPicker.value?.show(deck)
+    return
+  }
   const deck = findDeckById(deckTree.value, deckId)
   if (!deck) return
 
   if (deck.type === 'lesson') {
     const lessonId = Number(deck.id)
-    if (selectedLessonIdSet.value.has(lessonId)) {
+    if (libraryEditorEnabled) void cardPicker.value?.show(deck)
+    else if (selectedLessonIdSet.value.has(lessonId)) {
       await userCoursesStore.removeLessons([lessonId])
-      ElMessage.success('已从我的课程移除该 lesson')
     } else {
       await userCoursesStore.addLessons([lessonId])
-      ElMessage.success('已加入我的课程')
     }
     return
   }
@@ -81,6 +95,18 @@ async function handleToggleDeckSelection(deckId: string) {
 async function handlePickerSave(lessonIds: number[]) {
   await savePickerSelection(lessonIds)
   ElMessage.success('我的课程已更新')
+}
+
+function handleSelectCards(deckId: string) {
+  const deck = findDeckById(deckTree.value, deckId)
+  if (deck) {
+    void cardPicker.value?.show(deck)
+  }
+}
+
+async function handleCardsSaved() {
+  await Promise.all([userCoursesStore.load(), loadCore()])
+  ElMessage.success('课程学习范围已更新')
 }
 </script>
 
@@ -115,6 +141,20 @@ async function handlePickerSave(lessonIds: number[]) {
     />
 
     <div
+      v-if="coreError"
+      role="alert"
+      class="mb-4 text-amber-700"
+    >
+      自建牌组加载失败：{{ coreError }}
+      <button
+        type="button"
+        class="underline"
+        @click="loadCore"
+      >
+        重试
+      </button>
+    </div>
+    <div
       v-if="pageLoading"
       class="py-20 text-center text-slate-500"
     >
@@ -126,13 +166,15 @@ async function handlePickerSave(lessonIds: number[]) {
       class="space-y-2"
     >
       <DeckTreeItem
-        v-for="deck in deckTree"
-        :key="deck.id"
+        v-for="deck in libraryDeckTree"
+        :key="`${deck.origin || 'legacy'}:${deck.id}`"
+        :class="{ 'personal-deck': deck.origin === 'core' }"
         :deck="deck"
         mode="library"
         :selected-lesson-id-set="selectedLessonIdSet"
+        :selected-core-deck-ids="coreDecks.joinedIds"
+        :selection-disabled="deck.origin === 'core' ? coreDecks.saving : saving"
         :depth="0"
-        @select-lesson="handleSelectLesson"
         @toggle-deck-selection="handleToggleDeckSelection"
       />
     </div>
@@ -143,8 +185,11 @@ async function handlePickerSave(lessonIds: number[]) {
       :lessons="pickerLessons"
       :selected-lesson-ids="pickerSelectedLessonIds"
       :saving="saving"
+      :allow-card-selection="libraryEditorEnabled"
       @close="closePicker"
       @save="handlePickerSave"
+      @select-cards="handleSelectCards"
     />
+    <CardPickerModal v-if="libraryEditorEnabled" ref="cardPicker" @saved="handleCardsSaved" />
   </div>
 </template>

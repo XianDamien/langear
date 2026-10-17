@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException
 from core import auth, schemas
 from core.config import get_settings
 from core.content import ContentService
+from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_settings
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
 from core.models import (
@@ -384,6 +385,7 @@ def change_type(note_id: UUID, body: schemas.TypeChange, service=Depends(content
 def cards(
     deck_id: UUID | None = None,
     exclude_imported: bool = False,
+    study_only: bool = False,
     service=Depends(content),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -394,8 +396,16 @@ def cards(
             ~Note.guid.startswith("legacy:")
         )
     if deck_id:
-        service.repo.get(Deck, deck_id)
+        deck = service.repo.get(Deck, deck_id)
         query = query.where(Card.deck_id == deck_id)
+        if study_only:
+            if not deck.in_my_courses:
+                query = query.where(False)
+            selected = (deck.scheduling_config or {}).get("study_card_ids")
+            if selected is not None:
+                query = query.where(Card.id.in_([UUID(value) for value in selected]))
+    elif study_only:
+        raise HTTPException(status_code=422, detail="Study selection requires a deck")
     return {
         "cards": [
             service.render(card)
@@ -488,3 +498,40 @@ def media_asset_url(asset_id: UUID, service=Depends(content)):
         missing()
     from core.media import sign_media
     return {"url": sign_media(asset.object_key), "kind": asset.kind, "expires_in": 900}
+
+
+@app.get("/api/v1/decks/{deck_id}/settings")
+def deck_settings(deck_id: UUID, service=Depends(content)):
+    return get_deck_settings(service, deck_id)
+
+
+@app.put("/api/v1/decks/{deck_id}/settings")
+def update_deck_settings(deck_id: UUID, body: DeckSettingsUpdate, service=Depends(content)):
+    return save_deck_settings(service, deck_id, body)
+
+
+class StudySelection(schemas.Body):
+    card_ids: list[UUID] | None
+
+
+@app.get("/api/v1/decks/{deck_id}/study-selection")
+def study_selection(deck_id: UUID, service=Depends(content)):
+    deck = service.repo.standard_deck(deck_id)
+    return {"card_ids": (deck.scheduling_config or {}).get("study_card_ids")}
+
+
+@app.put("/api/v1/decks/{deck_id}/study-selection")
+def save_study_selection(deck_id: UUID, body: StudySelection, service=Depends(content)):
+    service.repo.lock()
+    deck = service.repo.standard_deck(deck_id)
+    selected = sorted(set(body.card_ids)) if body.card_ids is not None else None
+    if selected is not None:
+        existing = set(service.db.scalars(select(Card.id).where(
+            Card.collection_id == service.collection.id, Card.deck_id == deck.id, Card.id.in_(selected),
+        )))
+        if existing != set(selected):
+            raise HTTPException(status_code=400, detail="Cards must belong to the selected deck")
+    deck.scheduling_config = {**(deck.scheduling_config or {}), "study_card_ids": [str(value) for value in selected] if selected is not None else None}
+    deck.in_my_courses = selected != []
+    service.db.flush()
+    return {"card_ids": deck.scheduling_config["study_card_ids"], "joined": deck.in_my_courses}

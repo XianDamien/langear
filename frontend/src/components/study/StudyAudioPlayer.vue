@@ -4,6 +4,7 @@ import { Pause, Play, Volume2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   compact?: boolean
+  prominent?: boolean
   label: string
   src: string | null
   hint?: string
@@ -143,7 +144,7 @@ defineExpose({
 
 <template>
   <section
-    :class="compact ? 'min-w-0' : 'rounded-md border border-slate-200 bg-slate-50/70 p-3'"
+    :class="compact || prominent ? 'min-w-0' : 'rounded-md border border-slate-200 bg-slate-50/70 p-3'"
   >
     <audio
       ref="audioElement"
@@ -156,7 +157,33 @@ defineExpose({
       @play="isPlaying = true"
     />
 
-    <div v-if="compact" class="flex items-center gap-3">
+    <div v-if="prominent" class="flex flex-col items-center gap-3 py-2">
+      <button
+        type="button"
+        class="flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-brand-accent text-brand-accent shadow-mech-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        :aria-label="`${isPlaying ? '暂停' : '播放'}${label}`"
+        :disabled="!hasSource"
+        @click="togglePlayback"
+      >
+        <Pause v-if="isPlaying" :size="32" />
+        <Play v-else :size="32" />
+      </button>
+      <p class="text-center text-sm tracking-widest text-slate-500">{{ label }}</p>
+      <div class="w-full max-w-xs">
+        <input
+          class="compact-audio-progress block w-full cursor-pointer disabled:cursor-not-allowed"
+          type="range"
+          :aria-label="`${label}进度`"
+          :disabled="!hasSource"
+          :max="duration || 0"
+          :step="0.1"
+          :value="currentTime"
+          @input="handleSeek"
+        >
+        <p class="mt-2 text-center text-xs tabular-nums text-slate-400">{{ hasSource ? `${formatTime(currentTime)} / ${formatTime(duration)}` : '暂无音频' }}</p>
+      </div>
+    </div>
+    <div v-else-if="compact" class="flex items-center gap-3">
       <button
         type="button"
         class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-brand-accent transition hover:border-brand-accent disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300"

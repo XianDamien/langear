@@ -8,7 +8,13 @@ import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import appRouter from '@/router'
 import { setAccessToken } from '@/services/authToken'
 
-vi.mock('@/components/library/PersonalCardsPanel.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/components/library/LibraryContentEditor.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('@/services/libraryContent', async importOriginal => ({
+  ...await importOriginal<typeof import('@/services/libraryContent')>(),
+  libraryEditorEnabled: true,
+}))
+
+const coreDeckId = '01900000-0000-7000-8000-000000000001'
 
 const lesson = {
   id: '18', name: 'Lesson one', description: '', type: 'lesson',
@@ -22,12 +28,13 @@ async function mountCoursePage(component: typeof MyCoursesView | typeof LibraryV
       { path: '/my-courses', component: MyCoursesView },
       { path: '/library', component: LibraryView },
       { path: '/study/:lessonId', component: { template: '<div />' } },
+      { path: '/review/:deckId', name: 'DeckReview', component: { template: '<div />' } },
       { path: '/settings', name: 'Settings', component: { template: '<div />' } },
     ],
   })
   await router.push(path)
   const wrapper = mountWithApp(component, {
-    pinia: { initialState: { deck: { deckTree: [lesson] }, userCourses: { selectedLessonIds: [18] } } },
+    pinia: { initialState: { deck: { deckTree: [lesson] }, userCourses: { selectedLessonIds: [18] }, contentDecks: { decks: [{ id: coreDeckId, name: '自建词汇', kind: 'standard', parent_id: null, in_my_courses: true }] } } },
     global: { plugins: [router] },
   })
   await flushPromises()
@@ -43,13 +50,33 @@ describe('personal course settings navigation', () => {
     wrapper.unmount()
   })
 
-  it('opens a leaf deck from library while keeping settings in my courses', async () => {
+  it('keeps all library decks on the page while keeping settings in my courses', async () => {
     const { wrapper, router } = await mountCoursePage(LibraryView, '/library')
-    expect(wrapper.find('button[aria-label="Lesson one 设置"]').exists()).toBe(false)
+    expect(wrapper.findAll('button[aria-label$=" 设置"]')).toHaveLength(0)
     expect(wrapper.findAll('button').some(button => /^(复习|开始)$/.test(button.text()))).toBe(false)
-    await wrapper.getComponent(DeckTreeItem).get('.truncate').trigger('click')
+    for (const deck of wrapper.findAllComponents(DeckTreeItem)) {
+      await deck.get('.mb-2').trigger('click')
+    }
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/study/18')
+    expect(router.currentRoute.value.path).toBe('/library')
+    wrapper.unmount()
+  })
+
+  it('starts a joined core deck through the shared course row', async () => {
+    const { wrapper, router } = await mountCoursePage(MyCoursesView, '/my-courses')
+    const coreRow = wrapper.findAllComponents(DeckTreeItem).find(row => row.props('deck').id === coreDeckId)!
+    expect(coreRow.props('deck').type).toBe('source')
+    await coreRow.findAll('button').find(button => button.text() === '开始')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe(`/review/${coreDeckId}`)
+    wrapper.unmount()
+  })
+
+  it('opens the same settings page for a core deck without starting practice', async () => {
+    const { wrapper, router } = await mountCoursePage(MyCoursesView, '/my-courses')
+    await wrapper.get('button[aria-label="自建词汇 设置"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe(`/settings?deck_id=${coreDeckId}`)
     wrapper.unmount()
   })
 

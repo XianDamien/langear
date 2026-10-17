@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import DeckTreeItem from './DeckTreeItem.vue'
 import { useContentDecksStore } from '@/stores/contentDecks'
 import { ElMessage } from 'element-plus'
 import { cardEditorFields } from '@/services/cardEditorFields'
@@ -11,14 +9,11 @@ import { fieldLabels, resourceError, templateLabels, type ResourceDeck, type Res
 
 import { contentResources, libraryContent } from '@/services/libraryContent'
 
-const router = useRouter()
 const contentDecks = useContentDecksStore()
-const { decks, cards, personalDecks, joinedIds } = storeToRefs(contentDecks)
+const { decks, cards } = storeToRefs(contentDecks)
 const cardLoading = ref(false)
 const noteTypes = ref<ResourceNoteType[]>([])
 const media = ref<ResourceMedia[]>([])
-const loading = ref(true)
-const loadError = ref('')
 const selectedDeck = ref('')
 const deckDialog = ref(false)
 const cardDialog = ref(false)
@@ -41,19 +36,6 @@ const canSaveCard = computed(() => !!targetDeck.value && !!activeType.value && a
 watch(typeKey, () => { formError.value = '' })
 
 const deckPath = contentDecks.deckPath
-async function toggleMembership(id: string) {
-  try {
-    const joined = await contentDecks.toggleMembership(id)
-    if (joined !== undefined) ElMessage.success(joined ? '已加入我的课程' : '已从我的课程移除')
-  } catch (error) { ElMessage.error(resourceError(error)) }
-}
-async function load() {
-  loading.value = true; loadError.value = ''
-  try {
-    await contentDecks.load()
-  } catch (error) { loadError.value = resourceError(error) }
-  finally { loading.value = false }
-}
 async function openDeck() {
   deckName.value = ''; formError.value = ''; deckDialog.value = true
 }
@@ -75,7 +57,7 @@ async function saveDeck() {
   saving.value = true; formError.value = ''
   try {
     const { data } = await libraryContent.post<ResourceDeck>('/decks', { name: deckName.value.trim() })
-    decks.value.push(data); selectedDeck.value = data.id; deckDialog.value = false; loadError.value = ''
+    decks.value.push(data); selectedDeck.value = data.id; deckDialog.value = false
     ElMessage.success('牌组已添加')
   } catch (error) { formError.value = resourceError(error) }
   finally { saving.value = false }
@@ -89,7 +71,7 @@ async function saveCard() {
       fields: Object.fromEntries(Object.entries(fields.value).filter(([, value]) => value.trim())),
       tags: (tagDrafts[typeKey.value] || '').split(/[,，\s]+/).filter(Boolean),
     })
-    cards.value.push(...data.cards); selectedDeck.value = targetDeck.value; loadError.value = ''
+    cards.value.push(...data.cards); selectedDeck.value = targetDeck.value
     drafts[typeKey.value] = {}; tagDrafts[typeKey.value] = ''; cardDialog.value = false
     ElMessage.success(`已添加 ${data.cards.length} 张卡片`)
   } catch (error) { formError.value = resourceError(error) }
@@ -97,46 +79,10 @@ async function saveCard() {
 }
 function closeDialog(done: () => void) { if (!saving.value) done() }
 defineExpose({ openDeck, openCard })
-onMounted(load)
 </script>
 
 <template>
-  <section aria-label="自建内容">
-    <div
-      v-if="loadError"
-      class="mb-4 border border-amber-200 p-3 text-sm text-slate-600"
-      role="alert"
-    >
-      自建内容加载失败：{{ loadError }}
-      <button
-        type="button"
-        class="ml-3 text-brand-accent underline"
-        @click="load"
-      >
-        重试
-      </button>
-    </div>
-    <div
-      v-if="personalDecks.length"
-      class="mb-6 space-y-2"
-    >
-      <h3 class="mb-3 text-sm font-bold text-slate-500">
-        自建内容
-      </h3>
-      <DeckTreeItem
-        v-for="deck in personalDecks"
-        :key="deck.id"
-        class="personal-deck"
-        :deck="deck"
-        mode="library"
-        :selected-lesson-id-set="new Set<number>()"
-        :selected-core-deck-ids="joinedIds"
-        :selection-disabled="contentDecks.saving"
-        :depth="0"
-        @select-lesson="router.push({ name: 'DeckReview', params: { deckId: $event } })"
-        @toggle-deck-selection="toggleMembership"
-      />
-    </div>
+  <div>
     <el-dialog
       v-model="deckDialog"
       title="添加牌组"
@@ -329,7 +275,7 @@ onMounted(load)
         </footer>
       </form>
     </el-dialog>
-  </section>
+  </div>
 </template>
 <style scoped>
 .editor-selectors{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding-bottom:20px;border-bottom:1px solid #e2e8f0}.editor-label{display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:8px}.editor-input{width:100%;border:1px solid #cbd5e1;background:#fff;padding:10px 12px;color:#0f172a;border-radius:3px;font-size:14px;outline:none;resize:vertical}.editor-input:focus{border-color:#ff4d2d;box-shadow:0 0 0 2px #ffe3dc}.editor-input:disabled{background:#f8fafc;color:#94a3b8}.editor-fields{display:grid;gap:16px;padding:20px 0}.required-mark{color:#b91c1c}.optional-mark{font-size:11px;font-weight:400;color:#94a3b8;margin-left:6px}.field-help{display:block;color:#64748b;font-size:12px;line-height:1.7;margin-top:6px}.generation-preview{background:#f8fafc;border:1px solid #e2e8f0;padding:14px 16px}.template-chips{display:flex;gap:8px;flex-wrap:wrap}.template-chip{background:#fff0eb;border:1px solid #ffd0c1;color:#9a3412;padding:3px 10px;font-size:12px}.editor-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding-top:24px}.save-hint{margin-right:auto;font-size:12px;color:#64748b}.form-error{color:#b91c1c;font-size:13px;margin-top:14px}button:focus-visible{outline:2px solid #ff4d2d;outline-offset:3px}@media(max-width:760px){.editor-selectors{grid-template-columns:1fr}.save-hint{display:none}}

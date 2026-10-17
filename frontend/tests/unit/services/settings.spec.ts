@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchSettings, saveSettings } from '@/services/api/settings'
 
-const { get, put } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
+const { get, put, coreGet, corePut } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), coreGet: vi.fn(), corePut: vi.fn() }))
+vi.mock('@/services/libraryContent', () => ({ libraryContent: { get: coreGet, put: corePut } }))
 vi.mock('@/services/http', () => ({ default: { get, put } }))
 
 const backend = {
@@ -48,6 +49,26 @@ describe('existing settings API contract', () => {
       desired_retention: 0.92, learning_steps: [1, 15], relearning_steps: [10],
       maximum_interval: 1000, daily_new_limit: 3, daily_review_limit: 7,
     })
+  })
+
+  it('loads and saves UUID deck preferences through the content API only', async () => {
+    const id = '01900000-0000-7000-8000-000000000001'
+    const scoped = { ...backend, deck_id: id, deck_title: '自建词汇', daily_new_limit: 7, daily_review_limit: 45, scheduling_enabled: false }
+    coreGet.mockResolvedValue({ data: scoped })
+    corePut.mockResolvedValue({ data: scoped })
+    const { data } = await fetchSettings(id)
+    expect(coreGet).toHaveBeenCalledWith(`/decks/${id}/settings`)
+    expect(data.schedulingEnabled).toBe(false)
+    await saveSettings(data)
+    expect(corePut).toHaveBeenCalledWith(`/decks/${id}/settings`, expect.objectContaining({ daily_new_limit: 7 }))
+    expect(get).not.toHaveBeenCalled()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed UUIDs without falling back to account settings', async () => {
+    await expect(fetchSettings('invalid')).rejects.toThrow('无效的牌组')
+    expect(get).not.toHaveBeenCalled()
+    expect(coreGet).not.toHaveBeenCalled()
   })
 
   it.each([0, -1, 1.5, Number.NaN])('rejects invalid deck %s', async id => {

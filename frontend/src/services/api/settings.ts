@@ -1,4 +1,5 @@
 import http from '../http'
+import { libraryContent } from '@/services/libraryContent'
 import type { BackendSettingsData, SettingsData } from '@/types/api'
 
 function parsePositiveIntegers(value: string, label: string): number[] {
@@ -19,6 +20,7 @@ function toFrontendSettings(data: BackendSettingsData): SettingsData {
     defaultSourceScope: (data.default_source_scope ?? []).join(','),
     ...(data.deck_id === undefined ? {} : {
       deckId: data.deck_id, deckTitle: data.deck_title,
+      schedulingEnabled: data.scheduling_enabled,
       dailyNewLimit: data.daily_new_limit, dailyReviewLimit: data.daily_review_limit,
     }),
   }
@@ -50,18 +52,26 @@ function toBackendSettings(data: SettingsData): BackendSettingsData {
   }
 }
 
-export async function fetchSettings(deckId?: number) {
-  const response = await http.get<BackendSettingsData>(settingsPath(deckId))
+export async function fetchSettings(deckId?: number | string) {
+  const path = settingsPath(deckId)
+  const client = typeof deckId === 'string' ? libraryContent : http
+  const response = await client.get<BackendSettingsData>(path)
   return { ...response, data: toFrontendSettings(response.data) }
 }
 
 export async function saveSettings(data: SettingsData) {
-  const response = await http.put<BackendSettingsData>(settingsPath(data.deckId), toBackendSettings(data))
+  const path = settingsPath(data.deckId)
+  const client = typeof data.deckId === 'string' ? libraryContent : http
+  const response = await client.put<BackendSettingsData>(path, toBackendSettings(data))
   return { ...response, data: toFrontendSettings(response.data) }
 }
 
-function settingsPath(deckId?: number) {
+function settingsPath(deckId?: number | string) {
   if (deckId === undefined) return '/settings'
+  if (typeof deckId === 'string') {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deckId)) throw new Error('无效的牌组')
+    return `/decks/${deckId}/settings`
+  }
   if (!Number.isSafeInteger(deckId) || deckId <= 0 || deckId > 2147483647) throw new Error('无效的课程')
   return '/settings?deck_id=' + deckId
 }

@@ -10,17 +10,19 @@ const props = defineProps<{
   lessons: LessonSelectionItem[]
   selectedLessonIds: number[]
   saving?: boolean
+  allowCardSelection?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   save: [lessonIds: number[]]
+  selectCards: [deckId: string]
 }>()
 
 const draftLessonIds = ref<number[]>([])
 
 watch(
-  () => [props.open, props.selectedLessonIds, props.lessons] as const,
+  () => props.open,
   () => {
     if (!props.open) return
     const visibleLessonIds = new Set(props.lessons.map((lesson) => lesson.lessonId))
@@ -28,6 +30,21 @@ watch(
   },
   { immediate: true },
 )
+
+// A sentence picker can save one lesson while this course picker is still open.
+// Reconcile that lesson without discarding unsaved choices for the others.
+watch(() => props.selectedLessonIds, (next, previous) => {
+  if (!props.open) return
+  const before = new Set(previous)
+  const after = new Set(next)
+  const draft = new Set(draftLessonIds.value)
+  for (const lesson of props.lessons) {
+    if (before.has(lesson.lessonId) === after.has(lesson.lessonId)) continue
+    if (after.has(lesson.lessonId)) draft.add(lesson.lessonId)
+    else draft.delete(lesson.lessonId)
+  }
+  draftLessonIds.value = [...draft].sort((left, right) => left - right)
+})
 
 const draftLessonIdSet = computed(() => new Set(draftLessonIds.value))
 const allSelected = computed(
@@ -96,6 +113,15 @@ function save() {
               {{ lesson.sourceTitle }} / {{ lesson.unitTitle }}
             </div>
           </div>
+          <button
+            v-if="allowCardSelection"
+            type="button"
+            class="ml-auto shrink-0 text-sm text-brand-accent hover:underline"
+            :disabled="saving"
+            @click.prevent="emit('selectCards', String(lesson.lessonId))"
+          >
+            选择句子
+          </button>
         </label>
       </div>
 

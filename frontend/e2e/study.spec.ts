@@ -9,9 +9,8 @@ async function completeFirstStudyCard(page: import('@playwright/test').Page) {
 
   await expect(page.getByTestId('study-session-view')).toBeVisible()
   await expect(page.getByTestId('study-lesson-title')).toContainText('Lesson 1')
-  await expect(page.getByTestId('task-nav-item-1')).toBeVisible()
+  await expect(page.getByTestId('study-task-nav')).toHaveCount(0)
   await expect(page.getByTestId('card-front-container')).toBeVisible()
-  await expect(page.getByTestId('study-task-nav')).not.toContainText('quick brown fox')
 
   await page.getByTestId('record-toggle').click()
   await expect(page.getByTestId('record-toggle')).toContainText('停止')
@@ -83,7 +82,7 @@ test('演示音频可播放，刷新恢复反馈，第二张卡使用自己的�
   await expect(page.getByTestId('transcript-row')).toContainText(transcriptPattern)
   await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).duration)).toBeGreaterThan(1)
 
-  await page.getByTestId('task-nav-item-2').click()
+  await page.getByRole('button', { name: '良好', exact: false }).click()
   await page.getByTestId('record-toggle').click()
   await expect(page.getByTestId('live-transcript')).toContainText('Learning a language requires practice.')
   await page.getByTestId('record-toggle').click()
@@ -93,16 +92,13 @@ test('演示音频可播放，刷新恢复反馈，第二张卡使用自己的�
   await expect(page.getByTestId('feedback-panel')).not.toContainText('extra seats')
 })
 
-test('侧栏切卡，进度条更新，评分栏在短屏和手机上保持可见', async ({ page }) => {
+test('无句子导航，评分栏在短屏和手机上保持可见', async ({ page }) => {
   await installBrowserMocks(page)
   await page.setViewportSize({ width: 1280, height: 650 })
   await completeFirstStudyCard(page)
   await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
-  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
 
-  const sidebar = await page.locator('#study-sidebar').boundingBox()
-  const card = await page.getByTestId('study-card').boundingBox()
-  expect(sidebar!.x + sidebar!.width).toBeLessThan(card!.x)
+  await expect(page.getByTestId('study-task-nav')).toHaveCount(0)
   const assertRatingVisible = async () => {
     const bounds = await page.getByTestId('study-rating-bar').boundingBox()
     expect(bounds!.y).toBeGreaterThanOrEqual(0)
@@ -115,35 +111,10 @@ test('侧栏切卡，进度条更新，评分栏在短屏和手机上保持可�
 
   await page.setViewportSize({ width: 390, height: 600 })
   await assertRatingVisible()
-  await expect(page.locator('#study-sidebar')).toBeHidden()
-  await page.getByRole('button', { name: '句子导航', exact: true }).click()
-  await expect(page.locator('#study-sidebar')).toBeVisible()
-  await page.getByTestId('task-nav-item-2').click()
-  await expect(page.locator('#study-sidebar')).toBeHidden()
+  await expect(page.locator('#study-sidebar')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '句子导航', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('task-nav-item-2')).toHaveCount(0)
+  await page.getByRole('button', { name: '良好', exact: false }).click()
   await expect(page.getByTestId('card-front-container')).toBeVisible()
-  await page.getByRole('button', { name: '句子导航', exact: true }).click()
-  await page.getByTestId('task-nav-item-1').click()
-  await expect(page.getByTestId('card-back-container')).toBeVisible()
-  await assertRatingVisible()
-  await page.getByRole('button', { name: '句子导航', exact: true }).click()
-  await page.keyboard.press('Escape')
-  await expect(page.locator('#study-sidebar')).toBeHidden()
-})
-
-
-test('句子导航只显示序号和真实时长，当前句波形动画沿时间线切换', async ({ page }) => {
-  await page.goto('/study/1001')
-  const nav = page.getByTestId('study-task-nav')
-  const first = page.getByTestId('task-nav-item-1')
-  const second = page.getByTestId('task-nav-item-2')
-  await expect(first).toContainText(/第1句 — \d+\.\d{2}s/)
-  await expect(second).toContainText(/第2句 — \d+\.\d{2}s/)
-  await expect(nav).not.toContainText(/待练|完成|quick|Learning/)
-  await expect(first).toHaveAttribute('aria-current', 'step')
-  expect(await first.locator('.sentence-wave i').first().evaluate(el => getComputedStyle(el).animationName)).toContain('sentence-wave')
-  expect(await nav.locator('li').first().evaluate(el => getComputedStyle(el, '::after').width)).toBe('1px')
-  await second.click()
-  await expect(second).toHaveAttribute('aria-current', 'step')
-  await expect(first.locator('.sentence-wave')).toHaveCount(0)
-  await expect(second.locator('.sentence-wave')).toHaveCount(1)
+  await expect(page.getByTestId('study-lesson-title')).toContainText('2')
 })

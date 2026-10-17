@@ -10,7 +10,7 @@ const settingsStore = useSettingsStore()
 const route = useRoute()
 const { desiredRetention, learningSteps, relearningSteps, maximumInterval, defaultSourceScope, saving, loading, loadError, saveError } =
   storeToRefs(settingsStore)
-const { deckId, deckTitle, dailyNewLimit, dailyReviewLimit } = storeToRefs(settingsStore)
+const { deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled } = storeToRefs(settingsStore)
 const retentionPercent = computed({
   get: () => Number((desiredRetention.value * 100).toFixed(4)),
   set: (value: number) => { desiredRetention.value = value / 100 },
@@ -18,7 +18,8 @@ const retentionPercent = computed({
 
 function loadSettings() {
   const raw = route.query.deck_id
-  return settingsStore.load(raw === undefined ? undefined : Number(raw))
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return settingsStore.load(value === undefined ? undefined : /^\d+$/.test(value || '') ? Number(value) : value || '')
 }
 watch(() => route.query.deck_id, loadSettings, { immediate: true })
 
@@ -53,6 +54,13 @@ async function handleSave() {
     </div>
 
     <template v-else>
+      <p
+        v-if="schedulingEnabled === false"
+        class="mb-4 text-sm text-slate-500"
+        role="status"
+      >
+        设置可保存；此牌组的评分与复习调度尚未启用，启用后将按此配置安排学习。
+      </p>
       <RetroCard class="space-y-6">
         <form class="space-y-6" @submit.prevent="handleSave">
           <template v-if="deckId">
