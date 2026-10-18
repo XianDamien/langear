@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { installReviewMocks } from './helpers/installReviewMocks'
 import { installBrowserMocks } from './helpers/installBrowserMocks'
 
 const transcript = 'The quick brown fox jumps over the lazy dog.'
@@ -7,8 +8,8 @@ const transcriptPattern = /The\s*quick\s*brown\s*fox\s*jumps\s*over\s*the\s*lazy
 async function completeFirstStudyCard(page: import('@playwright/test').Page) {
   await page.goto('/study/1001')
 
-  await expect(page.getByTestId('study-session-view')).toBeVisible()
-  await expect(page.getByTestId('study-lesson-title')).toContainText('Lesson 1')
+  await expect(page.getByTestId('deck-review')).toBeVisible()
+  await expect(page.locator('header h1')).toContainText('Lesson 1')
   await expect(page.getByTestId('study-task-nav')).toHaveCount(0)
   await expect(page.getByTestId('card-front-container')).toBeVisible()
   const remaining = page.getByRole('status', { name: '剩余卡片' })
@@ -30,6 +31,7 @@ async function completeFirstStudyCard(page: import('@playwright/test').Page) {
 
 test('核心学习链路可以在 Mock E2E 模式下完成评测并展示反馈', async ({ page }) => {
   await installBrowserMocks(page)
+  await installReviewMocks(page)
   await completeFirstStudyCard(page)
 
   await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致', {
@@ -43,6 +45,7 @@ test('核心学习链路可以在 Mock E2E 模式下完成评测并展示反馈'
 
 test('原文下方展开和收起中文，播放器与对应文本配对', async ({ page }) => {
   await installBrowserMocks(page)
+  await installReviewMocks(page)
   await completeFirstStudyCard(page)
 
   const original = page.getByTestId('original-row')
@@ -65,6 +68,7 @@ test('原文下方展开和收起中文，播放器与对应文本配对', async
 
 test('演示音频可播放，刷新恢复反馈，第二张卡使用自己的转写', async ({ page }) => {
   await installBrowserMocks(page)
+  const legacyRequests = await installReviewMocks(page)
   await completeFirstStudyCard(page)
   await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
   const audios = page.locator('[data-testid="transcription-result"] audio')
@@ -86,18 +90,20 @@ test('演示音频可播放，刷新恢复反馈，第二张卡使用自己的�
   await expect(page.getByTestId('transcript-row')).toContainText(transcriptPattern)
   await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).duration)).toBeGreaterThan(1)
 
-  await page.getByRole('button', { name: '良好', exact: false }).click()
+  await page.getByTestId('rate-good').click()
   await page.getByTestId('record-toggle').click()
   await expect(page.getByTestId('live-transcript')).toContainText('Learning a language requires practice.')
   await page.getByTestId('record-toggle').click()
   await page.getByTestId('flip-button').click()
-  await expect(page.getByTestId('feedback-panel')).toContainText('转写中缺少「patience and」')
+  await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
   await expect(page.getByTestId('transcript-row')).toContainText('Learning a language requires practice.')
   await expect(page.getByTestId('feedback-panel')).not.toContainText('extra seats')
+  expect(legacyRequests).toEqual([])
 })
 
 test('无句子导航，评分栏在短屏和手机上保持可见', async ({ page }) => {
   await installBrowserMocks(page)
+  await installReviewMocks(page)
   await page.setViewportSize({ width: 1280, height: 650 })
   await completeFirstStudyCard(page)
   await expect(page.getByRole('status', { name: '剩余卡片' })).toBeInViewport()
@@ -119,8 +125,8 @@ test('无句子导航，评分栏在短屏和手机上保持可见', async ({ pa
   await expect(page.locator('#study-sidebar')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '句子导航', exact: true })).toHaveCount(0)
   await expect(page.getByTestId('task-nav-item-2')).toHaveCount(0)
-  await page.getByRole('button', { name: '良好', exact: false }).click()
+  await page.getByTestId('rate-good').click()
   await expect(page.getByTestId('card-front-container')).toBeVisible()
-  await expect(page.getByTestId('study-lesson-title')).toContainText('Lesson 1')
+  await expect(page.locator('header h1')).toContainText('Lesson 1')
   await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveCount(0)
 })

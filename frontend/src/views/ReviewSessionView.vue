@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Undo2 } from 'lucide-vue-next'
 import ReviewRatingButtons from '@/components/review/ReviewRatingButtons.vue'
 import ReviewQueueCounts from '@/components/review/ReviewQueueCounts.vue'
+import ReviewCardActions from '@/components/review/ReviewCardActions.vue'
 import ReviewPausedCards from '@/components/review/ReviewPausedCards.vue'
 import ReviewAttemptStatus from '@/components/review/ReviewAttemptStatus.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
@@ -18,8 +19,7 @@ import { templateLabels } from '@/services/contentCore'
 const showPaused = ref(false)
 const route = useRoute()
 const router = useRouter()
-const { deck, state, card: current, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
-const flipped = computed(() => !!state.value?.attempt)
+const { deck, state, card: current, flipped, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
   english: current.value?.back.word || '', chinese: current.value?.back.meaning,
@@ -27,7 +27,10 @@ const wordAnswer = computed(() => ({
 }))
 const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
 const dueLabel = computed(() => state.value?.next_due_at ? new Date(state.value.next_due_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
-watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
+function loadEntry() {
+  return load(String(route.params.deckId || route.params.lessonId), !route.params.deckId)
+}
+watch(() => [route.params.deckId, route.params.lessonId], loadEntry, { immediate: true })
 </script>
 
 <template>
@@ -62,15 +65,16 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
           暂停/跳过
         </button>
         <RetroButton
+          v-if="!current"
           variant="ghost"
           size="sm"
           :icon="Undo2"
           class="whitespace-nowrap"
-          aria-label="撤销评分"
+          aria-label="撤回上一张"
           :disabled="busy || loading || !state?.can_undo || !!error"
           @click="undo"
         >
-          <span class="hidden sm:inline">撤销评分</span>
+          <span class="hidden sm:inline">撤回上一张</span>
         </RetroButton>
       </div>
       <ReviewQueueCounts
@@ -130,7 +134,7 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
         <RetroButton
           class="mx-auto"
           :disabled="busy || !!error"
-          @click="load(String(route.params.deckId))"
+          @click="loadEntry"
         >
           检查到期卡片
         </RetroButton>
@@ -142,24 +146,6 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
       >
         <div class="mb-3 flex w-full shrink-0 items-center justify-center gap-4 text-sm">
           <span class="font-bold text-brand-accent">{{ templateLabels[current.card_template_key] }}</span>
-          <template v-if="!flipped">
-            <button
-              type="button"
-              class="text-xs text-slate-500 underline"
-              :disabled="busy || !!error"
-              @click="schedule('bury')"
-            >
-              今日跳过
-            </button>
-            <button
-              type="button"
-              class="text-xs text-slate-500 underline"
-              :disabled="busy || !!error"
-              @click="schedule('suspend')"
-            >
-              暂停此卡
-            </button>
-          </template>
         </div>
         <SentencePracticeCard
           v-if="!isVocabulary"
@@ -170,6 +156,16 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
           :attempt="state?.attempt"
           @flip="flip"
         >
+          <template #toolbar>
+            <ReviewCardActions
+              v-if="!flipped"
+              :busy="busy || !!error"
+              :can-undo="!!state?.can_undo"
+              :can-schedule="!state?.attempt"
+              @undo="undo"
+              @schedule="schedule"
+            />
+          </template>
           <template #feedback>
             <ReviewAttemptStatus
               v-if="state?.attempt"
@@ -189,6 +185,16 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
           :key="state?.review_token || current.id"
           :is-flipped="flipped"
         >
+          <template #toolbar>
+            <ReviewCardActions
+              v-if="!flipped"
+              :busy="busy || !!error"
+              :can-undo="!!state?.can_undo"
+              :can-schedule="!state?.attempt"
+              @undo="undo"
+              @schedule="schedule"
+            />
+          </template>
           <template #front>
             <ReviewCardFront :card="current" />
           </template>
@@ -221,10 +227,10 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
       </div>
     </main>
     <ReviewPausedCards
-      v-if="showPaused"
-      :deck-id="String(route.params.deckId)"
+      v-if="showPaused && deck"
+      :deck-id="deck!.id"
       @close="showPaused = false"
-      @changed="load(String(route.params.deckId))"
+      @changed="loadEntry"
     />
   </div>
 </template>

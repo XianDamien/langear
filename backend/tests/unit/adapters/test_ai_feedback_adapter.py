@@ -33,3 +33,24 @@ def test_create_provider_rejects_unregistered_provider():
 
 def test_registered_provider_ids_are_stable_and_sorted():
     assert registered_ai_feedback_providers() == ("gemini", "qwen_omni")
+
+
+def test_translation_feedback_uses_text_provider_and_preserves_source_data():
+    from app.adapters.feedback_base import FeedbackAdapterBase
+    adapter = object.__new__(FeedbackAdapterBase)
+    adapter._generate_text_only = Mock(return_value='{"summary":"表达正确","completeness":"完整","fluency":"自然","suggestions":["注意标点"]}')
+    result = adapter.generate_translation_feedback('你好', 'Hello', '  Hi  ')
+    assert result['summary'] == '表达正确'
+    assert result['suggestions'][0]['text'] == '注意标点'
+    prompt = adapter._generate_text_only.call_args.args[0]
+    assert '"translation": "  Hi  "' in prompt
+    assert 'pronunciation' not in result
+
+
+@pytest.mark.parametrize('response', ['[]', '{}', '{"summary":1,"completeness":"ok","fluency":"ok"}'])
+def test_translation_feedback_rejects_invalid_response(response):
+    from app.adapters.feedback_base import FeedbackAdapterBase
+    adapter = object.__new__(FeedbackAdapterBase)
+    adapter._generate_text_only = Mock(return_value=response)
+    with pytest.raises(AIFeedbackError):
+        adapter.generate_translation_feedback('你好', 'Hello', 'Hi')

@@ -23,7 +23,10 @@ const translation = computed(() => props.card.card_template_key === 'sentence_tr
 const inputLabel = computed(() => translation.value ? '我的译文' : '我的听写')
 const submittedText = computed(() => props.attempt?.input_snapshot.type === 'text' ? props.attempt.input_snapshot.text : answer.value)
 const hasAnswer = computed(() => answer.value.trim().length > 0)
-watch(() => props.card.id, () => { answer.value = ''; showTranslation.value = false })
+watch(() => [props.card.id, props.attempt?.id], () => {
+  answer.value = props.attempt?.input_snapshot.type === 'text' ? props.attempt.input_snapshot.text : ''
+  showTranslation.value = false
+}, { immediate: true })
 </script>
 
 <template>
@@ -32,6 +35,7 @@ watch(() => props.card.id, () => { answer.value = ''; showTranslation.value = fa
     class="h-full min-h-0 w-full"
     :data-testid="translation ? 'sentence-translation-card' : 'sentence-dictation-card'"
   >
+    <template #toolbar><slot name="toolbar" /></template>
     <template #front>
       <div class="mx-auto w-full max-w-md space-y-5 text-left">
         <section

@@ -9,6 +9,7 @@ defineProps<{ isFlipped: boolean }>()
     :title="isFlipped ? 'Answer' : 'Question'"
     class="w-full max-w-xl"
   >
+    <slot name="toolbar" />
     <div class="flex flex-col">
       <div class="h-[22rem] w-full overflow-y-auto overscroll-contain px-4 py-6 sm:px-6">
         <div

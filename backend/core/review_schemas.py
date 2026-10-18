@@ -36,6 +36,7 @@ class TextInput(Body):
 class AudioInput(Body):
     type: Literal["audio"]
     temporary_media_asset_id: UUID
+    realtime_session_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class Flip(Body):

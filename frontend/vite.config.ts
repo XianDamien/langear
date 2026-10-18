@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: {
         '/content-api': {
+          ws: true,
           target: env.VITE_DEV_CONTENT_PROXY_TARGET || proxyTarget,
           rewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? path => path.replace(/^\/content-api/, '/api') : undefined,
           cookiePathRewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? { '/api/v1': '/content-api/v1' } : undefined,

@@ -4,7 +4,7 @@ import type { PollingResponseCompleted, FeedbackSuggestion, FeedbackIssue } from
 import { Headphones } from 'lucide-vue-next'
 
 const props = defineProps<{
-  feedback: PollingResponseCompleted | null
+  feedback: Pick<PollingResponseCompleted, 'feedback'> | null
   loading: boolean
   errorCode?: string | null
   errorMessage?: string | null

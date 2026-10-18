@@ -14,12 +14,14 @@ export function useReviewSession() {
   const error = ref('')
   const needsRecovery = ref(false)
   const uploadProgress = ref<number | null>(null)
+  const flipped = computed(() => !!state.value?.attempt)
   const card = computed<ResourceCard | undefined>(() => state.value?.card ? {
     ...state.value.card, front: state.value.attempt?.front_snapshot || state.value.card.front,
     back: state.value.attempt?.back_snapshot || {},
   } : undefined)
   let generation = 0
   let deckId = ''
+  let entry = { id: '', legacy: false }
   let pending: PendingWrite | null = null
   let retryAction: (() => Promise<void>) | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -44,7 +46,7 @@ export function useReviewSession() {
   function poll(request = generation, count = 0) {
     clearTimeout(pollTimer)
     const attempt = state.value?.attempt
-    if (!attempt || count >= 24 || ![attempt.asr_status, attempt.ai_status].some(s => ['pending', 'processing'].includes(s))) return
+    if (!attempt || count >= 120 || ![attempt.asr_status, attempt.ai_status].some(s => ['pending', 'processing'].includes(s))) return
     pollTimer = setTimeout(async () => {
       try {
         const { data } = await reviewHttp.get<typeof attempt>(`/attempts/${attempt.id}`)
@@ -78,10 +80,11 @@ export function useReviewSession() {
       await next(request)
     }
   }
-  async function load(id: string) {
+  async function load(id: string, legacy = false) {
     const request = ++generation
     clearTimeout(pollTimer)
     deckId = id
+    entry = { id, legacy }
     state.value = undefined
     deck.value = undefined
     pending = savedWrite()
@@ -91,6 +94,13 @@ export function useReviewSession() {
     error.value = ''
     needsRecovery.value = false
     try {
+      if (legacy) {
+        const { data } = await reviewHttp.get<{ deck_id: string }>(`/review/legacy-lessons/${encodeURIComponent(id)}`)
+        if (request !== generation) return
+        id = data.deck_id
+        deckId = id
+        pending = savedWrite()
+      }
       const { data: resource } = await reviewHttp.get<ResourceDeck>(`/decks/${id}`)
       if (request !== generation) return
       deck.value = resource
@@ -122,7 +132,7 @@ export function useReviewSession() {
       if (input.type === 'audio') {
         uploadProgress.value = 0
         const id = await uploadReviewAudio(input.blob, p => { if (request === generation) uploadProgress.value = p })
-        wire = { type: 'audio', temporary_media_asset_id: id }
+        wire = { type: 'audio', temporary_media_asset_id: id, ...(input.realtimeSessionId ? { realtime_session_id: input.realtimeSessionId } : {}) }
       } else wire = input
       if (request !== generation) return
       remember({ key: reviewKey(), kind: 'flip', body: { card_id: current.card!.id, review_token: current.review_token!, input: wire } })
@@ -139,7 +149,7 @@ export function useReviewSession() {
     if (!state.value?.can_undo) return
     const key = reviewKey()
     await perform(async () => {
-      await reviewHttp.post(`/review/queues/${state.value!.queue_id}/undo`, {}, { headers: { 'Idempotency-Key': key } })
+      await reviewHttp.post<FlippedReview>(`/review/queues/${state.value!.queue_id}/undo`, {}, { headers: { 'Idempotency-Key': key } })
       await next()
     })
   }
@@ -152,9 +162,9 @@ export function useReviewSession() {
     })
   }
   async function retry() {
-    if (needsRecovery.value || !state.value) return load(deckId)
+    if (needsRecovery.value || !state.value) return load(entry.id, entry.legacy)
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { deck, state, card, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry }
+  return { deck, state, card, flipped, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry }
 }

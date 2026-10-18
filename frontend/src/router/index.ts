@@ -74,7 +74,7 @@ router.beforeEach(async (to) => {
     if (to.name === 'Login') return true
     try { await auth.check() }
     catch { return { name: 'Login', query: { redirect: to.fullPath } } }
-    if (!['Library', 'DeckReview', 'Settings', 'DeckSettings'].includes(String(to.name))) return { name: 'Library' }
+    if (!['Library', 'Study', 'DeckReview', 'Settings', 'DeckSettings'].includes(String(to.name))) return { name: 'Library' }
     return true
   }
   if (to.meta.public) {

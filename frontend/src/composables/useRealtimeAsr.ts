@@ -122,6 +122,7 @@ export function useRealtimeAsr() {
         }
 
         if (messageType === 'error') {
+          onConnectFail?.()
           handleError(payload)
           return
         }
@@ -146,12 +147,12 @@ export function useRealtimeAsr() {
         code: 'REALTIME_SESSION_FAILED',
         message: 'Realtime websocket error',
       })
-      if (status.value === 'connecting') onConnectFail?.()
+      onConnectFail?.()
     }
 
     ws.onclose = () => {
       closeSocket()
-      if (status.value === 'connecting') onConnectFail?.()
+      onConnectFail?.()
       if (!endingSession && status.value !== 'ready' && status.value !== 'idle') {
         handleError({
           code: 'REALTIME_SESSION_FAILED',
@@ -162,7 +163,7 @@ export function useRealtimeAsr() {
     }
   }
 
-  async function connect(lessonId: number, cardId: number): Promise<boolean> {
+  async function connect(lessonId: number, cardId: number, reviewUrl?: string): Promise<boolean> {
     reset()
     status.value = 'connecting'
     errorCode.value = null
@@ -179,7 +180,7 @@ export function useRealtimeAsr() {
     }
 
     return await new Promise((resolve) => {
-      const wsUrl = buildRealtimeWsUrl(lessonId, cardId)
+      const wsUrl = reviewUrl || buildRealtimeWsUrl(lessonId, cardId)
       const ws = new WebSocket(wsUrl)
       socket = ws
       let connectResolved = false
@@ -329,6 +330,12 @@ export function useRealtimeAsr() {
     errorCode,
     errorMessage,
     connect,
+    async connectReview(cardId: string, baseURL: string) {
+      const url = new URL(`${baseURL}/review/realtime/asr/ws`, window.location.origin)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      url.searchParams.set('card_id', cardId)
+      return connect(0, Number(cardId) || 1, url.toString())
+    },
     appendAudioChunk,
     commit,
     endSession,

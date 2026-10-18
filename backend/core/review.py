@@ -444,7 +444,7 @@ class ReviewService(ContentService):
     def flip(self, queue_id, body, key):
         q = self.queue(queue_id)
         operation = "flip"
-        replay, fingerprint = self.replay(key, operation, body.model_dump())
+        replay, fingerprint = self.replay(key, operation, body.model_dump(exclude_none=True))
         if replay is not None:
             return replay
         attempt = self.db.scalar(
@@ -456,7 +456,7 @@ class ReviewService(ContentService):
         if attempt:
             if (
                 attempt.card_id != body.card_id
-                or attempt.input_snapshot != jsonable_encoder(body.input)
+                or attempt.input_snapshot != jsonable_encoder(body.input, exclude_none=True)
             ):
                 conflict("REVIEW_TOKEN_REUSED")
             response = self.flipped(attempt)
@@ -474,6 +474,7 @@ class ReviewService(ContentService):
                     422, "INPUT_REQUIRED", "Input does not match the Card Template."
                 )
             media = None
+            transcription = None
             if body.input.type == "audio":
                 media = self.repo.get(MediaAsset, body.input.temporary_media_asset_id)
                 if (
@@ -484,6 +485,9 @@ class ReviewService(ContentService):
                     conflict("MEDIA_ALREADY_CLAIMED")
                 if media.uploaded_at is None:
                     conflict("MEDIA_NOT_UPLOADED")
+                if body.input.realtime_session_id:
+                    from core.realtime import transcript_for
+                    transcription = transcript_for(body.input.realtime_session_id, self.collection.id, card.id)
                 media.lifecycle = "ready"
             note = self.repo.get(Note, card.note_id)
             template = self.db.get(CardTemplate, card.card_template_id)
@@ -498,12 +502,13 @@ class ReviewService(ContentService):
                 back_snapshot=rendered["back"],
                 answer_snapshot=rendered["answer"],
                 input_type=body.input.type,
-                input_snapshot=jsonable_encoder(body.input),
+                input_snapshot=jsonable_encoder(body.input, exclude_none=True),
                 media_asset_id=media.id if media else None,
                 card_schedule_revision=card.schedule_revision,
                 quota_kind=card.queue if card.queue in ("new", "review") else None,
                 quota_deck_id=card.original_deck_id or card.deck_id,
-                asr_status="pending" if media else "skipped",
+                asr_status="succeeded" if transcription else "pending" if media else "skipped",
+                asr_result=transcription,
                 ai_status="pending"
                 if template.key in ("sentence_retelling", "sentence_translation")
                 else "skipped",

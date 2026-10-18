@@ -44,6 +44,9 @@ class AIFeedbackProvider(Protocol):
     ) -> dict[str, Any]:
         """Generate feedback for one sentence using user/reference audio."""
 
+    def generate_translation_feedback(self, source_text: str, reference_text: str, user_text: str) -> dict[str, Any]:
+        """Generate feedback for a written translation."""
+
     def generate_lesson_summary(self, feedbacks: list[dict[str, Any]]) -> dict[str, Any]:
         """Generate lesson-level summary from sentence-level feedbacks."""
 

@@ -25,7 +25,7 @@ const props = defineProps<{
   uploadProgress?: number
   
   // Feedback Props
-  feedback: PollingResponseCompleted | null
+  feedback: Pick<PollingResponseCompleted, 'feedback'> | null
   asyncSubmitState: string
   errorCode?: string | null
   errorMessage?: string | null
@@ -39,6 +39,8 @@ const props = defineProps<{
   
   // Rating
   ratingDisabled: boolean
+  flipDisabled?: boolean
+  controlsDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -61,7 +63,7 @@ function handleFlipClick() {
   emit('flip')
 }
 
-const recordingDisabled = computed(() => props.audioPlaying && !props.isRecording)
+const recordingDisabled = computed(() => props.controlsDisabled || (props.audioPlaying && !props.isRecording))
 
 function handleTimestampClick(timestamp: number) {
   audioPlayerRef.value?.jumpToUserAudio(timestamp)
@@ -70,6 +72,7 @@ function handleTimestampClick(timestamp: number) {
 
 <template>
   <FlashcardContainer :is-flipped="isFlipped">
+    <template #toolbar><slot name="toolbar" /></template>
     <template #front>
       <AudioRecorderPanel
         :audio-playing="audioPlaying"
@@ -83,8 +86,9 @@ function handleTimestampClick(timestamp: number) {
         @toggle-recording="emit('toggleRecording')"
       />
       
+      <slot name="front-status" />
       <p
-        v-if="recordingDisabled"
+        v-if="audioPlaying && !isRecording"
         data-testid="record-hint"
         class="mt-3 text-center text-sm text-brand-alert"
       >
@@ -95,7 +99,7 @@ function handleTimestampClick(timestamp: number) {
         <RetroButton
           variant="primary"
           class="w-full max-w-md rounded-md"
-          :disabled="uploadState === 'uploading'"
+          :disabled="flipDisabled || uploadState === 'uploading'"
           data-testid="flip-button"
           @click="handleFlipClick"
         >
@@ -122,13 +126,14 @@ function handleTimestampClick(timestamp: number) {
           @toggle-translation="emit('showTranslation')"
         />
 
-        <AIFeedbackPanel
+        <slot name="processing" />
+        <slot name="feedback"><AIFeedbackPanel
           :feedback="feedback"
           :loading="asyncSubmitState === 'processing' || asyncSubmitState === 'submitting'"
           :error-code="errorCode"
           :error-message="errorMessage"
           @timestamp-click="handleTimestampClick"
-        />
+        /></slot>
 
         <StudyNotesPanel
           :notes="notes"
@@ -138,10 +143,10 @@ function handleTimestampClick(timestamp: number) {
 
       <div class="mt-3 shrink-0 border-t border-slate-200 pt-3"
         data-testid="study-rating-bar">
-        <GradeButtons
+        <slot name="rating"><GradeButtons
           :disabled="ratingDisabled"
           @grade="emit('grade', $event)"
-        />
+        /></slot>
       </div>
     </template>
   </FlashcardContainer>

@@ -85,7 +85,7 @@ describe('server-backed review', () => {
       current = { ...current, ...remaining, attempt, card_schedule_revision: 2, rating_options: options, can_undo: false }
       return { data: { attempt, card_schedule_revision: 2, rating_options: options } }
     })
-    await recovered.click('撤销评分')
+    await recovered.click('撤回上一张')
     expect(values()).toEqual([3, 2, 4])
     expect(recovered.wrapper.get('[data-testid="rate-again"]').exists()).toBe(true)
     recovered.wrapper.unmount()
@@ -102,10 +102,53 @@ describe('server-backed review', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="review-empty"]').text()).toContain('下一张')
     expect(httpPut).toHaveBeenCalledWith('/review/queues/q/attempts/attempt/rating', { rating: 'good', card_schedule_revision: 0 }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.stringMatching(/^[0-9a-f-]{14}7/) } }))
-    await click('撤销评分')
+    await click('撤回上一张')
     expect(wrapper.text()).toContain('记忆联想')
     expect(wrapper.get('[data-testid="rate-easy"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
+  })
+  it.each(['vocabulary_english_to_chinese', 'vocabulary_chinese_to_english', 'sentence_retelling', 'sentence_translation', 'sentence_dictation'])('returns %s to its saved back after undo, including refresh', async template => {
+    const savedCard = { ...card, card_template_key: template, front: template === 'vocabulary_english_to_chinese' ? { word: 'journey' } : template === 'vocabulary_chinese_to_english' ? { meaning: '旅程' } : template === 'sentence_translation' ? { chinese: '你好' } : { reference_audio: 'audio' } }
+    attempt = { ...attempt, front_snapshot: savedCard.front, back_snapshot: { word: 'journey', meaning: '旅程', english: 'Saved answer' }, input_snapshot: template === 'sentence_retelling' ? { type: 'audio', temporary_media_asset_id: 'recording' } : template.startsWith('sentence_') ? { type: 'text', text: '  Saved input  ' } : { type: 'none' }, media_asset_id: template === 'sentence_retelling' ? 'recording' : null }
+    current = { ...current, card: { ...savedCard, id: 'next-card' }, can_undo: true }
+    httpPost.mockImplementationOnce(async () => ({ data: { ...counts, queue_id: 'q', current: null } }))
+    const view = await start()
+    httpPost.mockImplementationOnce(async () => {
+      current = { ...counts, queue_id: 'q', review_token: 'saved-token', card: savedCard, attempt, card_schedule_revision: 2, rating_options: options }
+      return { data: { attempt, card_schedule_revision: 2, rating_options: options } }
+    })
+    const actions = view.wrapper.get('[aria-label="卡片操作"]')
+    expect(actions.text()).toContain('今日跳过')
+    expect(actions.text()).toContain('暂停此卡')
+    await view.click('撤回上一张')
+    expect(view.wrapper.find('[data-testid="card-back-container"]').exists()).toBe(true)
+    expect(view.wrapper.get('[data-testid="rate-good"]').exists()).toBe(true)
+    view.wrapper.unmount()
+    const recovered = await start()
+    expect(recovered.wrapper.find('[data-testid="card-back-container"]').exists()).toBe(true)
+    if (template === 'sentence_retelling') {
+      expect(recovered.wrapper.findAll('audio').some(audio => audio.attributes('src') === '/reference.wav')).toBe(true)
+      expect(recovered.wrapper.find('[data-testid="record-toggle"]').exists()).toBe(false)
+    } else if (template.startsWith('sentence_')) {
+      expect(recovered.wrapper.text()).toContain('Saved input')
+      expect(recovered.wrapper.find('[aria-label="我的译文"], [aria-label="我的听写"]').exists()).toBe(false)
+    }
+    expect(recovered.wrapper.get('[data-testid="rate-good"]').attributes('disabled')).toBeUndefined()
+    expect(httpPost.mock.calls.filter(([path]) => path.endsWith('/flip'))).toHaveLength(0)
+    await recovered.wrapper.get('[data-testid="rate-good"]').trigger('click')
+    await flushPromises()
+    expect(httpPut).toHaveBeenCalledWith('/review/queues/q/attempts/attempt/rating', { rating: 'good', card_schedule_revision: 2 }, expect.anything())
+    recovered.wrapper.unmount()
+  })
+  it.each(['vocabulary_english_to_chinese', 'vocabulary_chinese_to_english', 'sentence_retelling', 'sentence_translation', 'sentence_dictation'])('offers server-backed skip and suspend on %s', async template => {
+    current.card = { ...card, card_template_key: template }
+    const view = await start()
+    await view.click('今日跳过')
+    expect(httpPost).toHaveBeenCalledWith('/cards/a/schedule', { action: 'bury', card_schedule_revision: 0 })
+    await view.click('暂停此卡')
+    expect(httpPost).toHaveBeenCalledWith('/cards/a/schedule', { action: 'suspend', card_schedule_revision: 0 })
+    expect(view.wrapper.find('[data-testid="card-front-container"]').exists()).toBe(true)
+    view.wrapper.unmount()
   })
   it('preserves raw translation text and restores it from the saved Attempt after refresh', async () => {
     current.card = { ...card, card_template_key: 'sentence_translation', front: { chinese: '你好' }, input_requirement: { type: 'text', required: true } }
@@ -171,7 +214,7 @@ describe('server-backed review', () => {
   it('blocks revealing a retelling answer without a recording', async () => {
     current.card = { ...card, card_template_key: 'sentence_retelling', front: { reference_audio: 'audio' } }
     const { wrapper } = await start()
-    expect(wrapper.findAll('button').find(b => b.text() === '显示答案')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="flip-button"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
   it('recovers an expired queue and ignores stale deck responses', async () => {

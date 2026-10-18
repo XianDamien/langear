@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Mic, Square } from 'lucide-vue-next'
-import FlashcardContainer from '@/components/study/modules/FlashcardContainer.vue'
-import StudyAudioPlayer from '@/components/study/StudyAudioPlayer.vue'
+import RetellingCard from '@/components/study/cards/RetellingCard.vue'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
+import type { PollingResponseCompleted } from '@/types/api'
 import ReviewRatingButtons from './ReviewRatingButtons.vue'
 import SentenceTextPracticeCard from './SentenceTextPracticeCard.vue'
-import RetroButton from '@/components/ui/RetroButton.vue'
 import { useRecorder } from '@/composables/useRecorder'
 import { reviewHttp, type PracticeInput, type ReviewAttempt } from '@/services/review'
 import type { ResourceCard } from '@/services/contentCore'
@@ -16,10 +16,29 @@ const recorder = useRecorder()
 const audioUrl = ref<string | null>(null)
 const audioError = ref(false)
 const savedRecordingUrl = ref<string | null>(null)
-const referencePlayer = ref<InstanceType<typeof StudyAudioPlayer>>()
-const recordingPlayer = ref<InstanceType<typeof StudyAudioPlayer>>()
+const player = useAudioPlayer()
+const realtime = useRealtimeAsr()
+const recordingBusy = ref(false)
+const notes = ref('')
+const showTranslation = ref(false)
+const userTranscript = computed(() => props.attempt?.asr_result?.text || realtime.finalTranscript.value)
+const legacyCard = computed(() => ({
+  id: props.card.id, frontAudio: audioUrl.value || undefined,
+  backText: props.card.back.english || '', backTranslation: props.card.back.chinese || '', difficulty: 0,
+}))
+const feedback = computed<Pick<PollingResponseCompleted, 'feedback'> | null>(() => props.attempt?.ai_feedback ? {
+  feedback: { ...props.attempt.ai_feedback, issues: props.attempt.ai_feedback.issues || [] },
+} : null)
+watch(() => props.card.id, id => {
+  try { notes.value = sessionStorage.getItem(`langear:review-notes:${id}`) || '' }
+  catch { notes.value = '' }
+}, { immediate: true })
+watch(notes, value => {
+  try { sessionStorage.setItem(`langear:review-notes:${props.card.id}`, value) } catch { /* Optional local notes. */ }
+})
 const retelling = computed(() => props.card.card_template_key === 'sentence_retelling')
 let generation = 0
+let disposed = false
 async function loadAudio() {
   const request = ++generation
   audioUrl.value = null
@@ -43,12 +62,31 @@ watch(() => props.attempt?.media_asset_id, async id => {
     if (request === generation) savedRecordingUrl.value = data.url
   } catch { audioError.value = true }
 }, { immediate: true })
-onBeforeUnmount(() => { generation++ })
+onBeforeUnmount(() => { disposed = true; generation++; player.stop(); realtime.reset() })
+watch(() => props.isFlipped, flipped => { if (flipped) player.stop() })
 async function toggleRecording() {
-  referencePlayer.value?.pause()
-  recordingPlayer.value?.pause()
-  if (recorder.isRecording.value) recorder.stopRecording()
-  else await recorder.startRecording()
+  if (recordingBusy.value || props.busy) return
+  player.stop()
+  if (recorder.isRecording.value) {
+    recorder.stopRecording()
+    recordingBusy.value = true
+    try { if (realtime.status.value === 'streaming') await realtime.commit() }
+    finally { recordingBusy.value = false }
+  } else {
+    recordingBusy.value = true
+    try {
+      await realtime.connectReview(props.card.id, reviewHttp.defaults.baseURL || '/api/v1')
+      if (disposed) { realtime.reset(); return }
+      await recorder.startRecording(chunk => realtime.appendAudioChunk(chunk), props.card.id)
+    } finally { recordingBusy.value = false }
+  }
+}
+function flipRecording() {
+  if (!recorder.recordingBlob.value || recorder.isRecording.value || recordingBusy.value) return
+  player.stop()
+  emit('flip', { type: 'audio', blob: recorder.recordingBlob.value,
+    ...(realtime.status.value === 'ready' && realtime.realtimeSessionId.value ? { realtimeSessionId: realtime.realtimeSessionId.value } : {}),
+  })
 }
 </script>
 
@@ -64,6 +102,9 @@ async function toggleRecording() {
     @retry-audio="loadAudio"
     @flip="emit('flip', $event)"
   >
+    <template #toolbar>
+      <slot name="toolbar" />
+    </template>
     <template #rating>
       <slot name="rating">
         <ReviewRatingButtons />
@@ -73,129 +114,69 @@ async function toggleRecording() {
       <slot name="feedback" />
     </template>
   </SentenceTextPracticeCard>
-  <FlashcardContainer
+  <RetellingCard
     v-else
+    :card="legacyCard"
     :is-flipped="isFlipped"
+    :audio-playing="player.isPlaying.value"
+    :is-recording="recorder.isRecording.value"
+    :live-transcript="realtime.partialTranscript.value"
+    :user-transcript="userTranscript"
+    :user-audio-url="recorder.audioUrl.value || savedRecordingUrl"
+    :feedback="feedback"
+    :async-submit-state="['pending', 'processing'].includes(attempt?.ai_status || '') ? 'processing' : attempt?.ai_status || 'idle'"
+    :error-message="attempt?.ai_status === 'failed' ? '反馈处理失败，作答和录音已保存，仍可评分。' : null"
+    :show-translation="showTranslation"
+    :translation-loading="false"
+    :notes="notes"
+    :rating-disabled="busy || false"
+    :controls-disabled="busy || recordingBusy"
+    :flip-disabled="busy || recordingBusy || recorder.isRecording.value || !recorder.recordingBlob.value"
     class="h-full min-h-0 w-full"
+    @play-reference="audioUrl && player.play(audioUrl)"
+    @toggle-recording="toggleRecording"
+    @flip="flipRecording"
+    @show-translation="showTranslation = !showTranslation"
+    @update:notes="notes = $event"
   >
-    <template #front>
-      <div class="mx-auto w-full max-w-xl space-y-5 text-left">
-        <StudyAudioPlayer
-          ref="referencePlayer"
-          compact
-          label="原音频"
-          :src="audioUrl"
-          @play="recordingPlayer?.pause()"
-        />
-        <p
-          v-if="audioError"
-          role="alert"
-          class="text-sm text-amber-700"
-        >
-          音频加载失败 <button
-            type="button"
-            class="underline"
-            @click="loadAudio"
-          >
-            重试
-          </button>
-        </p>
-        <template v-if="retelling">
-          <p class="text-center text-sm text-slate-500">
-            听音后录音复述，翻面后对照原文。
-          </p>
-          <RetroButton
-            :variant="recorder.isRecording.value ? 'danger' : 'secondary'"
-            class="w-full rounded-md"
-            data-testid="sentence-record-toggle"
-            :disabled="busy"
-            @click="toggleRecording"
-          >
-            <Square
-              v-if="recorder.isRecording.value"
-              :size="18"
-              class="mr-2"
-            />
-            <Mic
-              v-else
-              :size="18"
-              class="mr-2"
-            />
-            {{ recorder.isRecording.value ? '停止录音' : '录音' }}
-          </RetroButton>
-          <StudyAudioPlayer
-            v-if="recorder.audioUrl.value && !recorder.isRecording.value"
-            ref="recordingPlayer"
-            compact
-            label="我的录音"
-            :src="recorder.audioUrl.value || savedRecordingUrl"
-            @play="referencePlayer?.pause()"
-          />
-        </template>
-        <RetroButton
-          class="w-full rounded-md"
-          :disabled="busy || recorder.isRecording.value || !recorder.recordingBlob.value"
-          @click="recorder.recordingBlob.value && emit('flip', { type: 'audio', blob: recorder.recordingBlob.value })"
-        >
-          显示答案
-        </RetroButton>
-      </div>
+    <template #toolbar>
+      <slot name="toolbar" />
     </template>
-    <template #back>
-      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
-        <template v-if="retelling">
-          <section class="grid gap-4 rounded-md border border-slate-200 bg-white p-4 md:grid-cols-2">
-            <div>
-              <h3 class="mb-2 text-xs font-semibold text-slate-500">
-                原文
-              </h3>
-              <p class="whitespace-pre-wrap text-base leading-7">
-                {{ card.back.english }}
-              </p>
-              <p
-                v-if="card.back.chinese"
-                class="mt-2 text-sm leading-6 text-slate-500"
-              >
-                {{ card.back.chinese }}
-              </p>
-            </div>
-            <StudyAudioPlayer
-              ref="referencePlayer"
-              compact
-              label="原音频"
-              :src="audioUrl"
-              @play="recordingPlayer?.pause()"
-            />
-          </section>
-          <StudyAudioPlayer
-            ref="recordingPlayer"
-            compact
-            label="我的录音"
-            :src="recorder.audioUrl.value || savedRecordingUrl"
-            @play="referencePlayer?.pause()"
-          />
-          <p class="text-xs text-slate-500">
-            录音已保存到本次作答。
-          </p>
-          <slot name="feedback" />
-        </template>
-        <section
-          v-if="card.back.note"
-          class="rounded-md border border-slate-200 bg-white p-3"
+    <template #front-status>
+      <p
+        v-if="audioError"
+        role="alert"
+        class="mt-2 text-sm text-amber-700"
+      >
+        音频加载失败 <button
+          type="button"
+          class="underline"
+          @click="loadAudio"
         >
-          <h3 class="mb-2 text-xs font-bold text-slate-500">
-            笔记
-          </h3>
-          <p class="whitespace-pre-wrap text-sm leading-6">
-            {{ card.back.note }}
-          </p>
-        </section>
-      </div>
-      <div class="mt-3 shrink-0 border-t border-slate-200 pt-3">
-        <slot name="rating">
-          <ReviewRatingButtons />
-        </slot>
-      </div>
+          重试
+        </button>
+      </p>
+      <p
+        v-if="realtime.status.value === 'failed'"
+        role="status"
+        class="mt-2 text-xs text-slate-500"
+      >
+        实时转写暂不可用，录音会在保存后转写。
+      </p>
     </template>
-  </FlashcardContainer>
+    <template #processing>
+      <p
+        v-if="attempt && ['pending', 'processing', 'failed'].includes(attempt.asr_status)"
+        role="status"
+        class="text-xs text-slate-500"
+      >
+        转写：{{ attempt.asr_status === 'failed' ? '处理失败，录音已保留' : '等待处理' }}
+      </p>
+    </template>
+    <template #rating>
+      <slot name="rating">
+        <ReviewRatingButtons />
+      </slot>
+    </template>
+  </RetellingCard>
 </template>

@@ -1,11 +1,12 @@
 import axios from 'axios'
+import type { PollingResponseCompleted } from '@/types/api'
 import { contentCoreEnabled, coreHttp, resourceError, type ResourceCard } from './contentCore'
 import { libraryContent } from './libraryContent'
 
 export const reviewHttp = contentCoreEnabled ? coreHttp : libraryContent
 export type Rating = 'again' | 'hard' | 'good' | 'easy'
-export type ReviewInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; temporary_media_asset_id: string }
-export type PracticeInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; blob: Blob }
+export type ReviewInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; temporary_media_asset_id: string; realtime_session_id?: string }
+export type PracticeInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; blob: Blob; realtimeSessionId?: string }
 export interface RatingOption { rating: Rating; display_interval: string }
 export interface DictationResult {
   kind: 'dictation_text_diff'; exact_match: boolean
@@ -17,7 +18,7 @@ export interface ReviewAttempt {
   front_snapshot: Record<string, string>; back_snapshot: Record<string, string>
   input_snapshot: ReviewInput; media_asset_id: string | null; rating: Rating | null
   asr_status: string; asr_result: { text?: string } | null
-  ai_status: string; ai_feedback: Record<string, unknown> | null
+  ai_status: string; ai_feedback: (Partial<PollingResponseCompleted['feedback']> & { summary?: string }) | null
   deterministic_result: DictationResult | null
 }
 export interface FlippedReview { attempt: ReviewAttempt; card_schedule_revision: number; rating_options: RatingOption[] }
@@ -48,6 +49,7 @@ export function reviewErrorCode(error: unknown): string | undefined {
 export function reviewError(error: unknown): string {
   const code = reviewErrorCode(error)
   const messages: Record<string, string> = {
+    LEGACY_LESSON_NOT_IMPORTED: '该课程尚未迁入复习牌组，请先在题库中选择已迁移的课程。',
     QUEUE_EXPIRED: '复习队列已更新，请恢复队列后继续。',
     CARD_SCHEDULE_CONFLICT: '这张卡片的进度已变化，请恢复队列后继续。',
     RATING_ALREADY_SET: '评分已保存，请恢复队列查看当前进度。',
