@@ -2,7 +2,7 @@ import { onBeforeUnmount, ref } from 'vue'
 import { createRecordingSession, type RecordingSession } from '@/adapters/browser/recording'
 import { dialogueApi, dialogueError, dialogueSocketUrl, type DialogueEntry, type DialogueSession, type DialogueTurn } from '@/services/dialogue'
 
-type Status = 'preparing' | 'preview' | 'connecting' | 'speaking' | 'ready' | 'recording' | 'thinking' | 'finishing' | 'complete' | 'failed'
+type Status = 'preparing' | 'preview' | 'connecting' | 'speaking' | 'ready' | 'recording' | 'thinking' | 'reviewing' | 'complete' | 'failed'
 export function useDialogue(entry: DialogueEntry) {
   const session = ref<DialogueSession>()
   const status = ref<Status>('preparing')
@@ -45,7 +45,8 @@ export function useDialogue(entry: DialogueEntry) {
       const result = await dialogueApi.create(entry)
       if (disposed) return
       session.value = result
-      status.value = result.status === 'finished' ? 'complete' : 'preview'
+      status.value = result.review ? 'complete' : result.status === 'finished' ? 'failed' : 'preview'
+      if (result.status === 'finished' && !result.review) await finishAndReview()
     } catch (cause) { if (!disposed) fail(dialogueError(cause)) }
   }
   function audio(data: string) {
@@ -85,7 +86,7 @@ export function useDialogue(entry: DialogueEntry) {
       const current = await dialogueApi.get(session.value.id)
       if (disposed || request !== generation) return
       session.value = current
-      if (current.status === 'finished') { await finish(); return }
+      if (current.status === 'finished') { await finishAndReview(); return }
       socket = new WebSocket(dialogueSocketUrl(current.id))
       connectionTimer = setTimeout(() => fail('连接超时，请重新连接。'), 20000)
       socket.onmessage = ({ data }) => {
@@ -106,12 +107,12 @@ export function useDialogue(entry: DialogueEntry) {
             status.value = 'speaking'
             // The server has durably ended the session; normal socket close is expected.
             if (socket) socket.onclose = null
-            afterPlayback(() => { void finish() })
+            afterPlayback(() => { void finishAndReview() })
           } else if (event.type === 'error') fail(event.message || '对话连接中断，请重新连接。')
         } catch { fail('对话消息未能读取，请重新连接。') }
       }
       socket.onerror = () => fail('对话连接失败，请重新连接。')
-      socket.onclose = () => { if (!disposed && status.value !== 'complete' && status.value !== 'finishing') fail('连接已断开，可重新连接继续对话。') }
+      socket.onclose = () => { if (!disposed && status.value !== 'complete' && status.value !== 'reviewing') fail('连接已断开，可重新连接继续对话。') }
     } catch (cause) { if (!disposed) fail(dialogueError(cause)) }
   }
   async function record() {
@@ -139,14 +140,15 @@ export function useDialogue(entry: DialogueEntry) {
     status.value = 'thinking'; error.value = ''
     socket?.send(JSON.stringify({ type: 'commit' }))
   }
-  async function finish() {
+  async function finishAndReview() {
     if (finishing || disposed || !session.value) return
     finishing = true
     disconnect()
-    status.value = 'finishing'; error.value = ''
+    status.value = 'reviewing'; error.value = ''
     try {
       let result = await dialogueApi.get(session.value.id)
       if (result.status !== 'finished') result = await dialogueApi.finish(result.id)
+      result = await dialogueApi.review(result.id)
       if (!disposed) { session.value = result; status.value = 'complete' }
     } catch (cause) { if (!disposed) { status.value = 'failed'; error.value = dialogueError(cause) } }
     finally { finishing = false }
@@ -158,8 +160,8 @@ export function useDialogue(entry: DialogueEntry) {
       socket.send(JSON.stringify({ type: 'end' }))
       clearTimeout(connectionTimer)
       connectionTimer = setTimeout(() => fail('结束请求未完成，请重新连接后重试。'), 15000)
-    } else { void finish() }
+    } else { void finishAndReview() }
   }
   onBeforeUnmount(() => { disposed = true; disconnect(); void playback?.close() })
-  return { session, status, error, partial, prepare, connect, record, sendRecording, end, finish }
+  return { session, status, error, partial, prepare, connect, record, sendRecording, end, finishAndReview }
 }

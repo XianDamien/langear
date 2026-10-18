@@ -487,7 +487,6 @@ class DialogueTurn(Entity, Scoped, Base):
 
 
 class DialogueReview(Entity, Scoped, Base):
-    """Legacy storage retained for existing data; direct voice dialogue never reads or writes it."""
     __tablename__ = "dialogue_reviews"
     session_id: Mapped[UUID] = mapped_column(Uuid, unique=True)
     result: Mapped[dict] = mapped_column(JSONB)

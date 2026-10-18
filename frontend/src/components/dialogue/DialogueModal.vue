@@ -7,12 +7,12 @@ import type { DialogueEntry } from '@/services/dialogue'
 
 const props = defineProps<{ entry: DialogueEntry }>()
 const emit = defineEmits<{ close: [] }>()
-const { session, status, error, partial, prepare, connect, record, sendRecording, end, finish } = useDialogue(props.entry)
+const { session, status, error, partial, prepare, connect, record, sendRecording, end, finishAndReview } = useDialogue(props.entry)
 const dialog = ref<HTMLDialogElement>()
 const evidence = ref<DialogueSource>()
-const busy = computed(() => ['preparing', 'connecting', 'thinking', 'finishing'].includes(status.value))
+const busy = computed(() => ['preparing', 'connecting', 'thinking', 'reviewing'].includes(status.value))
 const talking = computed(() => ['ready', 'recording', 'speaking', 'thinking', 'connecting'].includes(status.value))
-const labels: Record<string, string> = { preparing: '正在准备你的场景…', connecting: '连接中…', speaking: '对方正在说话…', ready: '轮到你了', recording: '正在录音，再次点击发送', thinking: '等待对方回复…', finishing: '正在保存对话…' }
+const labels: Record<string, string> = { preparing: '正在准备你的场景…', connecting: '连接中…', speaking: '对方正在说话…', ready: '轮到你了', recording: '正在录音，再次点击发送', thinking: '等待对方回复…', reviewing: '正在整理本次练习…' }
 const previousFocus = document.activeElement as HTMLElement | null
 function close() {
   if (talking.value && !window.confirm('离开会暂停本次对话，确定离开吗？')) return
@@ -45,7 +45,7 @@ onUnmounted(() => previousFocus?.focus())
         type="button"
         class="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100"
         aria-label="关闭情景对话"
-        :disabled="status === 'preparing' || status === 'finishing'"
+        :disabled="status === 'preparing' || status === 'reviewing'"
         @click="close"
       >
         关闭
@@ -68,6 +68,7 @@ onUnmounted(() => previousFocus?.focus())
       </p>
       <template v-if="session">
         <section
+          v-if="!session.review"
           class="space-y-3 rounded-xl bg-slate-50 p-4"
         >
           <p class="text-sm leading-relaxed">
@@ -92,13 +93,7 @@ onUnmounted(() => previousFocus?.focus())
                 v-for="expression in session.scenario.target_expressions"
                 :key="expression.english"
               >
-                <strong>{{ expression.english }}</strong><span v-if="expression.meaning_zh"> · {{ expression.meaning_zh }}</span>
-                <button
-                  class="ml-2 text-teal-700 underline"
-                  @click="evidence = expression.source"
-                >
-                  查看原卡片
-                </button>
+                <strong>{{ expression.english }}</strong> · {{ expression.meaning_zh }}
               </li>
             </ul>
           </details>
@@ -126,6 +121,43 @@ onUnmounted(() => previousFocus?.focus())
         >
           {{ partial }}
         </p>
+        <section
+          v-if="session.review"
+          class="space-y-4"
+          aria-label="对话复盘"
+        >
+          <h3 class="font-bold">
+            这次用得怎么样
+          </h3><p class="text-sm leading-relaxed">
+            {{ session.review.summary_zh }}
+          </p>
+          <ul class="space-y-2 text-sm">
+            <li
+              v-for="goal in session.review.goals"
+              :key="goal.goal_id"
+            >
+              {{ goal.completed ? '✓' : '○' }} {{ session.scenario.goals.find(g => g.id === goal.goal_id)?.description_zh }}
+            </li>
+          </ul>
+          <p
+            v-if="session.review.used_expressions.length"
+            class="text-sm text-teal-800"
+          >
+            你用到了：{{ session.review.used_expressions.map(e => e.english).join(' · ') }}
+          </p>
+          <div
+            v-for="(point, index) in session.review.practice_points"
+            :key="index"
+            class="rounded-xl bg-amber-50 p-3 text-sm"
+          >
+            <p>{{ point.advice_zh }}</p><button
+              class="mt-2 inline-block text-teal-700 underline"
+              @click="evidence = point.source"
+            >
+              查看原卡片与反馈
+            </button>
+          </div>
+        </section>
       </template>
       <AttemptEvidence
         v-if="evidence"
@@ -136,7 +168,7 @@ onUnmounted(() => previousFocus?.focus())
         class="space-y-3"
       >
         <p class="text-xs text-slate-500">
-          英语角色扮演 · 最多 8 轮 · 结束后保存对话
+          英语角色扮演 · 最多 8 轮 · 结束后一起复盘
         </p><button
           class="w-full rounded-xl bg-teal-700 py-3 font-semibold text-white hover:bg-teal-800"
           @click="connect"
@@ -160,7 +192,7 @@ onUnmounted(() => previousFocus?.focus())
             class="underline disabled:opacity-40"
             @click="end"
           >
-            结束对话
+            结束并复盘
           </button>
         </div>
       </div>
@@ -183,19 +215,12 @@ onUnmounted(() => previousFocus?.focus())
             重新连接
           </button><button
             class="rounded-lg border px-4 py-2"
-            @click="finish"
+            @click="finishAndReview"
           >
-            结束对话
+            {{ session.status === 'finished' ? '重试复盘' : '结束并复盘' }}
           </button>
         </template>
       </div>
-      <p
-        v-if="status === 'complete'"
-        role="status"
-        class="text-sm text-teal-700"
-      >
-        对话已结束，记录已保存。
-      </p>
       <button
         v-if="status === 'complete'"
         class="w-full rounded-xl border border-slate-300 py-3 text-sm font-semibold"
