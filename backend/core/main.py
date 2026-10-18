@@ -21,6 +21,7 @@ from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
 from core.review_routes import router as review_router
+from core.legacy_selection import router as legacy_selection_router
 from core.uploads import router as upload_router
 from core.realtime import router as realtime_router
 from core.models import (
@@ -488,6 +489,8 @@ def set_deck_membership(deck_id: UUID, body: schemas.DeckMembership, service=Dep
     service.repo.lock()
     deck = service.repo.standard_deck(deck_id)
     deck.in_my_courses = body.joined
+    if deck.deck_guid.startswith("legacy:"):
+        deck.scheduling_config = {**deck.scheduling_config, "legacy_selection_user_updated": True}
     service.db.flush()
     return service.deck_data(deck)
 
@@ -538,8 +541,12 @@ def save_study_selection(deck_id: UUID, body: StudySelection, service=Depends(co
             raise HTTPException(status_code=400, detail="Cards must belong to the selected deck")
     deck.scheduling_config = {**(deck.scheduling_config or {}), "study_card_ids": [str(value) for value in selected] if selected is not None else None}
     deck.in_my_courses = selected != []
+    if deck.deck_guid.startswith("legacy:"):
+        deck.scheduling_config = {**deck.scheduling_config, "legacy_selection_user_updated": True}
     service.db.flush()
     return {"card_ids": deck.scheduling_config["study_card_ids"], "joined": deck.in_my_courses}
 app.include_router(review_router)
 app.include_router(realtime_router)
 app.include_router(upload_router)
+
+app.include_router(legacy_selection_router)

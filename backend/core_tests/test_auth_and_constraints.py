@@ -58,7 +58,7 @@ def test_empty_postgres_migration_seeds_idempotently_and_no_legacy_tables(engine
         assert db.scalar(select(func.count()).select_from(CardTemplate)) == 5
         assert db.scalar(select(func.count()).select_from(Collection)) == 1
         assert (
-            db.scalar(text("SELECT version_num FROM alembic_version")) == "lan32_0007"
+            db.scalar(text("SELECT version_num FROM alembic_version")) == "lan32_0008"
         )
     for table in ["collections", "decks", "notes", "cards", "attempts", "sessions"]:
         assert all(

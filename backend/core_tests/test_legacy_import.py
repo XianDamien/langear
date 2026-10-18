@@ -1,7 +1,7 @@
 import base64
 import copy
 import hashlib
-from datetime import date
+from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -124,7 +124,10 @@ def test_import_preserves_content_scope_memory_and_is_idempotent(engine, snapsho
         reviewed = [c for c in cards if c.type == "review"]
         assert len(reviewed) == 1
         assert reviewed[0].template_ord == 0
-        assert reviewed[0].due_day == date(2026, 10, 16).toordinal()
+        from core.scheduling import MemoryState, options, study_day
+        assert reviewed[0].due_day == study_day(datetime(2026, 10, 16, 12, tzinfo=UTC), col.timezone)
+        MemoryState.model_validate(reviewed[0].fsrs_state)
+        assert len(options(reviewed[0], datetime(2026, 10, 18, tzinfo=UTC), col, col.scheduling_config)) == 4
         assert reviewed[0].last_reviewed_at.hour == 4
         assert reviewed[0].reps == 1
         assert all(c.fsrs_state is None for c in cards if c.type == "new")
@@ -212,3 +215,59 @@ def test_changed_snapshot_refused_and_dry_run_is_reversible(engine, snapshot):
     with pytest.raises(ValueError, match="snapshot changed"):
         with Session(engine) as db, db.begin():
             import_snapshot(db, changed, "fixture")
+
+def test_repair_is_dry_run_capable_idempotent_and_preserves_new_progress(engine, snapshot):
+    from core.legacy_repair import repair
+    from core.scheduling import MemoryState
+    with Session(engine) as db, db.begin():
+        import_snapshot(db, snapshot, "fixture")
+        col = db.scalar(select(Collection).where(Collection.owner_user_id == stable_id("fixture", "user", 2)))
+        card = db.scalar(select(Card).where(Card.collection_id == col.id, Card.type == "review"))
+        card_id = card.id
+        card.due_day = date(2026, 10, 16).toordinal()
+        card.fsrs_state = {"stability": 2.3, "difficulty": 2.1}
+    with Session(engine) as db:
+        assert repair(db, "fixture")["memory_cards"] == 1
+        db.rollback()
+    with Session(engine) as db, db.begin():
+        assert db.get(Card, card_id).due_day == date(2026, 10, 16).toordinal()
+        assert repair(db, "fixture")["memory_cards"] == 1
+    with Session(engine) as db, db.begin():
+        card = db.get(Card, card_id)
+        MemoryState.model_validate(card.fsrs_state)
+        assert card.due_day == (date(2026, 10, 16) - date(1970, 1, 1)).days
+        card.fsrs_state = {**card.fsrs_state, "stability": 19}
+        card.schedule_revision += 1
+        assert repair(db, "fixture")["memory_cards"] == 0
+        assert card.fsrs_state["stability"] == 19
+
+
+def test_imported_legacy_picker_filters_all_generated_directions(engine, snapshot):
+    snapshot["settings"].append({"key": "my_courses:2:lesson:2:card_ids", "value": "[2]"})
+    with Session(engine) as db, db.begin():
+        import_snapshot(db, snapshot, "fixture")
+        col = db.scalar(select(Collection).where(Collection.owner_user_id == stable_id("fixture", "user", 2)))
+        deck = db.scalar(select(Deck).where(Deck.collection_id == col.id, Deck.deck_guid == "legacy:fixture:deck:2"))
+        selected = deck.scheduling_config["study_card_ids"]
+        assert len(selected) == 2  # No Chinese prompt on card 2, so no Translation Card.
+        note = db.scalar(select(Note).where(Note.collection_id == col.id, Note.guid == "legacy:fixture:card:2"))
+        assert set(selected) == {str(c.id) for c in db.scalars(select(Card).where(Card.note_id == note.id))}
+
+
+def test_cutover_selection_uses_latest_legacy_snapshot_without_overwriting_core_edits(engine, snapshot):
+    from core.legacy_repair import repair
+    current = {"settings": [
+        {"key": "my_courses:2:lesson_ids", "value": [2]},
+        {"key": "my_courses:2:lesson:2:card_ids", "value": [2]},
+    ]}
+    with Session(engine) as db, db.begin():
+        import_snapshot(db, snapshot, "fixture")
+        assert repair(db, "fixture", current)["selection_decks"] > 0
+        assert repair(db, "fixture", current)["selection_decks"] == 0
+        col = db.scalar(select(Collection).where(Collection.owner_user_id == stable_id("fixture", "user", 2)))
+        deck = db.scalar(select(Deck).where(Deck.collection_id == col.id, Deck.deck_guid == "legacy:fixture:deck:2"))
+        assert len(deck.scheduling_config["study_card_ids"]) == 2
+        deck.scheduling_config = {**deck.scheduling_config, "study_card_ids": [], "legacy_selection_user_updated": True}
+        changed = {"settings": [{"key": "my_courses:2:lesson_ids", "value": []}]}
+        repair(db, "fixture", changed)
+        assert deck.scheduling_config["study_card_ids"] == []

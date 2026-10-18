@@ -442,7 +442,11 @@ class ProcessingOutbox(Entity, Scoped, Base):
     attempt_id: Mapped[UUID] = mapped_column(Uuid)
     kind: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default="pending")
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
+        CheckConstraint("retry_count >= 0", name="ck_outbox_retry_count"),
+        Index("ix_outbox_pending_due", "status", "next_attempt_at", "created_at"),
         UniqueConstraint("attempt_id", "kind"),
         ForeignKeyConstraint(["collection_id", "attempt_id"], ["attempts.collection_id", "attempts.id"], ondelete="CASCADE"),
         CheckConstraint("kind IN ('asr','ai')", name="ck_outbox_kind"),

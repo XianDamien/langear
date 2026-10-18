@@ -35,11 +35,11 @@ export default defineConfig(({ mode }) => {
       port: 3002,
       strictPort: true,
       proxy: {
-        '/content-api': {
+        '/api/content': {
           ws: true,
           target: env.VITE_DEV_CONTENT_PROXY_TARGET || proxyTarget,
-          rewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? path => path.replace(/^\/content-api/, '/api') : undefined,
-          cookiePathRewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? { '/api/v1': '/content-api/v1' } : undefined,
+          rewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? path => path.replace(/^\/api\/content/, '/api') : undefined,
+          cookiePathRewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? { '/api/v1': '/api/content/v1' } : undefined,
           changeOrigin: true,
           secure: targetUrl.origin !== 'https://8.159.139.145:7145',
         },

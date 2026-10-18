@@ -39,13 +39,16 @@ describe('existing settings API contract', () => {
 
   it('loads and saves only the selected deck without changing account defaults', async () => {
     const scoped = { ...backend, deck_id: 18, deck_title: 'Lesson', daily_new_limit: 3, daily_review_limit: 7 }
-    get.mockResolvedValue({ data: scoped })
-    put.mockResolvedValue({ data: scoped })
+    const id = '01900000-0000-7000-8000-000000000018'
+    coreGet.mockImplementation(async (path: string) => ({ data: path === '/review/legacy-lessons/18' ? { deck_id: id } : { ...scoped, deck_id: id } }))
+    corePut.mockResolvedValue({ data: { ...scoped, deck_id: id } })
     const { data } = await fetchSettings(18)
-    expect(get).toHaveBeenCalledWith('/settings?deck_id=18')
+    expect(coreGet).toHaveBeenCalledWith('/review/legacy-lessons/18')
+    expect(coreGet).toHaveBeenCalledWith('/decks/01900000-0000-7000-8000-000000000018/settings')
+    expect(get).not.toHaveBeenCalled()
     expect(data).toMatchObject({ deckId: 18, deckTitle: 'Lesson', dailyNewLimit: 3 })
     await saveSettings(data)
-    expect(put).toHaveBeenCalledWith('/settings?deck_id=18', {
+    expect(corePut).toHaveBeenCalledWith('/decks/01900000-0000-7000-8000-000000000018/settings', {
       desired_retention: 0.92, learning_steps: [1, 15], relearning_steps: [10],
       maximum_interval: 1000, daily_new_limit: 3, daily_review_limit: 7,
     })
@@ -61,6 +64,19 @@ describe('existing settings API contract', () => {
     expect(data.schedulingEnabled).toBe(false)
     await saveSettings(data)
     expect(corePut).toHaveBeenCalledWith(`/decks/${id}/settings`, expect.objectContaining({ daily_new_limit: 7 }))
+    expect(get).not.toHaveBeenCalled()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it('rejects settings returned for a different imported deck', async () => {
+    coreGet.mockResolvedValueOnce({ data: { deck_id: '01900000-0000-7000-8000-000000000018' } })
+      .mockResolvedValueOnce({ data: { ...backend, deck_id: '01900000-0000-7000-8000-000000000019' } })
+    await expect(fetchSettings(18)).rejects.toThrow('牌组设置未正确返回')
+  })
+
+  it('fails closed when an old lesson has not been imported', async () => {
+    coreGet.mockRejectedValueOnce(new Error('not imported'))
+    await expect(fetchSettings(42)).rejects.toThrow('not imported')
     expect(get).not.toHaveBeenCalled()
     expect(put).not.toHaveBeenCalled()
   })

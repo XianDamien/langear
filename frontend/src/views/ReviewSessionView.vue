@@ -20,7 +20,7 @@ import { sentenceTemplates, type ReviewTemplate } from '@/services/review'
 const showPaused = ref(false)
 const route = useRoute()
 const router = useRouter()
-const { deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
+const { deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
 const isLegacyDeck = computed(() => deck.value?.deck_guid?.startsWith('legacy:'))
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
@@ -203,6 +203,8 @@ watch(() => [route.params.deckId, route.query.template], loadEntry, { immediate:
             <ReviewAttemptStatus
               v-if="state?.attempt"
               :attempt="state.attempt"
+              :retrying="busy"
+              @retry="retryProcessing"
             />
           </template>
           <template #rating>

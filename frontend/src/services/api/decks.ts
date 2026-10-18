@@ -1,4 +1,5 @@
 import http from '../http'
+import { reviewHttp } from '@/services/review'
 import type {
   DeckTreeResponse,
   MyCourseLessonsResponse,
@@ -13,19 +14,19 @@ export function fetchLessonCards(lessonId: string) {
 }
 
 export function fetchMyCourseLessons() {
-  return http.get<MyCourseLessonsResponse>('/my-courses/lessons')
+  return reviewHttp.get<MyCourseLessonsResponse>('/review/legacy-lessons')
 }
 
 export function updateMyCourseLessons(lessonIds: number[]) {
-  return http.put<MyCourseLessonsResponse>('/my-courses/lessons', {
+  return reviewHttp.put<MyCourseLessonsResponse>('/review/legacy-lessons', {
     lesson_ids: lessonIds,
   })
 }
 
 export function fetchMyCourseCards(lessonId: string) {
-  return http.get<{ card_ids: number[] | null }>(`/my-courses/lessons/${lessonId}/cards`)
+  return reviewHttp.get<{ card_ids: number[] | null }>(`/review/legacy-lessons/${lessonId}/study-selection`)
 }
 
 export function updateMyCourseCards(lessonId: string, cardIds: number[] | null) {
-  return http.put<{ card_ids: number[] | null; lesson_ids: number[] }>(`/my-courses/lessons/${lessonId}/cards`, { card_ids: cardIds })
+  return reviewHttp.put<{ card_ids: number[] | null; lesson_ids: number[] }>(`/review/legacy-lessons/${lessonId}/study-selection`, { card_ids: cardIds })
 }

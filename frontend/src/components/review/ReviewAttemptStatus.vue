@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ReviewAttempt } from '@/services/review'
-const props = defineProps<{ attempt: ReviewAttempt }>()
+const props = defineProps<{ attempt: ReviewAttempt; retrying?: boolean }>()
+defineEmits<{ retry: [] }>()
 const statuses: Record<string, string> = { pending: '等待处理', processing: '处理中', succeeded: '已完成', completed: '已完成', failed: '处理失败' }
 const feedback = computed(() => Object.entries(props.attempt.ai_feedback || {}).filter(([key, value]) =>
   ['pronunciation', 'completeness', 'fluency', 'summary'].includes(key) && typeof value === 'string'))
@@ -50,5 +51,14 @@ const labels: Record<string, string> = { pronunciation: '发音', completeness: 
     >
       作答和录音已保留，评分仍可正常保存。
     </p>
+    <button
+      v-if="attempt.asr_status === 'failed' || attempt.ai_status === 'failed'"
+      type="button"
+      class="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+      :disabled="retrying"
+      @click="$emit('retry')"
+    >
+      {{ retrying ? '正在提交…' : '重新生成' }}
+    </button>
   </section>
 </template>

@@ -53,18 +53,33 @@ function toBackendSettings(data: SettingsData): BackendSettingsData {
   }
 }
 
+async function settingsTarget(deckId?: number | string) {
+  settingsPath(deckId) // Validate before making any request.
+  if (deckId === undefined) return { path: '/settings', client: http }
+  const client = contentCoreEnabled ? coreHttp : libraryContent
+  if (typeof deckId === 'number') {
+    const { data } = await client.get<{ deck_id: string }>(`/review/legacy-lessons/${deckId}`)
+    return { path: settingsPath(data.deck_id), client }
+  }
+  return { path: settingsPath(deckId), client }
+}
+
+function scopedSettings(data: BackendSettingsData, deckId: number | string | undefined, path: string): SettingsData {
+  if (deckId !== undefined && `/decks/${data.deck_id}/settings` !== path) throw new Error('牌组设置未正确返回')
+  return { ...toFrontendSettings(data), ...(deckId === undefined ? {} : { deckId }) }
+}
+
 export async function fetchSettings(deckId?: number | string) {
-  const path = settingsPath(deckId)
-  const client = typeof deckId === 'string' ? (contentCoreEnabled ? coreHttp : libraryContent) : http
+  const { path, client } = await settingsTarget(deckId)
   const response = await client.get<BackendSettingsData>(path)
-  return { ...response, data: toFrontendSettings(response.data) }
+  return { ...response, data: scopedSettings(response.data, deckId, path) }
 }
 
 export async function saveSettings(data: SettingsData) {
-  const path = settingsPath(data.deckId)
-  const client = typeof data.deckId === 'string' ? (contentCoreEnabled ? coreHttp : libraryContent) : http
-  const response = await client.put<BackendSettingsData>(path, toBackendSettings(data))
-  return { ...response, data: toFrontendSettings(response.data) }
+  const payload = toBackendSettings(data)
+  const { path, client } = await settingsTarget(data.deckId)
+  const response = await client.put<BackendSettingsData>(path, payload)
+  return { ...response, data: scopedSettings(response.data, data.deckId, path) }
 }
 
 function settingsPath(deckId?: number | string) {

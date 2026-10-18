@@ -82,11 +82,56 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
         self.assertEqual((destination / 'index.html').read_text(), 'ok')
 
+    def test_fixed_release_removes_only_the_isolated_development_proxy(self):
+        deployment = object.__new__(Deployment)
+        deployment.environment = 'staging'
+        deployment.root = self.root
+        (self.root / 'compose').mkdir()
+        path = self.root / 'compose/nginx.preview.conf'
+        path.write_text('server {\n    # BEGIN REVIEW DEVELOPMENT PROXY\n    location /api/content/ { proxy_pass http://task:8000/api/; }\n    # END REVIEW DEVELOPMENT PROXY\n    location /api/ { proxy_pass http://backend:8000; }\n}\n')
+        deployment.release_proxy()
+        self.assertNotIn('task:8000', path.read_text())
+        self.assertIn('http://backend:8000', path.read_text())
+
     def test_release_overlay_removes_source_mount(self):
         config = overlay(self.manifest['image_id'], self.root, True)
         self.assertIn('volumes: !override', config)
         self.assertIn('working_dir: /app', config)
         self.assertNotIn('--reload', config)
+
+    def test_review_overlay_runs_both_apis_and_worker_from_one_image(self):
+        for immutable in (True, False):
+            config = overlay(self.manifest['image_id'], self.root, immutable, review=True)
+            self.assertIn('app.release:app', config)
+            self.assertIn('review-worker:', config)
+            self.assertEqual(config.count(self.manifest['image_id']), 2)
+            self.assertIn('core.processing, --healthcheck', config)
+            self.assertIn('env/review.env', config)
+            self.assertEqual('--reload' in config, not immutable)
+
+    def test_review_manifest_requires_postgres_core_tests(self):
+        self.manifest.update(schema=2, runtime='review')
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'Missing CI'):
+            verify_bundle(self.root)
+        self.manifest['checks'].append('collection-core-pytest')
+        self.save()
+        self.assertEqual(verify_bundle(self.root)['runtime'], 'review')
+
+    def test_review_release_requires_explicit_database_configuration(self):
+        deployment = object.__new__(Deployment)
+        deployment.root = self.root
+        with patch('host.run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'Provision'):
+                deployment.core_revision('candidate')
+            run.assert_not_called()
+
+    def test_rollback_refuses_review_schema_drift_before_mutation(self):
+        deployment = object.__new__(Deployment)
+        with patch.object(deployment, 'db_revision', return_value=['legacy']), patch.object(deployment, 'core_revision', return_value=['new']), patch.object(deployment, 'compose') as compose:
+            with self.assertRaisesRegex(RuntimeError, 'Review database revision changed'):
+                deployment.restore({'db_revision': ['legacy'], 'core_db_revision': ['old'], 'core_probe_image': 'candidate'})
+            compose.assert_not_called()
 
     def test_rollback_refuses_schema_change_before_mutation(self):
         deployment = object.__new__(Deployment)
