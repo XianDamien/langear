@@ -52,6 +52,7 @@ class RuntimeQueue:
     day: int
     config_stamp: str
     expires_at: datetime
+    started_at: datetime | None = None
     current: UUID | None = None
     token: UUID | None = None
     undo: dict | None = None
@@ -245,6 +246,7 @@ class ReviewService(ContentService):
             self.day,
             self.stamp(),
             self.now + timedelta(hours=2),
+            started_at=self.now,
         )
         if attempt:
             q.current, q.token = attempt.card_id, attempt.review_token

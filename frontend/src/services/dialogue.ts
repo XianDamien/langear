@@ -17,7 +17,7 @@ export interface DialogueSession {
   id: string; deck_id: string; scenario: DialogueScenario; status: string; finish_reason: string | null
   user_turns: number; max_user_turns: number; turns: DialogueTurn[]; review: DialogueReview | null
 }
-export interface DialogueEntry { deck_id: string; entry_key: string; attempt_ids: string[] }
+export interface DialogueEntry { deck_id: string; review_queue_id: string; entry_key: string; attempt_ids: string[] }
 export const dialogueApi = {
   available: async () => (await reviewHttp.get<{ enabled: boolean }>('/dialogue/availability')).data.enabled,
   create: async (entry: DialogueEntry) => (await reviewHttp.post<DialogueSession>('/dialogue/sessions', entry, { timeout: 65000 })).data,

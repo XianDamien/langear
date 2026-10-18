@@ -464,6 +464,10 @@ class DialogueSession(Entity, Scoped, Base):
     __table_args__ = (
         UniqueConstraint("collection_id", "id"),
         UniqueConstraint("collection_id", "entry_key"),
+        ForeignKeyConstraint(
+            ["collection_id", "deck_id"],
+            ["decks.collection_id", "decks.id"],
+        ),
         CheckConstraint("status IN ('ready','active','interrupted','finished')", name="ck_dialogue_status"),
         CheckConstraint("user_turns >= 0 AND user_turns <= 8", name="ck_dialogue_turn_limit"),
     )

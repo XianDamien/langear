@@ -23,6 +23,7 @@ def upgrade():
         sa.Column('user_turns', sa.Integer(), nullable=False), sa.Column('connection_id', sa.Uuid()),
         sa.Column('lease_until', sa.DateTime(timezone=True)),
         sa.UniqueConstraint('collection_id', 'id'), sa.UniqueConstraint('collection_id', 'entry_key'),
+        sa.ForeignKeyConstraint(['collection_id', 'deck_id'], ['decks.collection_id', 'decks.id']),
         sa.CheckConstraint("status IN ('ready','active','interrupted','finished')", name='ck_dialogue_status'),
         sa.CheckConstraint('user_turns >= 0 AND user_turns <= 8', name='ck_dialogue_turn_limit'))
     op.create_table('dialogue_turns', *entity(), sa.Column('session_id', sa.Uuid(), nullable=False),

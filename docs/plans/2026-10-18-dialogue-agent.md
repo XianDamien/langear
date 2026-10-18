@@ -24,7 +24,7 @@
 
 ### 数据与权限
 
-- Python API 沿用新模型的会话认证与 CSRF，按认证用户的 Collection 隔离上下文、Dialogue Session、Turn 和 Review。
+- Python API 沿用新模型的会话认证与 CSRF，按认证用户的 Collection 隔离上下文、Dialogue Session、Turn 和 Review；创建时验证当前 Review queue 已耗尽，且提交的已评分 Attempt 集合与本轮完全一致。
 - 模型不得决定 user_id / collection_id；pi 通过受控业务工具获取本次授权上下文，不直连 ORM/SQL。
 - 持久化对话文字、固定场景与复盘；首版不写长期 memory。
 - 保留新 Review / Processing / FSRS 链路；对话记录不作为 Attempt 或 FSRS 评分写入。
@@ -46,3 +46,11 @@
 ### 实现追踪
 
 分支：`feat/lan-21-dialogue-agent`。生产发布不属于本次授权范围。
+
+### 本轮验证记录
+
+- staging 独立测试数据库：后端 `core_tests` 共 135 项通过，覆盖用户隔离、迁移、轮次入口、语音协议、断线恢复及 Review / FSRS 回归。
+- 前端：101 项单元测试通过，类型检查通过；lint 无错误，保留仓库既有的 199 条 warning。
+- pi 服务：2 项测试通过，类型检查通过；覆盖真实 pi 工具循环、多请求上下文隔离及 Qwen 的 system 角色与关闭思考模式配置。
+- staging 真实模型冒烟通过：已评分卡片 → pi 场景准备 → Qwen 英语开场 → 英语合成音频输入及正确转写 → 英语文字/语音回应 → 提前结束 → pi 中文复盘与记录落库。该检查使用合成语音，未代替真人对话质量评测。
+- 尚未进行浏览器页面与真人麦克风验收，以上自动检查不替代这两项体验验收。

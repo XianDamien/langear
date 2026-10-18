@@ -69,7 +69,7 @@ export function useReviewSession() {
     if (request !== generation) return
     state.value = data
     if (!data.card && roundAttemptIds.size && !completedRound.value) {
-      completedRound.value = { deck_id: deckId, entry_key: roundKey, attempt_ids: [...roundAttemptIds] }
+      completedRound.value = { deck_id: deckId, review_queue_id: data.queue_id, entry_key: roundKey, attempt_ids: [...roundAttemptIds] }
     }
     poll(request)
   }

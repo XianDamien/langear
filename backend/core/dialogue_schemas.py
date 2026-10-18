@@ -5,6 +5,7 @@ from core.schemas import Body
 
 class DialogueCreate(Body):
     deck_id: UUID
+    review_queue_id: UUID
     entry_key: UUID
     attempt_ids: list[UUID] = Field(min_length=1, max_length=1000)
 

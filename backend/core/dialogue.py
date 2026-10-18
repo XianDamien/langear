@@ -1,5 +1,7 @@
 """Authorized, read-only practice tools and independent Dialogue persistence."""
 import json
+import re
+from datetime import timedelta
 from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -13,6 +15,7 @@ from core.errors import DomainError, missing
 from core.models import Attempt, Card, Deck, DialogueReview, DialogueSession, DialogueTurn
 from core.repository import ContentRepository
 from core.dialogue_schemas import DialogueCreate, Scenario, Review
+from core.review import QUEUES, RUNTIME_LOCK, ReviewService
 
 router = APIRouter(prefix='/api/v1/dialogue')
 
@@ -38,16 +41,37 @@ def planner(kind, context):
         raise DomainError(502, 'DIALOGUE_AGENT_FAILED', 'Please retry preparing the dialogue.') from None
 
 
-def practice_context(db, collection, deck_id, attempt_ids):
+def practice_context(db, collection, deck_id, queue_id, attempt_ids):
     """The caller's Collection is injected by auth, never a model argument."""
     repo = ContentRepository(db, collection)
     deck = repo.get(Deck, deck_id)
-    deck_ids = repo.descendants(deck.id)
     ids = set(attempt_ids)
-    attempts = list(db.scalars(select(Attempt).where(Attempt.collection_id == collection.id,
-        Attempt.id.in_(ids), Attempt.rating.is_not(None)).order_by(Attempt.created_at, Attempt.id)))
-    if len(attempts) != len(ids):
+    if len(ids) != len(attempt_ids):
+        raise DomainError(422, 'DIALOGUE_ATTEMPTS_INVALID', 'Practice evidence contains duplicates.')
+    submitted_attempts = list(db.scalars(select(Attempt).where(
+        Attempt.collection_id == collection.id,
+        Attempt.id.in_(ids),
+        Attempt.rating.is_not(None),
+    )))
+    if len(submitted_attempts) != len(ids):
         missing()
+    with RUNTIME_LOCK:
+        queue = QUEUES.get(collection.id)
+        if not queue or queue.id != queue_id or queue.scope['deck_id'] != deck.id:
+            raise DomainError(409, 'DIALOGUE_ROUND_EXPIRED', 'The practice round has expired. Please refresh the lesson.')
+        if ReviewService(db, collection).next(queue_id)['card'] is not None:
+            raise DomainError(409, 'DIALOGUE_ROUND_INCOMPLETE', 'Finish the available cards before starting the dialogue.')
+        round_started_at = queue.started_at or queue.expires_at - timedelta(hours=2)
+        round_attempts = list(db.scalars(select(Attempt).where(
+            Attempt.collection_id == collection.id,
+            Attempt.rated_at >= round_started_at,
+            Attempt.rating.is_not(None),
+        ).order_by(Attempt.rated_at, Attempt.id)))
+        round_ids = {attempt.id for attempt in round_attempts}
+        if not ids or ids != round_ids:
+            raise DomainError(409, 'DIALOGUE_ROUND_EVIDENCE_MISMATCH', 'Refresh the lesson to prepare this practice round.')
+        attempts = round_attempts
+    deck_ids = repo.descendants(deck.id)
     # Validate membership with current owned Cards; content itself uses immutable Attempt snapshots.
     cards = {c.id for c in db.scalars(select(Card).where(Card.collection_id == collection.id, Card.deck_id.in_(deck_ids)))}
     if any(a.card_id not in cards for a in attempts):
@@ -74,9 +98,17 @@ def practice_context(db, collection, deck_id, attempt_ids):
 def validate_scenario(value, context):
     try:
         scenario = Scenario.model_validate(value).model_dump(mode='json')
-        valid = {(s['attempt_id'], s['card_id']) for s in context['sources']}
-        if any((e['source']['attempt_id'], e['source']['card_id']) not in valid for e in scenario['target_expressions']):
-            raise ValueError('Unknown source')
+        valid = {(s['attempt_id'], s['card_id']): s for s in context['sources']}
+        stop_words = {'about', 'after', 'again', 'also', 'and', 'are', 'but', 'for', 'from', 'have', 'how', 'into', 'please', 'that', 'the', 'their', 'there', 'this', 'what', 'when', 'where', 'which', 'with', 'would', 'you', 'your'}
+        for expression in scenario['target_expressions']:
+            source = valid.get((expression['source']['attempt_id'], expression['source']['card_id']))
+            if source is None:
+                raise ValueError('Unknown source')
+            source_text = json.dumps([value for key in ('note', 'answer') for value in source[key].values()], ensure_ascii=False).lower()
+            terms = {term.rstrip('s') for term in re.findall(r'[a-z]{3,}', expression['english'].lower()) if term not in stop_words}
+            source_terms = {term.rstrip('s') for term in re.findall(r'[a-z]{3,}', source_text)}
+            if not terms or not terms.intersection(source_terms):
+                raise ValueError('Expression is not grounded in its source')
         ids = [g['id'] for g in scenario['goals']]
         if len(set(ids)) != len(ids):
             raise ValueError('Duplicate goal')
@@ -102,7 +134,8 @@ def service(collection=Depends(auth.identity), db=Depends(get_db, scope='functio
 
 @router.get('/availability')
 def availability(context=Depends(service)):
-    return {'enabled': get_settings().dialogue_enabled}
+    config = get_settings()
+    return {'enabled': bool(config.dialogue_enabled and config.dialogue_agent_token and config.dialogue_api_key)}
 
 
 @router.post('/sessions', status_code=201)
@@ -115,7 +148,7 @@ def create_session(body: DialogueCreate, context=Depends(service)):
         if existing.deck_id != body.deck_id or set(existing.context['practice_attempt_ids']) != set(map(str, body.attempt_ids)):
             raise DomainError(409, 'DIALOGUE_ENTRY_CONFLICT', 'This entry belongs to another practice round.')
         return session_data(db, existing)
-    bound = practice_context(db, collection, body.deck_id, body.attempt_ids)
+    bound = practice_context(db, collection, body.deck_id, body.review_queue_id, body.attempt_ids)
     scenario = validate_scenario(planner('scenario', bound), bound)
     statement = insert(DialogueSession).values(collection_id=collection.id, entry_key=body.entry_key,
         deck_id=body.deck_id, context=bound, scenario=scenario).on_conflict_do_nothing(index_elements=['collection_id','entry_key'])

@@ -24,6 +24,8 @@ it('runs the real pi tool loop against a model transport and submits schema-vali
   const model = await listen(createServer(async (request, response) => {
     const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk)
     const payload = JSON.parse(Buffer.concat(chunks).toString())
+    expect(payload.enable_thinking).toBe(false)
+    expect(payload.messages[0].role).toBe('system')
     const context = payload.messages.find((m: { role: string; name?: string }) => m.role === 'tool')
     const args = context ? {
       title: JSON.parse(context.content).title, setup_zh: '买水果', learner_role: 'Customer', agent_role: 'Shopkeeper',

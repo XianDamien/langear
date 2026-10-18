@@ -14,7 +14,7 @@ Use Node >=22.19.0. Install with `pnpm install --frozen-lockfile`, then provide 
 
 ## Protocol and recovery
 
-- `POST /api/v1/dialogue/sessions`: `{deck_id, entry_key, attempt_ids}`; returns a scenario and an idempotently created session. Duplicate keys with different round evidence return 409.
+- `POST /api/v1/dialogue/sessions`: `{deck_id, review_queue_id, entry_key, attempt_ids}`; the backend verifies the active Review queue is exhausted and that the rated Attempts exactly match this round before preparing a scenario. Duplicate keys with different round evidence return 409.
 - `GET /api/v1/dialogue/sessions/{id}`: persisted scenario, complete turns and optional review.
 - `WS /api/v1/dialogue/sessions/{id}/ws`: requires the normal session cookie and trusted Origin. Browser sends `audio_begin`, PCM16 mono 16kHz `audio` chunks, `commit`, or `end`. Server sends `connected`, `message_delta`, PCM16 mono 24kHz `audio`, persisted `turn`, `ready`, `ended`, or sanitized `error` events.
 - `POST .../{id}/finish`: explicitly ends a disconnected session. `POST .../{id}/review` generates/returns its Chinese review, with validated learner-turn and original Attempt evidence.

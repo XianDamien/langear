@@ -16,7 +16,7 @@ def scenario(context):
     return {'title': 'At the fruit shop', 'setup_zh': '买一些水果并询价。', 'learner_role': 'Customer', 'agent_role': 'Shopkeeper',
         'goals': [{'id': 'buy', 'description_zh': '买一个苹果'}],
         'target_expressions': [{'english': 'an apple', 'meaning_zh': '一个苹果', 'source': source},
-            {'english': 'please', 'meaning_zh': '请', 'source': source}]}
+            {'english': 'a red apple', 'meaning_zh': '一个红苹果', 'source': source}]}
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def dialogue(monkeypatch, client, account):
     q = queue(client, account)
     f = flip(client, q, next_card(client, q)).json()
     assert rate(client, q, f, 'easy').status_code == 200
-    body = {'deck_id': account['deck_id'], 'entry_key': str(uuid4()), 'attempt_ids': [f['attempt']['id']]}
+    body = {'deck_id': account['deck_id'], 'review_queue_id': q, 'entry_key': str(uuid4()), 'attempt_ids': [f['attempt']['id']]}
     yield body
     get_settings.cache_clear()
 
@@ -87,6 +87,44 @@ def test_planner_cannot_invent_source_or_claim_agent_expression(client, account,
         return value
     monkeypatch.setattr(module, 'planner', forged)
     assert client.post('/api/v1/dialogue/sessions', json=dialogue).status_code == 502
+
+
+def test_availability_requires_planner_and_voice_credentials(client, account, dialogue, monkeypatch):
+    monkeypatch.delenv('CORE_DIALOGUE_AGENT_TOKEN', raising=False)
+    monkeypatch.delenv('CORE_DIALOGUE_API_KEY', raising=False)
+    get_settings.cache_clear()
+    assert client.get('/api/v1/dialogue/availability').json() == {'enabled': False}
+    monkeypatch.setenv('CORE_DIALOGUE_AGENT_TOKEN', 'planner-token-' + 'x' * 32)
+    monkeypatch.setenv('CORE_DIALOGUE_API_KEY', 'voice-provider-key')
+    get_settings.cache_clear()
+    assert client.get('/api/v1/dialogue/availability').json() == {'enabled': True}
+
+
+def test_dialogue_requires_current_completed_round_and_grounded_expressions(client, account, dialogue, monkeypatch):
+    from core import dialogue as module
+    forged_round = {**dialogue, 'entry_key': str(uuid4()), 'review_queue_id': str(uuid4())}
+    assert client.post('/api/v1/dialogue/sessions', json=forged_round).status_code == 409
+    original = module.planner
+    def invented_expression(kind, context):
+        value = original(kind, context)
+        value['target_expressions'][0]['english'] = 'a spaceship'
+        return value
+    monkeypatch.setattr(module, 'planner', invented_expression)
+    forged_text = {**dialogue, 'entry_key': str(uuid4())}
+    assert client.post('/api/v1/dialogue/sessions', json=forged_text).status_code == 502
+
+
+def test_new_round_cannot_reuse_historical_ratings_or_start_with_available_cards(client, account, dialogue):
+    q = queue(client, account)
+    entry = {**dialogue, 'review_queue_id': q}
+    response = client.post('/api/v1/dialogue/sessions', json=entry)
+    assert response.status_code == 409
+    assert response.json()['error']['code'] == 'DIALOGUE_ROUND_EVIDENCE_MISMATCH'
+    make_note(client, account, fields={'word': 'pear', 'meaning': '梨'})
+    entry['review_queue_id'] = queue(client, account)
+    response = client.post('/api/v1/dialogue/sessions', json=entry)
+    assert response.status_code == 409
+    assert response.json()['error']['code'] == 'DIALOGUE_ROUND_INCOMPLETE'
 
 
 class FakeOmni:

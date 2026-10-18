@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.mocked(dialogueApi.get).mockResolvedValue(structuredClone(session) as never)
 })
 function start() {
-  return mount(defineComponent({ setup() { api = useDialogue({ deck_id: 'd', entry_key: 'key', attempt_ids: ['attempt'] }); return () => null } }))
+  return mount(defineComponent({ setup() { api = useDialogue({ deck_id: 'd', review_queue_id: 'queue', entry_key: 'key', attempt_ids: ['attempt'] }); return () => null } }))
 }
 it('connects only after explicit start and closes transport/microphone when unmounted', async () => {
   const wrapper = start()
