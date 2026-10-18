@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import DialogueModal from '@/components/dialogue/DialogueModal.vue'
+import { dialogueApi, type DialogueEntry } from '@/services/dialogue'
 import { ArrowLeft, Undo2 } from 'lucide-vue-next'
 import ReviewRatingButtons from '@/components/review/ReviewRatingButtons.vue'
 import ReviewQueueCounts from '@/components/review/ReviewQueueCounts.vue'
@@ -18,9 +20,12 @@ import { templateLabels } from '@/services/contentCore'
 import { sentenceTemplates, type ReviewTemplate } from '@/services/review'
 
 const showPaused = ref(false)
+const dialogueAvailable = ref(false)
+const dialogueEntry = ref<DialogueEntry>()
+void dialogueApi.available().then(value => { dialogueAvailable.value = value === true }).catch(() => {})
 const route = useRoute()
 const router = useRouter()
-const { deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
+const { completedRound, deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
 const isLegacyDeck = computed(() => deck.value?.deck_guid?.startsWith('legacy:'))
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
@@ -38,7 +43,10 @@ function changeTemplate(event: Event) {
   const template = (event.target as HTMLSelectElement).value
   void router.replace({ path: route.path, query: template === 'sentence_retelling' ? {} : { template } })
 }
-watch(() => [route.params.deckId, route.query.template], loadEntry, { immediate: true })
+watch(() => [route.params.deckId, route.query.template], () => { dialogueEntry.value = undefined; return loadEntry() }, { immediate: true })
+watch([completedRound, dialogueAvailable, busy, error], ([round, available, working, failure]) => {
+  if (round && available && !working && !failure) dialogueEntry.value = round
+})
 </script>
 
 <template>
@@ -259,6 +267,12 @@ watch(() => [route.params.deckId, route.query.template], loadEntry, { immediate:
         </ReviewPracticeCard>
       </div>
     </main>
+    <DialogueModal
+      v-if="dialogueEntry"
+      :key="dialogueEntry.entry_key"
+      :entry="dialogueEntry"
+      @close="dialogueEntry = undefined"
+    />
     <ReviewPausedCards
       v-if="showPaused && deck"
       :deck-id="deck!.id"

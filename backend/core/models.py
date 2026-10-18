@@ -447,3 +447,45 @@ class ProcessingOutbox(Entity, Scoped, Base):
         ForeignKeyConstraint(["collection_id", "attempt_id"], ["attempts.collection_id", "attempts.id"], ondelete="CASCADE"),
         CheckConstraint("kind IN ('asr','ai')", name="ck_outbox_kind"),
     )
+
+
+class DialogueSession(Entity, Scoped, Base):
+    """A scenario snapshot and transcript, independent of Card scheduling."""
+    __tablename__ = "dialogue_sessions"
+    entry_key: Mapped[UUID] = mapped_column(Uuid)
+    deck_id: Mapped[UUID] = mapped_column(Uuid)
+    context: Mapped[dict] = mapped_column(JSONB)
+    scenario: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="ready")
+    finish_reason: Mapped[str | None] = mapped_column(String(30))
+    user_turns: Mapped[int] = mapped_column(Integer, default=0)
+    connection_id: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("collection_id", "id"),
+        UniqueConstraint("collection_id", "entry_key"),
+        CheckConstraint("status IN ('ready','active','interrupted','finished')", name="ck_dialogue_status"),
+        CheckConstraint("user_turns >= 0 AND user_turns <= 8", name="ck_dialogue_turn_limit"),
+    )
+
+
+class DialogueTurn(Entity, Scoped, Base):
+    __tablename__ = "dialogue_turns"
+    session_id: Mapped[UUID] = mapped_column(Uuid)
+    provider_item_id: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(16))
+    text: Mapped[str] = mapped_column(Text)
+    __table_args__ = (
+        ForeignKeyConstraint(["collection_id", "session_id"], ["dialogue_sessions.collection_id", "dialogue_sessions.id"], ondelete="CASCADE"),
+        UniqueConstraint("session_id", "provider_item_id", "role"),
+        CheckConstraint("role IN ('user','assistant')", name="ck_dialogue_turn_role"),
+    )
+
+
+class DialogueReview(Entity, Scoped, Base):
+    __tablename__ = "dialogue_reviews"
+    session_id: Mapped[UUID] = mapped_column(Uuid, unique=True)
+    result: Mapped[dict] = mapped_column(JSONB)
+    __table_args__ = (
+        ForeignKeyConstraint(["collection_id", "session_id"], ["dialogue_sessions.collection_id", "dialogue_sessions.id"], ondelete="CASCADE"),
+    )

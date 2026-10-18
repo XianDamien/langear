@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReviewSessionView from '@/views/ReviewSessionView.vue'
+vi.mock('@/components/dialogue/DialogueModal.vue', () => ({ default: { props: ['entry'], emits: ['close'], template: `<div data-testid="dialogue-modal">{{ entry.attempt_ids.join(',') }}<button @click="$emit('close')">关闭对话</button></div>` } }))
 import { libraryContent } from '@/services/libraryContent'
 import type { ReviewNext } from '@/services/review'
 
@@ -54,6 +55,47 @@ beforeEach(() => {
   })
 })
 describe('server-backed review', () => {
+  it('opens the dialogue with rated round evidence, but never for an initially empty queue', async () => {
+    const original = httpGet.getMockImplementation()!
+    httpGet.mockImplementation((path, ...args) => path === '/dialogue/availability' ? Promise.resolve({ data: { enabled: true } }) : original(path, ...args))
+    current = { ...current, card: null, empty_reason: 'done_today' }
+    const empty = await start()
+    expect(empty.wrapper.find('[data-testid="dialogue-modal"]').exists()).toBe(false)
+    empty.wrapper.unmount()
+    current = { ...counts, queue_id: 'q', review_token: 'token', card }
+    const practiced = await start()
+    await practiced.click('显示答案')
+    await practiced.wrapper.get('[data-testid="rate-easy"]').trigger('click')
+    await flushPromises()
+    expect(practiced.wrapper.get('[data-testid="dialogue-modal"]').text()).toContain('attempt')
+    await practiced.click('关闭对话')
+    expect(practiced.wrapper.find('[data-testid="dialogue-modal"]').exists()).toBe(false)
+    await practiced.click('撤回上一张')
+    expect(practiced.wrapper.find('[data-testid="dialogue-modal"]').exists()).toBe(false)
+    practiced.wrapper.unmount()
+  })
+  it('does not offer a dialogue when the rating fails or the last card is skipped', async () => {
+    const original = httpGet.getMockImplementation()!
+    httpGet.mockImplementation((path, ...args) => path === '/dialogue/availability' ? Promise.resolve({ data: { enabled: true } }) : original(path, ...args))
+    const practiced = await start()
+    await practiced.click('显示答案')
+    httpPut.mockRejectedValueOnce(new Error('offline'))
+    await practiced.wrapper.get('[data-testid="rate-easy"]').trigger('click')
+    await flushPromises()
+    expect(practiced.wrapper.find('[data-testid="dialogue-modal"]').exists()).toBe(false)
+    practiced.wrapper.unmount()
+    sessionStorage.clear()
+    current = { ...counts, queue_id: 'q', review_token: 'token', card }
+    const skipped = await start()
+    httpPost.mockImplementationOnce(async () => {
+      current = { ...current, card: null, empty_reason: 'no_cards' }
+      return { data: {} }
+    })
+    await skipped.click('今日跳过')
+    expect(skipped.wrapper.find('[data-testid="dialogue-modal"]').exists()).toBe(false)
+    skipped.wrapper.unmount()
+  })
+
   it('defaults imported courses to retelling and keeps a separate template scope through skip and refresh', async () => {
     httpGet.mockImplementation(async path => ({ data: path.startsWith('/decks/') ? { id: 'deck-a', name: 'Lesson 1', deck_guid: 'legacy:fixture:deck:1' } : current }))
     const { wrapper, router, click } = await start()

@@ -89,7 +89,7 @@ A future learner-facing concept for a bounded practice flow. It is not required 
 _Avoid_: Dialogue Session, database queue
 
 **Dialogue Session**:
-A future scenario-based speaking session that helps the learner use recently studied language. It is distinct from Card review and Study Session.
+A scenario-based speaking session that helps the learner use recently studied language. It is distinct from Card review and Study Session.
 _Avoid_: Study Session, free chat
 
 **Scenario**:
@@ -101,7 +101,7 @@ The concrete objective a learner must complete inside a Dialogue Session.
 _Avoid_: Turn count, duration
 
 **Dialogue Entry Point**:
-The explicit product path from which a learner starts a Dialogue Session. The first version defers this feature; it must not be inferred from a Card queue becoming empty.
+The explicit product path from which a learner starts a Dialogue Session. After a round with successfully rated Attempts has no immediately available Card, a scene modal offers an explicit Start button. An initially empty queue is not a completion event; finishing a round does not mean the entire Deck is permanently complete.
 _Avoid_: Automatic course completion
 
 **Dialogue Review**:
@@ -127,7 +127,7 @@ _Avoid_: Review unit, submission
 - A Sentence Note may generate Retelling, Translation, and Dictation Cards through the three Sentence NoteType Card Templates.
 - A Card Deletion removes only that Card and its Attempts; it does not delete the Note or sibling Cards.
 - A Note may remain in a Collection with no Cards and can later be used to explicitly generate missing Cards.
-- A Dialogue Session is deferred; it will be anchored to a learner-facing Lesson/Deck slice, not to the current runtime review queue.
+- A Dialogue Session is anchored to the owned Deck and the actual rated Attempts from one practice round. Its scenario is fixed at start, with 2–3 target expressions. The learner uses Manual voice turns; goals determine completion, with an eight-turn cap and optional early exit. pi prepares the scenario and Chinese review; Qwen-Omni-Realtime performs the English roleplay.
 
 ## Anki Alignment
 
@@ -157,4 +157,4 @@ _Avoid_: Review unit, submission
 - "Library 导入" was ambiguous between shared references and copies — resolved: Library Decks and Notes are copied into the user's Collection; copied Notes retain the Library guid for idempotent re-import, but local edits are never overwritten.
 - "删除卡片" was ambiguous between deleting one rendered Card and deleting its Note — resolved: Card Deletion removes only one Card and its Attempts.
 - "切换 NoteType" was ambiguous between ordinary field editing and structural conversion — resolved: the user confirms an Anki-style field mapping, while Cards and scheduling state are rebuilt rather than mapped.
-- "对话练习" was ambiguous between retelling and scenario use — resolved: retelling belongs to Card review; scenario use belongs to Dialogue Session, which is deferred.
+- "对话练习" was ambiguous between retelling and scenario use — resolved: retelling belongs to Card review; scenario use belongs to a separate Dialogue Session, implemented through the post-practice scene modal.

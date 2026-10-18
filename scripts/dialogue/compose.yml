@@ -1,0 +1,32 @@
+# Task-isolated development stack. Keep env files outside the source checkout.
+name: langear-dialogue
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file: ${DIALOGUE_RUNTIME_DIR:?set DIALOGUE_RUNTIME_DIR}/postgres.env
+    volumes: [dialogue-postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 3s
+      retries: 20
+  agent:
+    build: ../../dialogue-agent
+    env_file: ${DIALOGUE_RUNTIME_DIR}/agent.env
+    restart: unless-stopped
+    mem_limit: 768m
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile.core-dev
+      args:
+        DEV_BASE_IMAGE: ${DEV_BASE_IMAGE:?select a staging dependency baseline}
+    env_file: ${DIALOGUE_RUNTIME_DIR}/core.env
+    volumes: ['../../backend:/workspace/backend']
+    ports: ['127.0.0.1:${DIALOGUE_BACKEND_PORT:-8008}:8000']
+    depends_on:
+      postgres: {condition: service_healthy}
+      agent: {condition: service_started}
+    restart: unless-stopped
+    mem_limit: 1g
+volumes:
+  dialogue-postgres:

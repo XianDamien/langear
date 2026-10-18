@@ -21,6 +21,8 @@ dependencies = [
     "aliyun-python-sdk-core>=2.16.0",
     "aliyun-python-sdk-sts>=3.1.0",
     "google-genai>=1.68.0",
+    "httpx>=0.27.0",
+    "websockets>=15.0,<17",
 ]
 
 [project.optional-dependencies]

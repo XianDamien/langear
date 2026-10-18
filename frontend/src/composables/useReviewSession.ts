@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import axios from 'axios'
+import type { DialogueEntry } from '@/services/dialogue'
 import type { ResourceCard, ResourceDeck } from '@/services/contentCore'
 import { reviewHttp, reviewKey, reviewError, reviewErrorCode, uploadReviewAudio, type FlippedReview, type PracticeInput, type Rating, type ReviewInput, type ReviewNext, type ReviewQueue, type ReviewTemplate, type PendingReview } from '@/services/review'
 
@@ -8,6 +9,9 @@ type PendingWrite = { key: string; kind: 'flip'; body: { card_id: string; review
 const recoverable = new Set(['QUEUE_EXPIRED', 'CARD_SCHEDULE_CONFLICT', 'RATING_ALREADY_SET', 'REVIEW_TOKEN_INVALID', 'REVIEW_TOKEN_REUSED', 'DAILY_LIMIT_REACHED'])
 
 export function useReviewSession() {
+  const completedRound = ref<DialogueEntry>()
+  const roundAttemptIds = new Set<string>()
+  let roundKey = reviewKey()
   const deck = ref<ResourceDeck>()
   const state = ref<ReviewNext>()
   const loading = ref(false)
@@ -64,6 +68,9 @@ export function useReviewSession() {
     const { data } = await reviewHttp.get<ReviewNext>(`/review/queues/${state.value!.queue_id}/next`)
     if (request !== generation) return
     state.value = data
+    if (!data.card && roundAttemptIds.size && !completedRound.value) {
+      completedRound.value = { deck_id: deckId, entry_key: roundKey, attempt_ids: [...roundAttemptIds] }
+    }
     poll(request)
   }
   async function send(request = generation) {
@@ -79,6 +86,7 @@ export function useReviewSession() {
     } else {
       await reviewHttp.put(`/review/queues/${queue}/attempts/${write.attemptId}/rating`, write.body, { headers: { 'Idempotency-Key': write.key } })
       if (request !== generation) return
+      roundAttemptIds.add(write.attemptId)
       remember(null)
       retryAction = () => next()
       await next(request)
@@ -86,6 +94,9 @@ export function useReviewSession() {
   }
   async function load(id: string, legacy = false, template?: ReviewTemplate) {
     const request = ++generation
+    completedRound.value = undefined
+    roundAttemptIds.clear()
+    roundKey = reviewKey()
     clearTimeout(pollTimer)
     deckId = id
     entry = { id, legacy, template }
@@ -159,7 +170,9 @@ export function useReviewSession() {
     if (!state.value?.can_undo) return
     const key = reviewKey()
     await perform(async () => {
-      await reviewHttp.post<FlippedReview>(`/review/queues/${state.value!.queue_id}/undo`, {}, { headers: { 'Idempotency-Key': key } })
+      const { data: restored } = await reviewHttp.post<FlippedReview>(`/review/queues/${state.value!.queue_id}/undo`, {}, { headers: { 'Idempotency-Key': key } })
+      roundAttemptIds.delete(restored.attempt.id)
+      completedRound.value = undefined
       await next()
     })
   }
@@ -176,5 +189,5 @@ export function useReviewSession() {
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { deck, state, card, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry }
+  return { completedRound, deck, state, card, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry }
 }

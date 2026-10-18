@@ -978,6 +978,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fsrs" },
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "oss2" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -987,6 +988,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "uuid6" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -1015,6 +1017,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.121.0" },
     { name = "fsrs", specifier = "==6.3.0" },
     { name = "google-genai", specifier = ">=1.68.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "oss2", specifier = ">=2.18.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.9" },
@@ -1027,6 +1030,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "uuid6", specifier = "==2025.0.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
+    { name = "websockets", specifier = ">=15.0,<17" },
 ]
 provides-extras = ["dev"]
 

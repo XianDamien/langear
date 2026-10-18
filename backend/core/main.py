@@ -23,6 +23,8 @@ from core.errors import DomainError, missing
 from core.review_routes import router as review_router
 from core.uploads import router as upload_router
 from core.realtime import router as realtime_router
+from core.dialogue import router as dialogue_router
+from core.dialogue_voice import router as dialogue_voice_router
 from core.models import (
     Card,
     Collection,
@@ -543,3 +545,6 @@ def save_study_selection(deck_id: UUID, body: StudySelection, service=Depends(co
 app.include_router(review_router)
 app.include_router(realtime_router)
 app.include_router(upload_router)
+
+app.include_router(dialogue_router)
+app.include_router(dialogue_voice_router)
