@@ -19,22 +19,6 @@ watch(() => props.preview.messages.value.length, async () => {
     class="space-y-5"
     lang="en"
   >
-    <div
-      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-100 pb-3 text-xs text-slate-400"
-      aria-label="Conversation stages"
-    >
-      <span
-        v-for="(step, index) in ['Recall', 'Refine', 'Your task', 'Roleplay', 'Wrap-up']"
-        :key="step"
-        :class="{ 'font-semibold text-brand-accent': preview.phase.value === step }"
-      >
-        <span
-          v-if="index"
-          class="mr-3 text-slate-300"
-          aria-hidden="true"
-        >/</span>{{ step }}
-      </span>
-    </div>
     <ol
       class="space-y-5"
       aria-label="Conversation"
@@ -54,7 +38,7 @@ watch(() => props.preview.messages.value.length, async () => {
         </span>
         <div class="min-w-0 flex-1">
           <p class="mb-1.5 text-xs text-slate-400">
-            {{ message.speaker === 'user' ? 'You' : message.speaker === 'staff' ? 'Theatre staff · roleplay' : 'Your teacher' }}
+            {{ message.speaker === 'user' ? 'You' : message.speaker === 'staff' ? 'Theatre staff' : 'Your teacher' }}
           </p>
           <div
             class="rounded-md border p-3.5"

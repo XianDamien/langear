@@ -83,14 +83,11 @@ function reopen() {
         </div>
       </template>
       <template #heading>
-        <p class="text-xs text-slate-500">
-          Your English coach · A private conversation
-        </p>
         <h2
           id="dialogue-title"
-          class="mt-1 text-xl font-bold text-brand-accent"
+          class="sr-only"
         >
-          Let’s talk about it.
+          Conversation
         </h2>
       </template>
       <template #content>

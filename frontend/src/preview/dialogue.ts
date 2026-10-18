@@ -44,7 +44,6 @@ export function createDialoguePreview() {
   const partial = ref('')
   const canReply = computed(() => ['recap', 'roleplay'].includes(page.value))
   const sample = computed(() => page.value === 'recap' ? sampleSummary : roleplayTurns.value ? sampleSeats : sampleRequest)
-  const phase = computed(() => ({ recap: 'Recall', refine: 'Refine', task: 'Your task', roleplay: 'Roleplay', complete: 'Wrap-up', failed: 'Reconnect' })[page.value])
 
   function add(speaker: PreviewMessage['speaker'], english: string, chinese?: string, extra?: Pick<PreviewMessage, 'label' | 'expressions'>) {
     messages.value.push({ id: ++nextId, speaker, english, chinese, ...extra })
@@ -131,5 +130,5 @@ export function createDialoguePreview() {
     record: async () => { record() }, sendRecording, end: finish, finishAndReview: async () => { finish() },
   }
   reset()
-  return { controller, page, phase, input, messages, canReply, roleplayTurns, show, submit, useSample, setInput, record, sendRecording, introduceTask, startRoleplay, finish, reset }
+  return { controller, page, input, messages, canReply, roleplayTurns, show, submit, useSample, setInput, record, sendRecording, introduceTask, startRoleplay, finish, reset }
 }
