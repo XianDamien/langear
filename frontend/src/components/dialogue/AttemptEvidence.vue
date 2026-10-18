@@ -18,7 +18,7 @@ watch(() => props.source.attempt_id, async id => {
 </script>
 <template>
   <section
-    class="space-y-3 rounded-xl border border-teal-200 p-4"
+    class="space-y-3 rounded-md border border-slate-200 bg-brand-dark p-4"
     aria-label="原卡片与反馈"
   >
     <h3 class="font-semibold">

@@ -7,6 +7,12 @@ import { hasAccessToken } from '@/services/authToken'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    ...(import.meta.env.DEV ? [{
+      path: '/preview/dialogue',
+      name: 'DialoguePreview',
+      component: () => import('@/views/DialoguePreviewView.vue'),
+      meta: { public: true, fullscreen: true },
+    }] : []),
     {
       path: '/',
       redirect: contentCoreEnabled ? '/library' : '/dashboard',
@@ -68,6 +74,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  if (import.meta.env.DEV && to.name === 'DialoguePreview') return true
   if (getUseMockMode()) return to.name === 'Login' ? { name: 'Dashboard' } : true
   if (contentCoreEnabled) {
     const auth = useCoreAuthStore()

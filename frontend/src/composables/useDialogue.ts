@@ -1,8 +1,10 @@
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref, type InjectionKey } from 'vue'
 import { createRecordingSession, type RecordingSession } from '@/adapters/browser/recording'
 import { dialogueApi, dialogueError, dialogueSocketUrl, type DialogueEntry, type DialogueSession, type DialogueTurn } from '@/services/dialogue'
 
 type Status = 'preparing' | 'preview' | 'connecting' | 'speaking' | 'ready' | 'recording' | 'thinking' | 'reviewing' | 'complete' | 'failed'
+export const dialogueControllerKey: InjectionKey<typeof useDialogue> = Symbol('dialogueController')
+
 export function useDialogue(entry: DialogueEntry) {
   const session = ref<DialogueSession>()
   const status = ref<Status>('preparing')
