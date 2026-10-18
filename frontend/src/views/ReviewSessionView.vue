@@ -35,8 +35,8 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
     :class="isVocabulary || !current ? 'min-h-screen' : 'h-[100dvh] overflow-hidden'"
     data-testid="deck-review"
   >
-    <header class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-brand-panel px-4 py-3 shadow-mech-sm">
-      <div class="flex min-w-0 items-center gap-3">
+    <header class="sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-200 bg-brand-panel px-4 py-3 shadow-mech-sm">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
         <RetroButton
           variant="ghost"
           size="sm"
@@ -51,36 +51,53 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
           {{ deck?.name || '复习' }}
         </h1>
       </div>
-      <button
-        type="button"
-        class="shrink-0 text-xs text-slate-500 underline"
-        :disabled="busy || loading"
-        @click="showPaused = true"
+      <div class="flex shrink-0 items-center gap-3">
+        <button
+          type="button"
+          class="text-xs text-slate-500 underline"
+          :disabled="busy || loading"
+          @click="showPaused = true"
+        >
+          暂停/跳过
+        </button>
+        <RetroButton
+          variant="secondary"
+          size="sm"
+          :icon="Undo2"
+          class="whitespace-nowrap"
+          aria-label="撤销评分"
+          :disabled="busy || loading || !state?.can_undo || !!error"
+          @click="undo"
+        >
+          <span class="hidden sm:inline">撤销评分</span>
+        </RetroButton>
+      </div>
+      <dl
+        v-if="state"
+        class="flex w-full items-center justify-end gap-4 text-xs sm:gap-6"
+        aria-label="剩余卡片"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
       >
-        暂停/跳过
-      </button>
-      <RetroButton
-        variant="secondary"
-        size="sm"
-        :icon="Undo2"
-        class="shrink-0 whitespace-nowrap"
-        :disabled="busy || loading || !state?.can_undo || !!error"
-        @click="undo"
-      >
-        撤销评分
-      </RetroButton>
+        <div class="flex items-baseline gap-1.5">
+          <dt class="text-slate-500">未学习</dt>
+          <dd class="text-base font-bold tabular-nums text-blue-700">{{ state.new_remaining }}</dd>
+        </div>
+        <div class="flex items-baseline gap-1.5">
+          <dt class="text-slate-500">学习中</dt>
+          <dd class="text-base font-bold tabular-nums text-amber-700">{{ state.learning_remaining }}</dd>
+        </div>
+        <div class="flex items-baseline gap-1.5">
+          <dt class="text-slate-500">待复习</dt>
+          <dd class="text-base font-bold tabular-nums text-emerald-700">{{ state.review_remaining }}</dd>
+        </div>
+      </dl>
     </header>
     <main
       class="mx-auto flex w-full flex-1 flex-col items-center px-4 py-4"
       :class="isVocabulary || !current ? 'justify-center sm:max-w-3xl' : 'min-h-0 max-w-6xl'"
     >
-      <p
-        v-if="state"
-        class="mb-3 shrink-0 text-center text-xs text-slate-500"
-        aria-label="剩余卡片"
-      >
-        新学 {{ state.new_remaining }} · 学习中 {{ state.learning_remaining }} · 待复习 {{ state.review_remaining }}
-      </p>
       <p
         v-if="loading"
         role="status"

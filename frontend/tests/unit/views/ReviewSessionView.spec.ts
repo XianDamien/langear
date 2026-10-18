@@ -54,6 +54,42 @@ beforeEach(() => {
   })
 })
 describe('server-backed review', () => {
+  it('keeps retelling counts in the header through reveal, rating, and undo', async () => {
+    const remaining = { new_remaining: 3, learning_remaining: 2, review_remaining: 4 }
+    current = { ...current, ...remaining, card: { ...card, card_template_key: 'sentence_retelling', front: { reference_audio: 'audio' } } }
+    attempt = { ...attempt, front_snapshot: { reference_audio: 'audio' }, back_snapshot: { english: 'Hello' }, input_snapshot: { type: 'audio', temporary_media_asset_id: 'recording' }, media_asset_id: 'recording' }
+    const { wrapper } = await start()
+    const headerCounts = () => wrapper.get('header [aria-label="剩余卡片"]')
+    const expectCounts = (values: number[]) => {
+      expect(headerCounts().findAll('dt').map(label => label.text())).toEqual(['未学习', '学习中', '待复习'])
+      expect(headerCounts().findAll('dd').map(value => Number(value.text()))).toEqual(values)
+      expect(wrapper.findAll('[aria-label="剩余卡片"]')).toHaveLength(1)
+    }
+    expectCounts([3, 2, 4])
+    wrapper.unmount()
+
+    // A recovered recording restores the answer without hiding queue progress.
+    current = { ...current, attempt, rating_options: options, card_schedule_revision: 0 }
+    const recovered = await start()
+    const values = () => recovered.wrapper.get('header [aria-label="剩余卡片"]').findAll('dd').map(value => Number(value.text()))
+    expect(values()).toEqual([3, 2, 4])
+    httpPut.mockImplementationOnce(async () => {
+      current = { ...current, attempt: undefined, review_token: 'next-token', new_remaining: 2, learning_remaining: 3, can_undo: true }
+      return { data: { attempt_id: 'attempt', rating: 'again' } }
+    })
+    await recovered.wrapper.get('[data-testid="rate-again"]').trigger('click')
+    await flushPromises()
+    expect(values()).toEqual([2, 3, 4])
+    expect(recovered.wrapper.find('[data-testid="rate-again"]').exists()).toBe(false)
+    httpPost.mockImplementationOnce(async () => {
+      current = { ...current, ...remaining, attempt, card_schedule_revision: 2, rating_options: options, can_undo: false }
+      return { data: { attempt, card_schedule_revision: 2, rating_options: options } }
+    })
+    await recovered.click('撤销评分')
+    expect(values()).toEqual([3, 2, 4])
+    expect(recovered.wrapper.get('[data-testid="rate-again"]').exists()).toBe(true)
+    recovered.wrapper.unmount()
+  })
   it('loads only the front, reveals snapshots, rates and undoes without local navigation', async () => {
     const { wrapper, click } = await start()
     expect(httpGet).not.toHaveBeenCalledWith('/cards', expect.anything())
