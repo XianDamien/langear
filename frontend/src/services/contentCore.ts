@@ -9,7 +9,13 @@ export interface ResourceCard { id: string; note_id: string; deck_id: string; ca
 export interface ResourceMedia { id: string; kind: 'audio' | 'image'; name: string }
 export interface CoreIdentity { user: { id: string; email: string | null; username?: string | null }; collection: { id: string }; csrf_token?: string }
 
-export const coreHttp = axios.create({ baseURL: '/api/v1', withCredentials: true, timeout: 30000 })
+// The release app mounts Collection under /api/content while the standalone
+// content development server keeps the original /api/v1 prefix.
+export const coreHttp = axios.create({
+  baseURL: import.meta.env.VITE_CONTENT_API_BASE_URL || '/api/content/v1',
+  withCredentials: true,
+  timeout: 30000,
+})
 let csrfToken = ''
 let csrfRequest: Promise<string> | null = null
 export function setCoreCsrf(value: string) { csrfToken = value }
