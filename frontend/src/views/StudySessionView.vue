@@ -3,6 +3,7 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { ArrowLeft } from 'lucide-vue-next'
 import { useStudyStore } from '@/stores/study'
 import { useStudyTasksStore } from '@/stores/studyTasks'
 import { useRecorder } from '@/composables/useRecorder'
@@ -492,11 +493,11 @@ function exitStudy() {
     class="mx-auto flex h-[100dvh] w-full max-w-6xl flex-col px-3 py-3 sm:px-5 sm:py-4"
     data-testid="study-session-view"
   >
-    <header class="sticky top-0 z-10 mb-4 shrink-0 bg-brand-panel">
-      <div class="flex items-center gap-3">
-        <RetroButton variant="ghost" size="sm" @click="exitStudy">退出</RetroButton>
+    <header class="sticky top-0 z-10 mb-4 shrink-0 border-b border-slate-200 bg-brand-dark pb-3 sm:flex sm:items-center sm:gap-6">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <RetroButton variant="ghost" size="sm" :icon="ArrowLeft" class="shrink-0 text-slate-500" @click="exitStudy">退出</RetroButton>
         <h1
-          class="min-w-0 flex-1 truncate text-sm font-bold text-brand-accent sm:text-lg"
+          class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 sm:text-base"
           data-testid="study-lesson-title"
         >
           {{ sessionTitle }}
@@ -504,7 +505,7 @@ function exitStudy() {
       </div>
       <ReviewQueueCounts
         v-if="!loading"
-        class="mt-2"
+        class="mt-2 sm:mt-0 sm:w-auto sm:shrink-0"
         :new-remaining="remaining.new"
         :learning-remaining="remaining.learning"
         :review-remaining="remaining.review"

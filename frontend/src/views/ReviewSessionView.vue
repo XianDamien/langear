@@ -36,33 +36,33 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
     :class="isVocabulary || !current ? 'min-h-screen' : 'h-[100dvh] overflow-hidden'"
     data-testid="deck-review"
   >
-    <header class="sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-200 bg-brand-panel px-4 py-3 shadow-mech-sm">
+    <header class="sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-200 bg-brand-panel px-4 py-3">
       <div class="flex min-w-0 flex-1 items-center gap-3">
         <RetroButton
           variant="ghost"
           size="sm"
           :icon="ArrowLeft"
-          class="shrink-0 whitespace-nowrap"
+          class="shrink-0 whitespace-nowrap text-slate-500"
           :disabled="busy"
           @click="router.push('/library')"
         >
           返回题库
         </RetroButton>
-        <h1 class="truncate text-lg font-bold">
+        <h1 class="truncate text-sm font-semibold text-slate-800 sm:text-base">
           {{ deck?.name || '复习' }}
         </h1>
       </div>
-      <div class="flex shrink-0 items-center gap-3">
+      <div class="flex shrink-0 items-center gap-3 sm:order-3">
         <button
           type="button"
-          class="text-xs text-slate-500 underline"
+          class="text-xs text-slate-500 transition-colors hover:text-slate-800"
           :disabled="busy || loading"
           @click="showPaused = true"
         >
           暂停/跳过
         </button>
         <RetroButton
-          variant="secondary"
+          variant="ghost"
           size="sm"
           :icon="Undo2"
           class="whitespace-nowrap"
@@ -75,6 +75,7 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
       </div>
       <ReviewQueueCounts
         v-if="state"
+        class="sm:order-2 sm:w-auto sm:shrink-0"
         :new-remaining="state.new_remaining"
         :learning-remaining="state.learning_remaining"
         :review-remaining="state.review_remaining"
