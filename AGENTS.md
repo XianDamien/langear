@@ -81,7 +81,7 @@ skills/
 
 - ASR must use `qwen3-asr-flash`
 - Gemini must use the official `google-genai` SDK path only
-- Do not use Gemini relay
+- Gemini relay endpoints are allowed when explicitly configured through GOOGLE_GEMINI_BASE_URL; continue using the official google-genai SDK and record the endpoint/provider used for model evaluations
 - Do not add Gemini runtime fallback branches
 - Backend Gemini config should come from `backend/.env`
 - OSS user audio and reference audio are handled by backend adapters
