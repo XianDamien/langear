@@ -10,6 +10,7 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import RetellingCard from '@/components/study/cards/RetellingCard.vue'
+import ReviewQueueCounts from '@/components/review/ReviewQueueCounts.vue'
 import WordExplanation from '@/components/study/WordExplanation.vue'
 import SummaryModal from '@/components/summary/SummaryModal.vue'
 import type { SubmissionDisplayError } from '@/types/api'
@@ -40,7 +41,6 @@ const {
   asyncSubmitState,
   lastFeedback,
 } = storeToRefs(studyStore)
-const { taskMap } = storeToRefs(studyTasksStore)
 
 const recorder = useRecorder()
 const audioPlayer = useAudioPlayer()
@@ -78,10 +78,16 @@ function toSubmissionDisplayError(error: unknown): SubmissionDisplayError {
 }
 
 const sessionTitle = computed(() => lessonName.value || '学习任务')
-const completedCount = computed(() => cards.value.filter(
-  card => taskMap.value[card.id]?.reviewStatus === 'completed',
-).length)
-const progressPercent = computed(() => cards.value.length ? completedCount.value / cards.value.length * 100 : 0)
+const remaining = computed(() => {
+  const counts = { new: 0, learning: 0, review: 0 }
+  const now = Date.now()
+  for (const card of cards.value) {
+    if (card.isNewCard) counts.new++
+    else if (card.cardState === 'learning' || card.cardState === 'relearning') counts.learning++
+    else if (card.cardState === 'review' && card.dueAt && Date.parse(card.dueAt) <= now) counts.review++
+  }
+  return counts
+})
 
 const ratingDisabled = computed(() =>
   studyStore.submitState === 'submitting' ||
@@ -486,7 +492,7 @@ function exitStudy() {
     class="mx-auto flex h-[100dvh] w-full max-w-6xl flex-col px-3 py-3 sm:px-5 sm:py-4"
     data-testid="study-session-view"
   >
-    <header class="mb-4 shrink-0">
+    <header class="sticky top-0 z-10 mb-4 shrink-0 bg-brand-panel">
       <div class="flex items-center gap-3">
         <RetroButton variant="ghost" size="sm" @click="exitStudy">退出</RetroButton>
         <h1
@@ -494,21 +500,15 @@ function exitStudy() {
           data-testid="study-lesson-title"
         >
           {{ sessionTitle }}
-          <span class="ml-2 font-normal text-slate-400">{{ currentIndex + 1 }} / {{ cards.length }}</span>
         </h1>
-        <span class="shrink-0 text-xs text-slate-500">已练 {{ completedCount }} / {{ cards.length }}</span>
       </div>
-      <div
-        class="mt-3 h-1 overflow-hidden rounded-full bg-slate-200"
-        role="progressbar"
-        aria-label="句子练习进度"
-        :aria-valuenow="completedCount"
-        :aria-valuemax="cards.length || 1"
-        :aria-valuemin="0"
-        :aria-valuetext="`已练 ${completedCount} / ${cards.length}`"
-      >
-        <div class="h-full rounded-full bg-brand-accent transition-all" :style="{ width: `${progressPercent}%` }" />
-      </div>
+      <ReviewQueueCounts
+        v-if="!loading"
+        class="mt-2"
+        :new-remaining="remaining.new"
+        :learning-remaining="remaining.learning"
+        :review-remaining="remaining.review"
+      />
     </header>
 
     <div class="relative flex min-h-0 flex-1 gap-5 pt-3">

@@ -11,6 +11,9 @@ async function completeFirstStudyCard(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('study-lesson-title')).toContainText('Lesson 1')
   await expect(page.getByTestId('study-task-nav')).toHaveCount(0)
   await expect(page.getByTestId('card-front-container')).toBeVisible()
+  const remaining = page.getByRole('status', { name: '剩余卡片' })
+  await expect(remaining.locator('dt')).toHaveText(['未学习', '学习中', '待复习'])
+  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveCount(0)
 
   await page.getByTestId('record-toggle').click()
   await expect(page.getByTestId('record-toggle')).toContainText('停止')
@@ -33,7 +36,8 @@ test('核心学习链路可以在 Mock E2E 模式下完成评测并展示反馈'
     timeout: 15_000,
   })
   await expect(page.getByTestId('transcription-result')).toContainText(transcriptPattern)
-  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
+  await expect(page.getByRole('status', { name: '剩余卡片' })).toBeInViewport()
+  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveCount(0)
 })
 
 
@@ -96,10 +100,11 @@ test('无句子导航，评分栏在短屏和手机上保持可见', async ({ pa
   await installBrowserMocks(page)
   await page.setViewportSize({ width: 1280, height: 650 })
   await completeFirstStudyCard(page)
-  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveAttribute('aria-valuenow', '1')
+  await expect(page.getByRole('status', { name: '剩余卡片' })).toBeInViewport()
 
   await expect(page.getByTestId('study-task-nav')).toHaveCount(0)
   const assertRatingVisible = async () => {
+    await expect(page.getByRole('status', { name: '剩余卡片' })).toBeInViewport()
     const bounds = await page.getByTestId('study-rating-bar').boundingBox()
     expect(bounds!.y).toBeGreaterThanOrEqual(0)
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height)
@@ -116,5 +121,6 @@ test('无句子导航，评分栏在短屏和手机上保持可见', async ({ pa
   await expect(page.getByTestId('task-nav-item-2')).toHaveCount(0)
   await page.getByRole('button', { name: '良好', exact: false }).click()
   await expect(page.getByTestId('card-front-container')).toBeVisible()
-  await expect(page.getByTestId('study-lesson-title')).toContainText('2')
+  await expect(page.getByTestId('study-lesson-title')).toContainText('Lesson 1')
+  await expect(page.getByRole('progressbar', { name: '句子练习进度' })).toHaveCount(0)
 })

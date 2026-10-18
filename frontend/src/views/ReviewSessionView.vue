@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Undo2 } from 'lucide-vue-next'
 import ReviewRatingButtons from '@/components/review/ReviewRatingButtons.vue'
+import ReviewQueueCounts from '@/components/review/ReviewQueueCounts.vue'
 import ReviewPausedCards from '@/components/review/ReviewPausedCards.vue'
 import ReviewAttemptStatus from '@/components/review/ReviewAttemptStatus.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
@@ -72,27 +73,12 @@ watch(() => route.params.deckId, id => load(String(id)), { immediate: true })
           <span class="hidden sm:inline">撤销评分</span>
         </RetroButton>
       </div>
-      <dl
+      <ReviewQueueCounts
         v-if="state"
-        class="flex w-full items-center justify-end gap-4 text-xs sm:gap-6"
-        aria-label="剩余卡片"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        <div class="flex items-baseline gap-1.5">
-          <dt class="text-slate-500">未学习</dt>
-          <dd class="text-base font-bold tabular-nums text-blue-700">{{ state.new_remaining }}</dd>
-        </div>
-        <div class="flex items-baseline gap-1.5">
-          <dt class="text-slate-500">学习中</dt>
-          <dd class="text-base font-bold tabular-nums text-amber-700">{{ state.learning_remaining }}</dd>
-        </div>
-        <div class="flex items-baseline gap-1.5">
-          <dt class="text-slate-500">待复习</dt>
-          <dd class="text-base font-bold tabular-nums text-emerald-700">{{ state.review_remaining }}</dd>
-        </div>
-      </dl>
+        :new-remaining="state.new_remaining"
+        :learning-remaining="state.learning_remaining"
+        :review-remaining="state.review_remaining"
+      />
     </header>
     <main
       class="mx-auto flex w-full flex-1 flex-col items-center px-4 py-4"

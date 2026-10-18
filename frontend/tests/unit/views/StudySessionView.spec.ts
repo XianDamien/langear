@@ -180,6 +180,39 @@ describe('StudySessionView', () => {
     vi.unstubAllEnvs()
   })
 
+  it('uses the same queue counts as word practice and updates from ratings without a progress bar', async () => {
+    const session = buildMockStudySession(1001)
+    const sample = session.cards[0]!
+    const due = new Date(Date.now() - 60_000).toISOString()
+    const future = new Date(Date.now() + 86_400_000).toISOString()
+    session.cards = [
+      { ...sample, id: 2001, is_new_card: true, card_state: 'learning', last_review_at: null },
+      { ...sample, id: 2002, is_new_card: false, card_state: 'learning', due_at: due },
+      { ...sample, id: 2003, is_new_card: false, card_state: 'relearning', due_at: future },
+      { ...sample, id: 2004, is_new_card: false, card_state: 'review', due_at: due },
+      { ...sample, id: 2005, is_new_card: false, card_state: 'review', due_at: future },
+    ]
+    vi.mocked(fetchStudySession).mockResolvedValue({ data: session } as Awaited<ReturnType<typeof fetchStudySession>>)
+    const router = createStudyRouter()
+    await router.push('/study/1001')
+    const wrapper = mountStudySessionView(router)
+    await flushPromises()
+    const counts = () => wrapper.get('header [aria-label="剩余卡片"]').findAll('dd').map(value => Number(value.text()))
+    expect(wrapper.get('[aria-label="剩余卡片"]').findAll('dt').map(label => label.text())).toEqual(['未学习', '学习中', '待复习'])
+    expect(counts()).toEqual([1, 2, 1])
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('已练')
+    const store = useStudyStore()
+    store.submissionId = 9001
+    for (const [state, expected] of [['learning', [0, 3, 1]], ['review', [0, 2, 1]]] as const) {
+      vi.mocked(submitRating).mockResolvedValueOnce({ data: { srs: { state, due_at: future, is_new_card: false } } } as Awaited<ReturnType<typeof submitRating>>)
+      await store.submitCardRating(state === 'learning' ? 1 : 3)
+      await nextTick()
+      expect(counts()).toEqual(expected)
+    }
+    wrapper.unmount()
+  })
+
   it('blocks recording while speech playback is active and allows it afterwards', async () => {
     const session = buildMockStudySession(1001)
     session.cards[0]!.audio_path = ''
@@ -301,7 +334,7 @@ describe('StudySessionView', () => {
       expect(ossPutMock).toHaveBeenCalledTimes(1)
       expect(submitReviewAsync).toHaveBeenCalledTimes(1)
       expect(pollSubmissionResult).toHaveBeenCalledWith(9001)
-      expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
+      expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
     })
 
     expect(wrapper.get('[data-testid="card-back-container"]').exists()).toBe(true)
@@ -314,8 +347,8 @@ describe('StudySessionView', () => {
     useStudyStore().selectCard(1)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="study-lesson-title"]').text()).toContain('2')
-    expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
+    expect(wrapper.get('[aria-label="剩余卡片"]').exists()).toBe(true)
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="card-front-container"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="feedback-panel"]').exists()).toBe(false)
 
@@ -324,7 +357,7 @@ describe('StudySessionView', () => {
 
     await vi.waitFor(() => {
       expect(wrapper.get('[data-testid="card-back-container"]').exists()).toBe(true)
-      expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
+      expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
       expect(wrapper.get('[data-testid="feedback-panel"]').text()).toContain(completedFeedback)
       expect(
         wrapper.get('[data-testid="transcription-result"]').text().replace(/\s+/g, ''),
