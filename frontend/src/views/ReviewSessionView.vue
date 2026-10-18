@@ -15,11 +15,13 @@ import SentencePracticeCard from '@/components/review/SentencePracticeCard.vue'
 import PracticeFields from '@/components/study/modules/PracticeFields.vue'
 import { useReviewSession } from '@/composables/useReviewSession'
 import { templateLabels } from '@/services/contentCore'
+import { sentenceTemplates, type ReviewTemplate } from '@/services/review'
 
 const showPaused = ref(false)
 const route = useRoute()
 const router = useRouter()
-const { deck, state, card: current, flipped, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
+const { deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
+const isLegacyDeck = computed(() => deck.value?.deck_guid?.startsWith('legacy:'))
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
   english: current.value?.back.word || '', chinese: current.value?.back.meaning,
@@ -28,9 +30,15 @@ const wordAnswer = computed(() => ({
 const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
 const dueLabel = computed(() => state.value?.next_due_at ? new Date(state.value.next_due_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
 function loadEntry() {
-  return load(String(route.params.deckId || route.params.lessonId), !route.params.deckId)
+  const key = String(route.query.template || '')
+  const template = Object.hasOwn(templateLabels, key) ? key as ReviewTemplate : undefined
+  return load(String(route.params.deckId), false, template)
 }
-watch(() => [route.params.deckId, route.params.lessonId], loadEntry, { immediate: true })
+function changeTemplate(event: Event) {
+  const template = (event.target as HTMLSelectElement).value
+  void router.replace({ path: route.path, query: template === 'sentence_retelling' ? {} : { template } })
+}
+watch(() => [route.params.deckId, route.query.template], loadEntry, { immediate: true })
 </script>
 
 <template>
@@ -56,6 +64,22 @@ watch(() => [route.params.deckId, route.params.lessonId], loadEntry, { immediate
         </h1>
       </div>
       <div class="flex shrink-0 items-center gap-3 sm:order-3">
+        <select
+          v-if="isLegacyDeck && !practiceTemplate?.startsWith('vocabulary_')"
+          aria-label="练习类型"
+          :value="practiceTemplate"
+          :disabled="busy || loading || flipped"
+          class="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600"
+          @change="changeTemplate"
+        >
+          <option
+            v-for="template in sentenceTemplates"
+            :key="template"
+            :value="template"
+          >
+            {{ templateLabels[template] }}
+          </option>
+        </select>
         <button
           type="button"
           class="text-xs text-slate-500 transition-colors hover:text-slate-800"
@@ -101,7 +125,16 @@ watch(() => [route.params.deckId, route.params.lessonId], loadEntry, { immediate
         role="alert"
         class="mb-3 w-full shrink-0 rounded border border-amber-300 bg-amber-50 p-3 text-center text-sm"
       >
-        <p>{{ error }}</p><button
+        <p>{{ error }}</p>
+        <RouterLink
+          v-if="pendingReview"
+          :to="{ path: `/review/${pendingReview.deck_id}`, query: { template: pendingReview.card_template_key } }"
+          class="mt-2 inline-block underline"
+        >
+          继续 {{ pendingReview.deck_name }} · {{ templateLabels[pendingReview.card_template_key] }} 的未评分作答
+        </RouterLink>
+        <button
+          v-else
           type="button"
           class="mt-2 underline"
           :disabled="busy || loading"

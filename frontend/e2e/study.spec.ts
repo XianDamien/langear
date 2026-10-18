@@ -8,6 +8,7 @@ const transcriptPattern = /The\s*quick\s*brown\s*fox\s*jumps\s*over\s*the\s*lazy
 async function completeFirstStudyCard(page: import('@playwright/test').Page) {
   await page.goto('/study/1001')
 
+  await expect(page).toHaveURL(/\/review\/core-deck$/)
   await expect(page.getByTestId('deck-review')).toBeVisible()
   await expect(page.locator('header h1')).toContainText('Lesson 1')
   await expect(page.getByTestId('study-task-nav')).toHaveCount(0)

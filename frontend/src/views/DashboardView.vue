@@ -5,6 +5,8 @@ import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useDeckStore } from '@/stores/deck'
 import { useUserCoursesStore } from '@/stores/userCourses'
+import { legacyReviewLocation } from '@/services/reviewNavigation'
+import { reviewError } from '@/services/review'
 import { buildSelectedTree, findDeckById, findFirstSelectedLessonId } from '@/utils/deckSelection'
 import StatsCards from '@/components/dashboard/StatsCards.vue'
 import ActivityChart from '@/components/dashboard/ActivityChart.vue'
@@ -39,14 +41,15 @@ onMounted(() => {
   loadCourses()
 })
 
-function handlePlayDeck(deckId: string) {
+async function handlePlayDeck(deckId: string) {
   if (coursesLoading.value || coursesError.value) return
   const deck = findDeckById(myCourseTree.value, deckId)
   if (!deck) return
   const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
   if (lessonId) {
     deckStore.selectLesson(lessonId)
-    router.push(`/study/${lessonId}`)
+    try { await router.push(await legacyReviewLocation(lessonId)) }
+    catch (error) { coursesError.value = reviewError(error) }
   }
 }
 </script>

@@ -8,6 +8,7 @@ import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import appRouter from '@/router'
 import { setAccessToken } from '@/services/authToken'
 
+vi.mock('@/services/reviewNavigation', () => ({ legacyReviewLocation: vi.fn(async (id: string) => ({ name: 'DeckReview', params: { deckId: `core-${id}` } })) }))
 vi.mock('@/components/library/LibraryContentEditor.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/services/libraryContent', async importOriginal => ({
   ...await importOriginal<typeof import('@/services/libraryContent')>(),
@@ -42,6 +43,15 @@ async function mountCoursePage(component: typeof MyCoursesView | typeof LibraryV
 }
 
 describe('personal course settings navigation', () => {
+  it('starts a legacy lesson at its resolved Review URL', async () => {
+    const { wrapper, router } = await mountCoursePage(MyCoursesView, '/my-courses')
+    const row = wrapper.findAllComponents(DeckTreeItem).find(row => row.props('deck').id === '18')!
+    await row.findAll('button').find(button => button.text() === '开始')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/review/core-18')
+    wrapper.unmount()
+  })
+
   it('opens the existing settings page with the selected course', async () => {
     const { wrapper, router } = await mountCoursePage(MyCoursesView, '/my-courses')
     await wrapper.get('button[aria-label="Lesson one 设置"]').trigger('click')

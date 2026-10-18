@@ -12,6 +12,7 @@ const { fetchDeckTree, fetchMyCourseLessons, updateMyCourseLessons } = vi.hoiste
   fetchDeckTree: vi.fn(), fetchMyCourseLessons: vi.fn(), updateMyCourseLessons: vi.fn(),
 }))
 vi.mock('@/services/api/decks', () => ({ fetchDeckTree, fetchMyCourseLessons, updateMyCourseLessons }))
+vi.mock('@/services/reviewNavigation', () => ({ legacyReviewLocation: vi.fn(async (id: string) => ({ name: 'DeckReview', params: { deckId: `core-${id}` } })) }))
 vi.mock('@/components/dashboard/ActivityChart.vue', () => ({ default: { template: '<div />' } }))
 
 const lesson = (id: string, newCards: number): Deck => ({
@@ -28,7 +29,7 @@ async function mountDashboard() {
     history: createMemoryHistory(),
     routes: [
       { path: '/dashboard', component: DashboardView },
-      { path: '/study/:lessonId', component: { template: '<div />' } },
+      { path: '/review/:deckId', name: 'DeckReview', component: { template: '<div />' } },
       { path: '/library', component: { template: '<div />' } },
     ],
   })
@@ -69,7 +70,7 @@ describe('首页学习中与我的课程一致', () => {
     await flushPromises()
     await wrapper.getComponent(RecentDecks).get('.group').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/study/12')
+    expect(router.currentRoute.value.path).toBe('/review/core-12')
     expect(useDeckStore().selectedLessonId).toBe('12')
     wrapper.unmount()
   })

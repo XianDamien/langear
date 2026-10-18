@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
+import axios from 'axios'
 import type { ResourceCard, ResourceDeck } from '@/services/contentCore'
-import { reviewHttp, reviewKey, reviewError, reviewErrorCode, uploadReviewAudio, type FlippedReview, type PracticeInput, type Rating, type ReviewInput, type ReviewNext, type ReviewQueue } from '@/services/review'
+import { reviewHttp, reviewKey, reviewError, reviewErrorCode, uploadReviewAudio, type FlippedReview, type PracticeInput, type Rating, type ReviewInput, type ReviewNext, type ReviewQueue, type ReviewTemplate, type PendingReview } from '@/services/review'
 
 type PendingWrite = { key: string; kind: 'flip'; body: { card_id: string; review_token: string; input: ReviewInput } } |
   { key: string; kind: 'rating'; attemptId: string; body: { rating: Rating; card_schedule_revision: number } }
@@ -13,6 +14,8 @@ export function useReviewSession() {
   const busy = ref(false)
   const error = ref('')
   const needsRecovery = ref(false)
+  const pendingReview = ref<PendingReview>()
+  const practiceTemplate = ref<ReviewTemplate>()
   const uploadProgress = ref<number | null>(null)
   const flipped = computed(() => !!state.value?.attempt)
   const card = computed<ResourceCard | undefined>(() => state.value?.card ? {
@@ -21,7 +24,7 @@ export function useReviewSession() {
   } : undefined)
   let generation = 0
   let deckId = ''
-  let entry = { id: '', legacy: false }
+  let entry: { id: string; legacy: boolean; template?: ReviewTemplate } = { id: '', legacy: false }
   let pending: PendingWrite | null = null
   let retryAction: (() => Promise<void>) | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -40,6 +43,7 @@ export function useReviewSession() {
   function fail(cause: unknown) {
     error.value = reviewError(cause)
     const code = reviewErrorCode(cause) || ''
+    if (code === 'PENDING_REVIEW_OUTSIDE_SCOPE' && axios.isAxiosError(cause)) pendingReview.value = cause.response?.data?.error?.details
     needsRecovery.value = recoverable.has(code)
     if (needsRecovery.value && code !== 'QUEUE_EXPIRED') remember(null)
   }
@@ -80,11 +84,13 @@ export function useReviewSession() {
       await next(request)
     }
   }
-  async function load(id: string, legacy = false) {
+  async function load(id: string, legacy = false, template?: ReviewTemplate) {
     const request = ++generation
     clearTimeout(pollTimer)
     deckId = id
-    entry = { id, legacy }
+    entry = { id, legacy, template }
+    pendingReview.value = undefined
+    practiceTemplate.value = undefined
     state.value = undefined
     deck.value = undefined
     pending = savedWrite()
@@ -104,7 +110,11 @@ export function useReviewSession() {
       const { data: resource } = await reviewHttp.get<ResourceDeck>(`/decks/${id}`)
       if (request !== generation) return
       deck.value = resource
-      const { data } = await reviewHttp.post<ReviewQueue>('/review/queues', { scope: { deck_id: id, include_descendants: true, exclude_imported: !resource.deck_guid?.startsWith('legacy:') } })
+      const imported = !!resource.deck_guid?.startsWith('legacy:')
+      practiceTemplate.value = template || (imported ? 'sentence_retelling' : undefined)
+      const { data } = await reviewHttp.post<ReviewQueue>('/review/queues', { scope: { deck_id: id, include_descendants: true, exclude_imported: !imported,
+        ...(practiceTemplate.value ? { card_template_keys: [practiceTemplate.value] } : {}),
+      } })
       if (request !== generation) return
       state.value = data.current || { ...data, review_token: null, card: null }
       if (pending) await send(request)
@@ -158,13 +168,13 @@ export function useReviewSession() {
     if (!current?.card || current.attempt) return
     await perform(async () => {
       await reviewHttp.post(`/cards/${current.card!.id}/schedule`, { action, card_schedule_revision: current.card!.card_schedule_revision })
-      await load(deckId)
+      await load(entry.id, entry.legacy, entry.template)
     })
   }
   async function retry() {
-    if (needsRecovery.value || !state.value) return load(entry.id, entry.legacy)
+    if (needsRecovery.value || !state.value) return load(entry.id, entry.legacy, entry.template)
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { deck, state, card, flipped, loading, busy, error, needsRecovery, uploadProgress, load, flip, rate, undo, schedule, retry }
+  return { deck, state, card, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry }
 }

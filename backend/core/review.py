@@ -172,6 +172,35 @@ class ReviewService(ContentService):
             )
         )
 
+    def pending_for(self, scope):
+        attempt = self.pending()
+        if attempt is None:
+            return None
+        card = self.repo.get(Card, attempt.card_id)
+        template = self.db.get(CardTemplate, card.card_template_id)
+        ids = (
+            self.repo.descendants(scope["deck_id"])
+            if scope["include_descendants"] else [scope["deck_id"]]
+        )
+        templates = scope.get("card_template_keys")
+        imported = scope.get("exclude_imported") and self.repo.get(
+            Note, card.note_id
+        ).guid.startswith("legacy:")
+        if card.deck_id not in ids or (templates and template.key not in templates) or imported:
+            raise DomainError(
+                409, "PENDING_REVIEW_OUTSIDE_SCOPE",
+                "Finish the saved answer in its own deck and practice type.",
+                {
+                    "deck_id": str(card.deck_id),
+                    "deck_name": " / ".join(
+                        self.decks[key].name
+                        for key in reversed(ancestry(card.deck_id, self.decks))
+                    ),
+                    "card_template_key": template.key,
+                },
+            )
+        return attempt
+
     def in_scope(self, scope):
         root = self.repo.get(Deck, scope["deck_id"])
         ids = (
@@ -184,6 +213,10 @@ class ReviewService(ContentService):
         )
         if scope.get("exclude_imported"):
             query = query.join(Note, Card.note_id == Note.id).where(~Note.guid.startswith("legacy:"))
+        if scope.get("card_template_keys"):
+            query = query.join(
+                CardTemplate, Card.card_template_id == CardTemplate.id
+            ).where(CardTemplate.key.in_(scope["card_template_keys"]))
         cards = list(self.db.scalars(query))
         # Match the existing Card Picker: None means all, [] means no cards.
         return [card for card in cards if
@@ -201,6 +234,7 @@ class ReviewService(ContentService):
                 "FILTERED_DECK_NOT_READY",
                 "Build Filtered Deck membership and order through the Filtered Deck service first.",
             )
+        attempt = self.pending_for(scope)
         config = effective(self.collection, root.id, self.decks)
         cards = self.in_scope(scope)
         order = ordered(cards, self.collection, config, self.now, self.decks)
@@ -212,7 +246,6 @@ class ReviewService(ContentService):
             self.stamp(),
             self.now + timedelta(hours=2),
         )
-        attempt = self.pending()
         if attempt:
             q.current, q.token = attempt.card_id, attempt.review_token
         QUEUES[self.collection.id] = q
@@ -335,7 +368,7 @@ class ReviewService(ContentService):
 
     def next(self, queue_id):
         q = self.queue(queue_id)
-        pending = self.pending()
+        pending = self.pending_for(q.scope)
         if pending:
             q.current, q.token = pending.card_id, pending.review_token
             card = self.repo.get(Card, pending.card_id)

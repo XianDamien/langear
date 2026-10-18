@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useContentDecksStore } from '@/stores/contentDecks'
 import { libraryEditorEnabled } from '@/services/libraryContent'
 import { resourceError } from '@/services/contentCore'
+import { legacyReviewLocation } from '@/services/reviewNavigation'
+import { reviewError } from '@/services/review'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
@@ -45,9 +47,11 @@ onMounted(() => {
   loadCore()
 })
 
-function handleSelectLesson(lessonId: string) {
+async function handleSelectLesson(lessonId: string) {
+  coreError.value = ''
   deckStore.selectLesson(lessonId)
-  router.push(`/study/${lessonId}`)
+  try { await router.push(await legacyReviewLocation(lessonId)) }
+  catch (error) { coreError.value = reviewError(error) }
 }
 
 function handleEditDeckSettings(deckId: string) {
@@ -64,8 +68,7 @@ function handlePlayDeck(deckId: string) {
 
   const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
   if (lessonId) {
-    deckStore.selectLesson(lessonId)
-    router.push(`/study/${lessonId}`)
+    void handleSelectLesson(lessonId)
   }
 }
 </script>
@@ -81,7 +84,7 @@ function handlePlayDeck(deckId: string) {
       role="alert"
       class="mb-4 text-amber-700"
     >
-      自建牌组加载失败：{{ coreError }}
+      {{ coreError }}
       <button
         type="button"
         class="underline"

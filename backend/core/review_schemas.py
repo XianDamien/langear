@@ -11,6 +11,10 @@ class Scope(Body):
     deck_id: UUID
     include_descendants: bool = True
     exclude_imported: bool = False
+    card_template_keys: list[Literal[
+        "sentence_retelling", "sentence_translation", "sentence_dictation",
+        "vocabulary_english_to_chinese", "vocabulary_chinese_to_english",
+    ]] | None = Field(default=None, min_length=1)
 
 
 class QueueCreate(Body):

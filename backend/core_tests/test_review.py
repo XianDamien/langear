@@ -109,26 +109,23 @@ def test_next_flip_rating_undo_and_receipts(client, account, engine):
     assert next_card(client, q)["card"] is None
 
 
-def test_restart_recovers_pending_outside_selected_scope(client, account):
+def test_restart_recovers_pending_only_in_its_own_scope(client, account):
     make_note(client, account)
     q = queue(client, account)
     original = flip(client, q, next_card(client, q)).json()
-    QUEUES.clear()  # simulates process loss; Attempt and receipts stay in PostgreSQL
-    assert (
-        client.get(f"/api/v1/review/queues/{q}/next").json()["error"]["code"]
-        == "QUEUE_EXPIRED"
-    )
+    QUEUES.clear()
+    assert client.get(f"/api/v1/review/queues/{q}/next").json()["error"]["code"] == "QUEUE_EXPIRED"
     other = client.post("/api/v1/decks", json={"name": "Other"}).json()["id"]
-    q2 = queue(client, account, other)
+    blocked = client.post("/api/v1/review/queues", json={"scope": {"deck_id": other}})
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "PENDING_REVIEW_OUTSIDE_SCOPE"
+    assert blocked.json()["error"]["details"]["deck_id"] == account["deck_id"]
+    q2 = queue(client, account)
     recovered = next_card(client, q2)
     assert recovered["attempt"]["id"] == original["attempt"]["id"]
     assert recovered["review_token"] == original["attempt"]["review_token"]
-    assert (
-        client.post(f"/api/v1/review/queues/{q2}/undo").json()["error"]["code"]
-        == "UNDO_NOT_AVAILABLE"
-    )
     assert rate(client, q2, original, "easy").status_code == 200
-    assert next_card(client, q2)["card"] is None
+    assert next_card(client, queue(client, account, other))["card"] is None
 
 
 def test_input_snapshots_outbox_and_independent_status(client, account, engine):

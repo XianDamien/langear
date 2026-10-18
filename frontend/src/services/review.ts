@@ -4,6 +4,10 @@ import { contentCoreEnabled, coreHttp, resourceError, type ResourceCard } from '
 import { libraryContent } from './libraryContent'
 
 export const reviewHttp = contentCoreEnabled ? coreHttp : libraryContent
+export type SentenceTemplate = 'sentence_retelling' | 'sentence_translation' | 'sentence_dictation'
+export type ReviewTemplate = SentenceTemplate | 'vocabulary_english_to_chinese' | 'vocabulary_chinese_to_english'
+export const sentenceTemplates: SentenceTemplate[] = ['sentence_retelling', 'sentence_translation', 'sentence_dictation']
+export interface PendingReview { deck_id: string; deck_name: string; card_template_key: string }
 export type Rating = 'again' | 'hard' | 'good' | 'easy'
 export type ReviewInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; temporary_media_asset_id: string; realtime_session_id?: string }
 export type PracticeInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; blob: Blob; realtimeSessionId?: string }
@@ -50,6 +54,7 @@ export function reviewError(error: unknown): string {
   const code = reviewErrorCode(error)
   const messages: Record<string, string> = {
     LEGACY_LESSON_NOT_IMPORTED: '该课程尚未迁入复习牌组，请先在题库中选择已迁移的课程。',
+    PENDING_REVIEW_OUTSIDE_SCOPE: '另一个课程或练习类型有尚未评分的作答，请先完成该作答。',
     QUEUE_EXPIRED: '复习队列已更新，请恢复队列后继续。',
     CARD_SCHEDULE_CONFLICT: '这张卡片的进度已变化，请恢复队列后继续。',
     RATING_ALREADY_SET: '评分已保存，请恢复队列查看当前进度。',

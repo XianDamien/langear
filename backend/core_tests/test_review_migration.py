@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
 
 from core.config import get_settings
-from core.models import Attempt, Deck, MediaAsset, ProcessingOutbox, utcnow
+from core.models import Attempt, Card, CardTemplate, Deck, MediaAsset, ProcessingOutbox, utcnow
 from core import processing
 from core_tests.test_review import make_note, queue, next_card, flip, rate
 
@@ -180,3 +180,39 @@ def test_expired_realtime_stream_recovers_from_the_owned_audio(client, account, 
     assert saved.json()["attempt"]["media_asset_id"] == asset
     with Session(engine) as db:
         assert {job.kind for job in db.scalars(select(ProcessingOutbox))} == {"asr", "ai"}
+
+
+def test_sentence_template_scope_filters_cards_counts_and_learning_ahead(client, account, engine):
+    reference = recording(engine, account, ready=True)
+    for template in ("sentence_retelling", "sentence_translation", "sentence_dictation"):
+        make_note(client, account, {"english": "Hello", "chinese": "你好", "reference_audio": reference}, template)
+    from datetime import UTC, datetime, timedelta
+    with Session(engine) as db, db.begin():
+        card = db.scalar(select(Card).join(CardTemplate, Card.card_template_id == CardTemplate.id).where(CardTemplate.key == "sentence_dictation"))
+        card.queue, card.type, card.new_position = "learning", "learning", None
+        card.due_at = datetime.now(UTC) + timedelta(minutes=5)
+    response = client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": ["sentence_retelling"]}})
+    assert response.status_code == 200, response.text
+    current = next_card(client, response.json()["queue_id"])
+    assert current["card"]["card_template_key"] == "sentence_retelling"
+    assert current["new_remaining"] == 1 and current["learning_remaining"] == 0
+    for value in ([], ["unknown_template"]):
+        assert client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": value}}).status_code == 422
+
+
+def test_pending_other_template_requires_explicit_resume_and_preserves_answer(client, account):
+    make_note(client, account, {"english": "Hello", "chinese": "你好"}, "sentence_translation")
+    q = queue(client, account)
+    original = flip(client, q, next_card(client, q), {"type": "text", "text": "My saved translation"}).json()
+    blocked = client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": ["sentence_retelling"]}})
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["details"]["card_template_key"] == "sentence_translation"
+    assert client.get(f"/api/v1/attempts/{original['attempt']['id']}").json()["input_snapshot"]["text"] == "My saved translation"
+    # A rejected scope leaves the previous queue intact.
+    assert next_card(client, q)["attempt"]["id"] == original["attempt"]["id"]
+    resumed = client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": ["sentence_translation"]}})
+    assert resumed.status_code == 200
+    recovered = next_card(client, resumed.json()["queue_id"])
+    assert recovered["attempt"]["id"] == original["attempt"]["id"]
+    assert rate(client, resumed.json()["queue_id"], recovered, "easy").status_code == 200
+    assert client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": ["sentence_retelling"]}}).status_code == 200

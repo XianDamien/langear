@@ -14,12 +14,12 @@ let attempt: Record<string, unknown>
 const httpGet = vi.mocked(libraryContent.get)
 const httpPost = vi.mocked(libraryContent.post)
 const httpPut = vi.mocked(libraryContent.put)
-async function start() {
+async function start(path = '/review/deck-a') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/review/:deckId', component: ReviewSessionView },
     { path: '/library', component: { template: '<div>Library</div>' } },
   ] })
-  await router.push('/review/deck-a')
+  await router.push(path)
   const wrapper = mount(ReviewSessionView, { global: { plugins: [router] } })
   await flushPromises()
   const click = async (text: string) => {
@@ -54,6 +54,33 @@ beforeEach(() => {
   })
 })
 describe('server-backed review', () => {
+  it('defaults imported courses to retelling and keeps a separate template scope through skip and refresh', async () => {
+    httpGet.mockImplementation(async path => ({ data: path.startsWith('/decks/') ? { id: 'deck-a', name: 'Lesson 1', deck_guid: 'legacy:fixture:deck:1' } : current }))
+    const { wrapper, router, click } = await start()
+    const scope = (template: string) => ({ scope: { deck_id: 'deck-a', include_descendants: true, exclude_imported: false, card_template_keys: [template] } })
+    expect(httpPost).toHaveBeenCalledWith('/review/queues', scope('sentence_retelling'))
+    await wrapper.get('select[aria-label="练习类型"]').setValue('sentence_dictation')
+    await flushPromises()
+    expect(router.currentRoute.value.query.template).toBe('sentence_dictation')
+    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
+    await click('今日跳过')
+    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
+    wrapper.unmount()
+    const refreshed = await start('/review/deck-a?template=sentence_dictation')
+    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
+    expect((refreshed.wrapper.get('select').element as HTMLSelectElement).value).toBe('sentence_dictation')
+    refreshed.wrapper.unmount()
+  })
+  it('shows the saved answer course and type instead of rendering it under the requested course', async () => {
+    httpPost.mockRejectedValueOnce({ isAxiosError: true, response: { data: { error: { code: 'PENDING_REVIEW_OUTSIDE_SCOPE', details: { deck_id: 'deck-b', deck_name: 'Lesson 2', card_template_key: 'sentence_dictation' } } } } })
+    const { wrapper } = await start()
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('Lesson 2 · 听写')
+    expect(alert.get('a').attributes('href')).toBe('/review/deck-b?template=sentence_dictation')
+    expect(wrapper.find('[data-testid="card-front-container"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-back-container"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('keeps retelling counts in the header through reveal, rating, and undo', async () => {
     const remaining = { new_remaining: 3, learning_remaining: 2, review_remaining: 4 }
     current = { ...current, ...remaining, card: { ...card, card_template_key: 'sentence_retelling', front: { reference_audio: 'audio' } } }
