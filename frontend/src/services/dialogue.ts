@@ -7,23 +7,16 @@ export interface DialogueScenario {
   target_expressions: { english: string; meaning_zh: string; source: DialogueSource }[]
 }
 export interface DialogueTurn { id: string; role: 'user' | 'assistant'; text: string }
-export interface DialogueReview {
-  summary_zh: string
-  goals: { goal_id: string; completed: boolean; evidence_turn_ids: string[] }[]
-  used_expressions: { english: string; evidence_turn_ids: string[] }[]
-  practice_points: { advice_zh: string; source: DialogueSource }[]
-}
 export interface DialogueSession {
   id: string; deck_id: string; scenario: DialogueScenario; status: string; finish_reason: string | null
-  user_turns: number; max_user_turns: number; turns: DialogueTurn[]; review: DialogueReview | null
+  user_turns: number; max_user_turns: number; turns: DialogueTurn[]
 }
 export interface DialogueEntry { deck_id: string; review_queue_id: string; entry_key: string; attempt_ids: string[] }
 export const dialogueApi = {
   available: async () => (await reviewHttp.get<{ enabled: boolean }>('/dialogue/availability')).data.enabled,
-  create: async (entry: DialogueEntry) => (await reviewHttp.post<DialogueSession>('/dialogue/sessions', entry, { timeout: 65000 })).data,
+  create: async (entry: DialogueEntry) => (await reviewHttp.post<DialogueSession>('/dialogue/sessions', entry)).data,
   get: async (id: string) => (await reviewHttp.get<DialogueSession>(`/dialogue/sessions/${id}`)).data,
   finish: async (id: string) => (await reviewHttp.post<DialogueSession>(`/dialogue/sessions/${id}/finish`)).data,
-  review: async (id: string) => (await reviewHttp.post<DialogueSession>(`/dialogue/sessions/${id}/review`, {}, { timeout: 65000 })).data,
 }
 export function dialogueSocketUrl(id: string): string {
   const url = new URL(`${reviewHttp.defaults.baseURL}/dialogue/sessions/${id}/ws`, window.location.origin)

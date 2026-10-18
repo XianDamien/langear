@@ -93,7 +93,7 @@ A scenario-based speaking session that helps the learner use recently studied la
 _Avoid_: Study Session, free chat
 
 **Scenario**:
-A task-oriented conversation setup with fixed goals and roles but dynamically generated turns. A Scenario is generated once at Dialogue Session start and remains stable for that session.
+A task-oriented conversation setup with fixed goals and roles but dynamically generated turns. A Scenario is assembled from card snapshots once at Dialogue Session start and remains stable for that session.
 _Avoid_: Script, free chat
 
 **Dialogue Goal**:
@@ -105,7 +105,7 @@ The explicit product path from which a learner starts a Dialogue Session. After 
 _Avoid_: Automatic course completion
 
 **Dialogue Review**:
-A session-level review of how well a learner completed a Scenario and transferred Target Expressions into use.
+A deferred capability for session-level review. The current direct voice flow saves conversation history without generating a review.
 _Avoid_: Card feedback, Attempt
 
 **Target Expressions**:
@@ -113,7 +113,7 @@ The expressions a learner is expected to actively use during a Dialogue Session.
 _Avoid_: Vocabulary list, optional phrases
 
 **Dialogue Turn**:
-One learner or agent utterance inside a Dialogue Session. In the first version, formal review remains session-level rather than turn-level.
+One learner or agent utterance inside a Dialogue Session. Complete turns are saved as conversation history; this version does not generate a separate review.
 _Avoid_: Review unit, submission
 
 ## Relationships
@@ -127,7 +127,7 @@ _Avoid_: Review unit, submission
 - A Sentence Note may generate Retelling, Translation, and Dictation Cards through the three Sentence NoteType Card Templates.
 - A Card Deletion removes only that Card and its Attempts; it does not delete the Note or sibling Cards.
 - A Note may remain in a Collection with no Cards and can later be used to explicitly generate missing Cards.
-- A Dialogue Session is anchored to the owned Deck and the actual rated Attempts from one practice round. Its scenario is fixed at start, with 2–3 target expressions. The learner uses Manual voice turns; goals determine completion, with an eight-turn cap and optional early exit. pi prepares the scenario and Chinese review; Qwen-Omni-Realtime performs the English roleplay.
+- A Dialogue Session is anchored to the owned Deck and the actual rated Attempts from one practice round. Its scenario is assembled locally from the practiced card snapshots, with up to three source expressions. The learner uses Manual voice turns; goals determine completion, with an eight-turn cap and optional early exit. The backend supplies the authorized practice context directly to Qwen-Omni-Realtime for English voice roleplay. There is no pi dependency, scenario-generation model call, or separate Chinese review.
 
 ## Anki Alignment
 

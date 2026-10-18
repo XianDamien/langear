@@ -22,7 +22,7 @@ class Goal(Body):
 
 class TargetExpression(Body):
     english: str = Field(min_length=1, max_length=2000)
-    meaning_zh: str = Field(min_length=1, max_length=2000)
+    meaning_zh: str = Field(default='', max_length=2000)
     source: Source
 
 
@@ -32,27 +32,4 @@ class Scenario(Body):
     learner_role: str = Field(min_length=1, max_length=2000)
     agent_role: str = Field(min_length=1, max_length=2000)
     goals: list[Goal] = Field(min_length=1, max_length=3)
-    target_expressions: list[TargetExpression] = Field(min_length=2, max_length=3)
-
-
-class GoalResult(Body):
-    goal_id: str
-    completed: bool
-    evidence_turn_ids: list[UUID] = Field(max_length=8)
-
-
-class UsedExpression(Body):
-    english: str = Field(min_length=1, max_length=2000)
-    evidence_turn_ids: list[UUID] = Field(min_length=1, max_length=8)
-
-
-class PracticePoint(Body):
-    advice_zh: str = Field(min_length=1, max_length=2000)
-    source: Source
-
-
-class Review(Body):
-    summary_zh: str = Field(min_length=1, max_length=2000)
-    goals: list[GoalResult] = Field(max_length=3)
-    used_expressions: list[UsedExpression] = Field(max_length=3)
-    practice_points: list[PracticePoint] = Field(max_length=3)
+    target_expressions: list[TargetExpression] = Field(max_length=3)

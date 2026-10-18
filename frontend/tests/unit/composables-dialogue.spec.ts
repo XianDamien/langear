@@ -3,11 +3,11 @@ import { defineComponent } from 'vue'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useDialogue } from '@/composables/useDialogue'
 import { dialogueApi } from '@/services/dialogue'
-vi.mock('@/services/dialogue', () => ({ dialogueApi: { create: vi.fn(), get: vi.fn(), finish: vi.fn(), review: vi.fn() }, dialogueError: () => '请求失败', dialogueSocketUrl: () => 'wss://testserver/dialogue' }))
+vi.mock('@/services/dialogue', () => ({ dialogueApi: { create: vi.fn(), get: vi.fn(), finish: vi.fn() }, dialogueError: () => '请求失败', dialogueSocketUrl: () => 'wss://testserver/dialogue' }))
 const recording = { start: vi.fn(), dispose: vi.fn(), stop: vi.fn(), getState: () => 'recording' }
 vi.mock('@/adapters/browser/recording', () => ({ createRecordingSession: vi.fn(async () => recording) }))
 let api: ReturnType<typeof useDialogue>
-const session = { id: 's', status: 'ready', turns: [], user_turns: 0, max_user_turns: 8, scenario: {}, review: null }
+const session = { id: 's', status: 'ready', turns: [], user_turns: 0, max_user_turns: 8, scenario: {} }
 class Socket {
   static OPEN = 1
   static current: Socket
@@ -56,4 +56,37 @@ it('ignores a response that arrives after the dialogue window is closed', async 
   resolve(session)
   await request; await flushPromises()
   expect(api.session.value).toBeUndefined()
+})
+
+it('finishes directly and keeps saved transcript without a review request', async () => {
+  const wrapper = start()
+  await api.prepare()
+  const finished = { ...session, status: 'finished', turns: [{ id: 'turn', role: 'user', text: 'An apple, please.' }] }
+  vi.mocked(dialogueApi.finish).mockResolvedValue(finished as never)
+  await api.finish()
+  expect(dialogueApi.finish).toHaveBeenCalledWith('s')
+  expect(api.status.value).toBe('complete')
+  expect(api.session.value?.turns).toEqual(finished.turns)
+  wrapper.unmount()
+})
+it('restores a completed dialogue without starting another request', async () => {
+  vi.mocked(dialogueApi.create).mockResolvedValue({ ...session, status: 'finished' } as never)
+  const wrapper = start()
+  await api.prepare()
+  expect(api.status.value).toBe('complete')
+  expect(dialogueApi.finish).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+it('loads saved turns when the voice server ends the dialogue', async () => {
+  const wrapper = start()
+  await api.prepare()
+  await api.connect()
+  Socket.current.event({ type: 'connected', session: structuredClone(session) })
+  vi.mocked(dialogueApi.get).mockResolvedValue({ ...session, status: 'finished' } as never)
+  Socket.current.event({ type: 'ended', reason: 'turn_limit' })
+  await new Promise(r => setTimeout(r, 5))
+  await flushPromises()
+  expect(api.status.value).toBe('complete')
+  expect(dialogueApi.finish).not.toHaveBeenCalled()
+  wrapper.unmount()
 })

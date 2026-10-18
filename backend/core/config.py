@@ -6,8 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CORE_", extra="ignore")
     dialogue_enabled: bool = False
-    dialogue_agent_url: str = "http://127.0.0.1:8111"
-    dialogue_agent_token: SecretStr | None = None
     dialogue_api_key: SecretStr | None = None
     dialogue_model: str = "qwen3.8-omni-flash-realtime"
     dialogue_ws_url: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"

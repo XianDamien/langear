@@ -10,26 +10,11 @@ from core.config import get_settings
 from core_tests.test_review import make_note, queue, next_card, flip, rate
 
 
-def scenario(context):
-    s = context['sources'][0]
-    source = {'card_id': s['card_id'], 'attempt_id': s['attempt_id']}
-    return {'title': 'At the fruit shop', 'setup_zh': '买一些水果并询价。', 'learner_role': 'Customer', 'agent_role': 'Shopkeeper',
-        'goals': [{'id': 'buy', 'description_zh': '买一个苹果'}],
-        'target_expressions': [{'english': 'an apple', 'meaning_zh': '一个苹果', 'source': source},
-            {'english': 'a red apple', 'meaning_zh': '一个红苹果', 'source': source}]}
-
-
 @pytest.fixture
 def dialogue(monkeypatch, client, account):
     monkeypatch.setenv('CORE_DIALOGUE_ENABLED', 'true'); get_settings.cache_clear()
-    from core import dialogue as module
-    def model(kind, context):
-        if kind == 'scenario': return scenario(context)
-        users = [t['id'] for t in context['turns'] if t['role'] == 'user']
-        return {'summary_zh': '已完成购买。' if users else '本次提前结束，尚未开始任务。',
-            'goals': [{'goal_id': 'buy', 'completed': bool(users), 'evidence_turn_ids': users[:1]}],
-            'used_expressions': [{'english': 'an apple', 'evidence_turn_ids': users[:1]}] if users else [], 'practice_points': []}
-    monkeypatch.setattr(module, 'planner', model)
+    monkeypatch.setenv('CORE_DIALOGUE_API_KEY', 'voice-provider-key')
+    get_settings.cache_clear()
     make_note(client, account)
     q = queue(client, account)
     f = flip(client, q, next_card(client, q)).json()
@@ -53,11 +38,10 @@ def test_authorized_context_idempotency_and_no_scheduling_side_effects(client, a
     assert attempt['rating'] == 'easy'
     path = '/api/v1/dialogue/sessions/' + session['id']
     assert client.get(path).json()['turns'] == []
-    assert client.post(path + '/review').status_code == 409
     assert client.post(path + '/finish').json()['finish_reason'] == 'user_ended'
-    review = client.post(path + '/review').json()['review']
-    assert review['goals'][0]['completed'] is False
-    assert client.post(path + '/review').json()['review'] == review
+    assert client.post(path + '/finish').json()['status'] == 'finished'
+    assert 'review' not in client.get(path).json()
+    assert client.post(path + '/review').status_code == 404
     assert client.get('/api/v1/attempts/' + dialogue['attempt_ids'][0]).json() == attempt
 
 
@@ -78,40 +62,50 @@ def test_other_collection_cannot_read_use_or_connect_to_dialogue(client, account
     client.headers['X-CSRF-Token'] = csrf
 
 
-def test_planner_cannot_invent_source_or_claim_agent_expression(client, account, dialogue, monkeypatch):
-    from core import dialogue as module
-    original = module.planner
-    def forged(kind, context):
-        value = original(kind, context)
-        value['target_expressions'][0]['source']['attempt_id'] = str(uuid4())
-        return value
-    monkeypatch.setattr(module, 'planner', forged)
-    assert client.post('/api/v1/dialogue/sessions', json=dialogue).status_code == 502
+def test_create_uses_card_snapshots_without_model_calls(client, account, dialogue, monkeypatch):
+    import httpx
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError('Creating or finishing a dialogue must not call a model')
+    monkeypatch.setattr(httpx, 'post', unexpected_request)
+    session = create(client, dialogue)
+    assert session['scenario']['target_expressions'][0]['english'] == 'apple'
+    assert session['scenario']['target_expressions'][0]['meaning_zh'] == '苹果'
+    assert client.post('/api/v1/dialogue/sessions/' + session['id'] + '/finish').status_code == 200
 
 
-def test_availability_requires_planner_and_voice_credentials(client, account, dialogue, monkeypatch):
-    monkeypatch.delenv('CORE_DIALOGUE_AGENT_TOKEN', raising=False)
+def test_availability_requires_only_voice_credentials(client, account, dialogue, monkeypatch):
     monkeypatch.delenv('CORE_DIALOGUE_API_KEY', raising=False)
     get_settings.cache_clear()
     assert client.get('/api/v1/dialogue/availability').json() == {'enabled': False}
-    monkeypatch.setenv('CORE_DIALOGUE_AGENT_TOKEN', 'planner-token-' + 'x' * 32)
+    assert client.post('/api/v1/dialogue/sessions', json=dialogue).status_code == 503
     monkeypatch.setenv('CORE_DIALOGUE_API_KEY', 'voice-provider-key')
     get_settings.cache_clear()
     assert client.get('/api/v1/dialogue/availability').json() == {'enabled': True}
 
 
-def test_dialogue_requires_current_completed_round_and_grounded_expressions(client, account, dialogue, monkeypatch):
-    from core import dialogue as module
+def test_untranslated_sentence_round_can_start_dialogue(client, account, dialogue, engine):
+    from uuid import UUID
+    from sqlalchemy.orm import Session
+    from core.models import MediaAsset
+    with Session(engine) as db, db.begin():
+        audio = MediaAsset(collection_id=UUID(account['collection']['id']), object_key='reference.mp3', kind='audio')
+        db.add(audio); db.flush()
+        reference = str(audio.id)
+    make_note(client, account, {'english': 'Let us go!', 'reference_audio': reference}, 'sentence_dictation')
+    q = client.post('/api/v1/review/queues', json={'scope': {
+        'deck_id': account['deck_id'], 'card_template_keys': ['sentence_dictation'],
+    }}).json()['queue_id']
+    attempt = flip(client, q, next_card(client, q), {'type': 'text', 'text': 'Let us go!'}).json()
+    assert rate(client, q, attempt, 'easy').status_code == 200
+    entry = {**dialogue, 'review_queue_id': q, 'attempt_ids': [attempt['attempt']['id']]}
+    result = create(client, entry)
+    assert result['scenario']['target_expressions'][0]['english'] == 'Let us go!'
+    assert result['scenario']['target_expressions'][0]['meaning_zh'] == ''
+
+
+def test_dialogue_requires_current_completed_round(client, account, dialogue):
     forged_round = {**dialogue, 'entry_key': str(uuid4()), 'review_queue_id': str(uuid4())}
     assert client.post('/api/v1/dialogue/sessions', json=forged_round).status_code == 409
-    original = module.planner
-    def invented_expression(kind, context):
-        value = original(kind, context)
-        value['target_expressions'][0]['english'] = 'a spaceship'
-        return value
-    monkeypatch.setattr(module, 'planner', invented_expression)
-    forged_text = {**dialogue, 'entry_key': str(uuid4())}
-    assert client.post('/api/v1/dialogue/sessions', json=forged_text).status_code == 502
 
 
 def test_new_round_cannot_reuse_historical_ratings_or_start_with_available_cards(client, account, dialogue):
@@ -143,6 +137,8 @@ class FakeOmni:
         value = json.loads(raw)
         if value['type'] == 'session.update':
             assert value['session']['turn_detection'] is None
+            assert 'apple' in value['session']['instructions']
+            assert 'practice' in value['session']['instructions']
             self.events.put_nowait({'type': 'session.updated'})
         elif value['type'] == 'input_audio_buffer.commit':
             self.inputs += 1
@@ -153,7 +149,7 @@ class FakeOmni:
             self.count += 1
             if self.finish and self.inputs and self.count == 2:
                 self.events.put_nowait({'type': 'response.function_call_arguments.done', 'name': 'finish_scenario',
-                    'arguments': '{"goal_ids":["buy"]}', 'call_id': 'finish-1'})
+                    'arguments': '{"goal_ids":["use_material"]}', 'call_id': 'finish-1'})
                 self.events.put_nowait({'type': 'response.done', 'response': {'id': 'resp-2', 'status': 'completed', 'output': [{'type': 'function_call'}]}})
             else:
                 self.events.put_nowait({'type': 'response.audio_transcript.delta', 'delta': 'Hello! What would you like?'})
@@ -192,9 +188,7 @@ def test_manual_voice_persists_turns_and_finishes_on_goal_or_eight_turns(client,
     assert saved['status'] == 'finished'
     assert saved['user_turns'] == (1 if goal_done else 8)
     assert len([t for t in saved['turns'] if t['role'] == 'user']) == saved['user_turns']
-    reviewed = client.post(path + '/review')
-    assert reviewed.status_code == 200, reviewed.text
-    assert reviewed.json()['review']['used_expressions'][0]['english'] == 'an apple'
+    assert 'review' not in saved
 
 
 def test_interrupted_agent_output_is_not_saved_and_can_reconnect(client, account, dialogue, monkeypatch):
@@ -215,8 +209,8 @@ def test_interrupted_agent_output_is_not_saved_and_can_reconnect(client, account
     assert client.get(path).json()['status'] == 'finished'
 
 
-def test_review_rejects_agent_only_evidence_and_concurrent_voice_is_exclusive(client, account, dialogue, monkeypatch):
-    from core import dialogue_voice, dialogue as module
+def test_concurrent_voice_is_exclusive(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
     monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni())
     session = create(client, dialogue)
     path = '/api/v1/dialogue/sessions/' + session['id']
@@ -226,15 +220,4 @@ def test_review_rejects_agent_only_evidence_and_concurrent_voice_is_exclusive(cl
             assert second.receive_json()['code'] == 'DIALOGUE_BUSY'
         speech(first); receive(first, 'ready')
         first.send_json({'type': 'end'}); receive(first, 'ended')
-    turns = client.get(path).json()['turns']
-    agent_id = next(t['id'] for t in turns if t['role'] == 'assistant')
-    original = module.planner
-    def wrong_evidence(kind, context):
-        value = original(kind, context)
-        value['goals'][0]['evidence_turn_ids'] = [agent_id]
-        return value
-    monkeypatch.setattr(module, 'planner', wrong_evidence)
-    assert client.post(path + '/review').status_code == 502
-    assert client.get(path).json()['review'] is None
-    monkeypatch.setattr(module, 'planner', original)
-    assert client.post(path + '/review').status_code == 200
+    assert client.get(path).json()['status'] == 'finished'
