@@ -3,6 +3,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { contentProxyOptions } from './viteProxy'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
@@ -14,6 +15,7 @@ export default defineConfig(({ mode }) => {
   if (targetUrl.port === '18000' && env.LANGEAR_ALLOW_PROD_PROXY !== '1') {
     throw new Error('Port 18000 is the production tunnel. Set LANGEAR_ALLOW_PROD_PROXY=1 only for explicit production investigation.')
   }
+  const contentProxy = contentProxyOptions(env.VITE_DEV_CONTENT_PROXY_TARGET, proxyTarget)
 
   return {
     plugins: [vue()],
@@ -37,9 +39,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api/content': {
           ws: true,
-          target: env.VITE_DEV_CONTENT_PROXY_TARGET || proxyTarget,
-          rewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? path => path.replace(/^\/api\/content/, '/api') : undefined,
-          cookiePathRewrite: env.VITE_DEV_CONTENT_PROXY_TARGET ? { '/api/v1': '/api/content/v1' } : undefined,
+          ...contentProxy,
           changeOrigin: true,
           secure: targetUrl.origin !== 'https://8.159.139.145:7145',
         },
