@@ -120,6 +120,16 @@ class ReviewService(ContentService):
             d.id: d
             for d in db.scalars(select(Deck).where(Deck.collection_id == collection.id))
         }
+        # Hold the joined content for this transaction only. Rendering every
+        # candidate must not issue a Note and Template query for every card.
+        self._card_content = {}
+
+    def render(self, card):
+        content = self._card_content.get(card.id)
+        if content is None:
+            return super().render(card)
+        note, template = content
+        return super().render(card, note=note, template=template)
 
     def config(self, card):
         return effective(
@@ -209,16 +219,21 @@ class ReviewService(ContentService):
             if scope["include_descendants"]
             else [root.id]
         )
-        query = select(Card).where(
+        query = select(Card, Note, CardTemplate).join(
+            Note, Card.note_id == Note.id
+        ).join(
+            CardTemplate, Card.card_template_id == CardTemplate.id
+        ).where(
             Card.collection_id == self.collection.id, Card.deck_id.in_(ids)
         )
         if scope.get("exclude_imported"):
-            query = query.join(Note, Card.note_id == Note.id).where(~Note.guid.startswith("legacy:"))
+            query = query.where(~Note.guid.startswith("legacy:"))
         if scope.get("card_template_keys"):
-            query = query.join(
-                CardTemplate, Card.card_template_id == CardTemplate.id
-            ).where(CardTemplate.key.in_(scope["card_template_keys"]))
-        cards = list(self.db.scalars(query))
+            query = query.where(CardTemplate.key.in_(scope["card_template_keys"]))
+        cards = []
+        for card, note, template in self.db.execute(query):
+            self._card_content[card.id] = (note, template)
+            cards.append(card)
         # Match the existing Card Picker: None means all, [] means no cards.
         return [card for card in cards if self.card_selected(card)]
 
@@ -357,9 +372,10 @@ class ReviewService(ContentService):
         result.extend(c for c in ahead if can_render(c))
         return result
 
-    def counts(self, q, *, scoped_cards=None, usage=None, renderable_ids=None):
+    def counts(self, q, *, scoped_cards=None, usage=None, renderable_ids=None, eligible_cards=None):
         all_cards = self.in_scope(q.scope) if scoped_cards is None else scoped_cards
-        cards = self.eligible(q, scoped_cards=all_cards, usage=usage, renderable_ids=renderable_ids)
+        cards = (self.eligible(q, scoped_cards=all_cards, usage=usage, renderable_ids=renderable_ids)
+                 if eligible_cards is None else eligible_cards)
         future = [c.due_at for c in all_cards if c.queue == "learning" and c.due_at > self.now]
         return {
             "can_undo": bool(q.undo and not self.pending()),
@@ -387,7 +403,8 @@ class ReviewService(ContentService):
                 **self.flipped(pending),
                 **self.counts(q),
             }
-        candidates = self.eligible(q)
+        scoped_cards = self.in_scope(q.scope)
+        candidates = self.eligible(q, scoped_cards=scoped_cards)
         if q.current not in [c.id for c in candidates]:
             q.current = candidates[0].id if candidates else None
             q.token = uuid7() if candidates else None
@@ -396,7 +413,7 @@ class ReviewService(ContentService):
             "queue_id": q.id,
             "review_token": q.token,
             "card": self.front(card) if card else None,
-            **self.counts(q),
+            **self.counts(q, scoped_cards=scoped_cards, eligible_cards=candidates),
         }
 
     def front(self, card):

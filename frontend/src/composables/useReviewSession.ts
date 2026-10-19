@@ -16,6 +16,7 @@ export function useReviewSession() {
   const state = ref<ReviewNext>()
   const loading = ref(false)
   const busy = ref(false)
+  const actionStatus = ref('')
   const error = ref('')
   const needsRecovery = ref(false)
   const pendingReview = ref<PendingReview>()
@@ -78,17 +79,20 @@ export function useReviewSession() {
     if (!write || !state.value) return
     const queue = state.value.queue_id
     if (write.kind === 'flip') {
+      actionStatus.value = '正在保存作答…'
       const { data } = await reviewHttp.post<FlippedReview>(`/review/queues/${queue}/flip`, write.body, { headers: { 'Idempotency-Key': write.key } })
       if (request !== generation) return
       state.value = { ...state.value, ...data, can_undo: false }
       remember(null)
       poll(request)
     } else {
+      actionStatus.value = '正在保存评分…'
       await reviewHttp.put(`/review/queues/${queue}/attempts/${write.attemptId}/rating`, write.body, { headers: { 'Idempotency-Key': write.key } })
       if (request !== generation) return
       roundAttemptIds.add(write.attemptId)
       remember(null)
       retryAction = () => next()
+      actionStatus.value = '评分已保存，正在加载下一张…'
       await next(request)
     }
   }
@@ -108,6 +112,7 @@ export function useReviewSession() {
     retryAction = null
     loading.value = true
     busy.value = false
+    actionStatus.value = ''
     error.value = ''
     needsRecovery.value = false
     try {
@@ -131,18 +136,19 @@ export function useReviewSession() {
       if (pending) await send(request)
       await next(request)
     } catch (cause) { if (request === generation) fail(cause) }
-    finally { if (request === generation) loading.value = false }
+    finally { if (request === generation) { loading.value = false; actionStatus.value = '' } }
   }
   async function perform(action: () => Promise<void>) {
     if (busy.value || loading.value) return
     const request = generation
     busy.value = true
+    actionStatus.value = '正在保存…'
     error.value = ''
     needsRecovery.value = false
     retryAction = action
     try { await action() }
     catch (cause) { if (request === generation) fail(cause) }
-    finally { if (request === generation) { busy.value = false; uploadProgress.value = null } }
+    finally { if (request === generation) { busy.value = false; actionStatus.value = ''; uploadProgress.value = null } }
   }
   async function flip(input: PracticeInput = { type: 'none' }) {
     if (pending || state.value?.attempt || !state.value?.card) return
@@ -153,6 +159,7 @@ export function useReviewSession() {
       if (input.type === 'audio') {
         uploadProgress.value = 0
         const id = await uploadReviewAudio(input.blob, p => { if (request === generation) uploadProgress.value = p })
+        if (request === generation) uploadProgress.value = null
         wire = { type: 'audio', temporary_media_asset_id: id, ...(input.realtimeSessionId ? { realtime_session_id: input.realtimeSessionId } : {}) }
       } else wire = input
       if (request !== generation) return
@@ -200,5 +207,5 @@ export function useReviewSession() {
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { completedRound, deck, state, card, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
+  return { completedRound, deck, state, card, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
 }

@@ -55,6 +55,29 @@ beforeEach(() => {
   })
 })
 describe('server-backed review', () => {
+  it('acknowledges rating immediately and distinguishes saving from loading the next card', async () => {
+    const { wrapper, click } = await start()
+    await click('显示答案')
+    let finishRating!: (value: { data: object }) => void
+    let finishNext!: (value: { data: object }) => void
+    httpPut.mockImplementationOnce(() => new Promise(resolve => { finishRating = resolve }))
+    httpGet.mockImplementationOnce(() => new Promise(resolve => { finishNext = resolve }))
+    await wrapper.get('[data-testid="rate-good"]').trigger('click')
+    expect(wrapper.get('[data-testid="review-action-status"]').text()).toBe('正在保存评分…')
+    expect(wrapper.get('[data-testid="rate-good"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('旅程')
+    finishRating({ data: { attempt_id: 'attempt', rating: 'good' } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="review-action-status"]').text()).toBe('评分已保存，正在加载下一张…')
+    expect(wrapper.get('[data-testid="rate-good"]').attributes('disabled')).toBeDefined()
+    finishNext({ data: { ...counts, queue_id: 'q', review_token: 'next', card: { ...card, id: 'b' } } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="review-action-status"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="rate-good"]').exists()).toBe(false)
+    expect(httpPut).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('opens the dialogue with rated round evidence, but never for an initially empty queue', async () => {
     const original = httpGet.getMockImplementation()!
     httpGet.mockImplementation((path, ...args) => path === '/dialogue/availability' ? Promise.resolve({ data: { enabled: true } }) : original(path, ...args))

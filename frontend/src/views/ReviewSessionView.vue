@@ -25,7 +25,7 @@ const dialogueEntry = ref<DialogueEntry>()
 void dialogueApi.available().then(value => { dialogueAvailable.value = value === true }).catch(() => {})
 const route = useRoute()
 const router = useRouter()
-const { completedRound, deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
+const { completedRound, deck, state, card: current, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
 const isLegacyDeck = computed(() => deck.value?.deck_guid?.startsWith('legacy:'))
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
@@ -157,6 +157,15 @@ watch([completedRound, dialogueAvailable, busy, error], ([round, available, work
         class="mb-3 text-sm"
       >
         正在保存录音 {{ uploadProgress }}%
+      </p>
+      <p
+        v-else-if="actionStatus && !error && !loading"
+        role="status"
+        aria-live="polite"
+        data-testid="review-action-status"
+        class="mb-3 shrink-0 text-sm text-slate-500"
+      >
+        {{ actionStatus }}
       </p>
       <div
         v-if="!loading && !current && state"

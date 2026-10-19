@@ -199,9 +199,9 @@ class ContentService:
         self.db.flush()
         return self.deck_data(deck)
 
-    def render(self, card):
-        note = self.repo.get(Note, card.note_id)
-        template = self.db.get(CardTemplate, card.card_template_id)
+    def render(self, card, *, note=None, template=None):
+        note = self.repo.get(Note, card.note_id) if note is None else note
+        template = self.db.get(CardTemplate, card.card_template_id) if template is None else template
         fields = note.fields
         missing_fields = [
             key for key in template.required_fields if not present(fields.get(key))

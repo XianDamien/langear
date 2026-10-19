@@ -10,6 +10,39 @@ from core.scheduling import study_day
 from core_tests.test_review import make_note, queue, next_card, flip, rate
 
 
+@pytest.mark.parametrize('operation', ['next', 'flip', 'resume'])
+def test_review_interactions_batch_card_rendering(client, account, engine, operation):
+    from sqlalchemy import event
+
+    for i in range(15):
+        make_note(client, account, fields={'word': f'word {i}', 'meaning': '词义'})
+    q = queue(client, account)
+    current = next_card(client, q)
+    if operation == 'resume':
+        assert flip(client, q, current).status_code == 200
+    statements = []
+    def count_queries(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+    event.listen(engine, 'before_cursor_execute', count_queries)
+    try:
+        response = (flip(client, q, current) if operation == 'flip'
+                    else client.get(f'/api/v1/review/queues/{q}/next'))
+    finally:
+        event.remove(engine, 'before_cursor_execute', count_queries)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    if operation == 'next':
+        assert body['card']['id'] == current['card']['id']
+        assert body['new_remaining'] == 15
+        assert 'back' not in body['card'] and 'answer' not in body['card']
+    else:
+        assert body['attempt']['card_id'] == current['card']['id']
+        assert body['attempt']['back_snapshot']['meaning'] == '词义'
+        assert len(body['rating_options']) == 4
+    limit = 28 if operation == 'flip' else 22
+    assert len(statements) <= limit, f'{operation}: {len(statements)} SQL queries for 15 cards'
+
+
 @pytest.fixture
 def learning_time(monkeypatch):
     now = datetime(2026, 10, 17, 6, tzinfo=UTC)
