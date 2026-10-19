@@ -28,8 +28,8 @@ it('runs the real pi tool loop against a model transport and submits schema-vali
     expect(payload.messages[0].role).toBe('system')
     const context = payload.messages.find((m: { role: string; name?: string }) => m.role === 'tool')
     const args = context ? {
-      title: JSON.parse(context.content).title, setup_zh: '买水果', learner_role: 'Customer', agent_role: 'Shopkeeper',
-      goals: [{ id: 'buy', description_zh: '买水果' }],
+      title: JSON.parse(context.content).title, setup_en: 'Buy some fruit.', setup_zh: '买水果', learner_role: 'Customer', agent_role: 'Shopkeeper',
+      goals: [{ id: 'buy', description_en: 'Buy fruit.', description_zh: '买水果' }],
       target_expressions: ['an apple', 'please'].map(english => ({ english, meaning_zh: '表达', source: { attempt_id: 'attempt', card_id: 'card' } })),
     } : {}
     const name = context ? 'submit_result' : 'get_practice_context'

@@ -14,7 +14,7 @@ from core.db import get_db
 from core.errors import DomainError, missing
 from core.models import Attempt, Card, Deck, DialogueReview, DialogueSession, DialogueTurn
 from core.repository import ContentRepository
-from core.dialogue_schemas import DialogueCreate, Scenario, Review
+from core.dialogue_schemas import DialogueCreate, Scenario, Review, Translation
 from core.review import QUEUES, RUNTIME_LOCK, ReviewService
 
 router = APIRouter(prefix='/api/v1/dialogue')
@@ -81,7 +81,8 @@ def practice_context(db, collection, deck_id, queue_id, attempt_ids):
     for a in attempts[-40:]:
         data = {'source_type': 'card_feedback', 'deck_id': str(deck.id), 'card_id': str(a.card_id), 'attempt_id': str(a.id),
             'note': a.note_snapshot, 'answer': a.answer_snapshot, 'input': a.input_snapshot,
-            'transcription': a.asr_result, 'feedback': a.ai_feedback, 'feedback_status': a.ai_status}
+            'transcription': a.asr_result, 'feedback': a.ai_feedback, 'feedback_status': a.ai_status,
+            'rating': a.rating}
         # Audio object keys and signed URLs are not required by the planning model.
         for key in ('note', 'answer', 'input'):
             data[key] = {k: v[:6000] for k, v in data[key].items() if isinstance(v, str) and k not in ('reference_audio', 'image', 'media_asset_id', 'temporary_media_asset_id', 'realtime_session_id')}
@@ -215,3 +216,17 @@ def create_review(session_id: UUID, context=Depends(service)):
         db.execute(insert(DialogueReview).values(collection_id=collection.id, session_id=session.id, result=result)
             .on_conflict_do_nothing(index_elements=['session_id']))
     return session_data(db, session)
+
+
+@router.post('/sessions/{session_id}/turns/{turn_id}/translation')
+def translate_turn(session_id: UUID, turn_id: UUID, context=Depends(service)):
+    db, collection, repo = context
+    repo.get(DialogueSession, session_id)
+    turn = repo.get(DialogueTurn, turn_id)
+    if turn.session_id != session_id:
+        missing()
+    try:
+        # The client selects an owned saved turn, never arbitrary model input or another user's text.
+        return Translation.model_validate(planner('translation', {'text': turn.text})).model_dump()
+    except ValidationError:
+        raise DomainError(502, 'DIALOGUE_AGENT_FAILED', 'Translation is unavailable. Please retry.') from None

@@ -22,7 +22,7 @@ export function server(run: AgentRun, token: string) {
     if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
       response.writeHead(401).end('{"error":"Unauthorized"}'); return
     }
-    const kind = request.url === '/scenario' ? 'scenario' : request.url === '/review' ? 'review' : undefined
+    const kind = request.url === '/scenario' ? 'scenario' : request.url === '/review' ? 'review' : request.url === '/translation' ? 'translation' : undefined
     if (request.method !== 'POST' || !kind) { response.writeHead(404).end('{}'); return }
     const abort = new AbortController()
     const timer = setTimeout(() => abort.abort(), 55000)

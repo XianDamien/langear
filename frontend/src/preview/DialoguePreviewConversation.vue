@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { Mic, Send, Square } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
-import EnglishMessage from './EnglishMessage.vue'
+import EnglishMessage from '@/components/dialogue/DialogueText.vue'
 import type { createDialoguePreview } from './dialogue'
 
 const props = defineProps<{ preview: ReturnType<typeof createDialoguePreview> }>()

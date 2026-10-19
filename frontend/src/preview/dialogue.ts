@@ -127,7 +127,8 @@ export function createDialoguePreview() {
   async function connect() { error.value = ''; page.value = 'roleplay'; status.value = 'ready' }
   const controller: ReturnType<typeof useDialogue> = {
     session, status, error, partial, prepare: async () => {}, connect,
-    record: async () => { record() }, sendRecording, end: finish, finishAndReview: async () => { finish() },
+    record: async () => { record() }, sendRecording, sendText: text => { input.value = text; submit() },
+    end: finish, finishAndReview: async () => { finish() },
   }
   reset()
   return { controller, page, input, messages, canReply, roleplayTurns, show, submit, useSample, setInput, record, sendRecording, introduceTask, startRoleplay, finish, reset }

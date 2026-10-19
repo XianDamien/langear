@@ -17,6 +17,7 @@ class Source(Body):
 
 class Goal(Body):
     id: str = Field(min_length=1, max_length=100)
+    description_en: str | None = Field(default=None, min_length=1, max_length=2000)
     description_zh: str = Field(min_length=1, max_length=2000)
 
 
@@ -28,6 +29,7 @@ class TargetExpression(Body):
 
 class Scenario(Body):
     title: str = Field(min_length=1, max_length=2000)
+    setup_en: str | None = Field(default=None, min_length=1, max_length=2000)
     setup_zh: str = Field(min_length=1, max_length=2000)
     learner_role: str = Field(min_length=1, max_length=2000)
     agent_role: str = Field(min_length=1, max_length=2000)
@@ -47,12 +49,18 @@ class UsedExpression(Body):
 
 
 class PracticePoint(Body):
+    advice_en: str | None = Field(default=None, min_length=1, max_length=2000)
     advice_zh: str = Field(min_length=1, max_length=2000)
     source: Source
 
 
 class Review(Body):
+    summary_en: str | None = Field(default=None, min_length=1, max_length=2000)
     summary_zh: str = Field(min_length=1, max_length=2000)
     goals: list[GoalResult] = Field(max_length=3)
     used_expressions: list[UsedExpression] = Field(max_length=3)
     practice_points: list[PracticePoint] = Field(max_length=3)
+
+
+class Translation(Body):
+    chinese: str = Field(min_length=1, max_length=8000)

@@ -128,9 +128,11 @@ def test_new_round_cannot_reuse_historical_ratings_or_start_with_available_cards
 
 
 class FakeOmni:
-    def __init__(self, finish=False, interrupt=False):
+    def __init__(self, finish=False, interrupt=False, spoken_finish=False):
         self.events = asyncio.Queue(); self.count = 0; self.inputs = 0
         self.finish, self.interrupt = finish, interrupt
+        self.spoken_finish = spoken_finish
+        self.sent = []
     async def __aenter__(self):
         self.events.put_nowait({'type': 'session.created'}); return self
     async def __aexit__(self, *args): pass
@@ -141,8 +143,10 @@ class FakeOmni:
     async def send(self, raw):
         import json
         value = json.loads(raw)
+        self.sent.append(value)
         if value['type'] == 'session.update':
-            assert value['session']['turn_detection'] is None
+            if 'turn_detection' in value['session']:
+                assert value['session']['turn_detection'] is None
             self.events.put_nowait({'type': 'session.updated'})
         elif value['type'] == 'input_audio_buffer.commit':
             self.inputs += 1
@@ -152,6 +156,8 @@ class FakeOmni:
             assert value['response']['instructions']
             self.count += 1
             if self.finish and self.inputs and self.count == 2:
+                if self.spoken_finish:
+                    self.events.put_nowait({'type': 'response.audio_transcript.delta', 'delta': 'You asked politely. Well done! Goodbye.'})
                 self.events.put_nowait({'type': 'response.function_call_arguments.done', 'name': 'finish_scenario',
                     'arguments': '{"goal_ids":["buy"]}', 'call_id': 'finish-1'})
                 self.events.put_nowait({'type': 'response.done', 'response': {'id': 'resp-2', 'status': 'completed', 'output': [{'type': 'function_call'}]}})
@@ -215,6 +221,73 @@ def test_interrupted_agent_output_is_not_saved_and_can_reconnect(client, account
     assert client.get(path).json()['status'] == 'finished'
 
 
+@pytest.mark.parametrize('phase', ['responding', 'transcribing'])
+def test_finish_waits_for_inflight_work_then_requests_distinct_closing(client, account, dialogue, monkeypatch, phase):
+    import json
+    from core import dialogue_voice
+
+    class InflightOmni(FakeOmni):
+        waiting = False
+
+        async def send(self, raw):
+            value = json.loads(raw)
+            if value['type'] == 'response.create' and self.count == 0 and phase == 'responding':
+                self.sent.append(value)
+                self.count += 1
+                self.waiting = True
+                self.events.put_nowait({'type': 'response.audio_transcript.delta', 'delta': 'Tell me what happened.'})
+            elif value['type'] == 'input_audio_buffer.commit' and phase == 'transcribing':
+                self.sent.append(value)
+                self.inputs += 1
+                self.waiting = True
+            elif value['type'] == 'input_audio_buffer.clear' and self.waiting:
+                self.sent.append(value)
+                self.waiting = False
+                if phase == 'responding':
+                    self.events.put_nowait({'type': 'response.done', 'response': {'id': 'inflight', 'status': 'completed', 'output': []}})
+                else:
+                    self.events.put_nowait({'type': 'conversation.item.input_audio_transcription.completed',
+                        'item_id': 'inflight-input', 'transcript': 'I asked for an apple.'})
+            elif value['type'] == 'response.create' and 'learner chose to stop' in value['response']['instructions']:
+                self.sent.append(value)
+                self.count += 1
+                self.events.put_nowait({'type': 'response.audio_transcript.delta', 'delta': 'Thank you for practising. Goodbye.'})
+                self.events.put_nowait({'type': 'response.done', 'response': {'id': 'closing', 'status': 'completed', 'output': []}})
+            else:
+                await super().send(raw)
+
+    provider = InflightOmni()
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        if phase == 'responding':
+            receive(ws, 'message_delta')
+        else:
+            receive(ws, 'ready')
+            speech(ws)
+        ws.send_json({'type': 'end'})
+        assert receive(ws, 'ended')['reason'] == 'user_ended'
+    saved = client.get(path).json()
+    assert saved['turns'][-1]['text'] == 'Thank you for practising. Goodbye.'
+    assert saved['user_turns'] == (1 if phase == 'transcribing' else 0)
+    assert sum(e['type'] == 'response.create' for e in provider.sent) == 2
+
+
+def test_spoken_natural_closing_with_finish_tool_is_not_repeated(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    provider = FakeOmni(finish=True, spoken_finish=True)
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        speech(ws)
+        assert receive(ws, 'ended')['reason'] == 'task_completed'
+    assert provider.count == 2
+    assert client.get(path).json()['turns'][-1]['text'] == 'You asked politely. Well done! Goodbye.'
+
+
 def test_review_rejects_agent_only_evidence_and_concurrent_voice_is_exclusive(client, account, dialogue, monkeypatch):
     from core import dialogue_voice, dialogue as module
     monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni())
@@ -238,3 +311,86 @@ def test_review_rejects_agent_only_evidence_and_concurrent_voice_is_exclusive(cl
     assert client.get(path).json()['review'] is None
     monkeypatch.setattr(module, 'planner', original)
     assert client.post(path + '/review').status_code == 200
+
+
+def test_context_uses_owned_attempt_snapshots_with_input_feedback_and_bounded_realtime_payload(client, account, dialogue, engine, monkeypatch):
+    from copy import deepcopy
+    from uuid import UUID
+    from sqlalchemy.orm import Session
+    from core.models import Attempt
+    from core import dialogue as module
+    from core.dialogue_prompt import voice_practice
+    with Session(engine) as db, db.begin():
+        attempt = db.get(Attempt, UUID(dialogue['attempt_ids'][0]))
+        attempt.input_snapshot = {'type': 'text', 'text': 'I want apple.'}
+        attempt.asr_result = {'text': 'I want apple.'}
+        attempt.ai_feedback = {'correction': 'I would like an apple, please.', 'details': {'article': 'Use an before apple.'}}
+        attempt.ai_status = 'succeeded'
+    captured = {}
+    original = module.planner
+    def capture(kind, context):
+        captured.update(context)
+        return original(kind, context)
+    monkeypatch.setattr(module, 'planner', capture)
+    result = create(client, dialogue)
+    source = captured['sources'][0]
+    assert source['input']['text'] == source['transcription']['text'] == 'I want apple.'
+    assert source['note']['word'] == 'apple'
+    assert source['feedback']['details']['article'] == 'Use an before apple.'
+    assert source['rating'] == 'easy'
+    assert 'temporary_media_asset_id' not in source['input']
+    realtime = voice_practice(captured, result['scenario'])
+    assert realtime['sources'][0]['feedback'] == source['feedback']
+    # Exercise actual long-context selection while preserving source evidence and original storage.
+    large = deepcopy(captured)
+    large['sources'] += [{**deepcopy(source), 'attempt_id': str(uuid4()), 'note': {'english': 'x' * 40000}} for _ in range(39)]
+    bounded = voice_practice(large, result['scenario'])
+    import json
+    assert len(json.dumps(bounded, ensure_ascii=False)) < 28000
+    assert source['attempt_id'] in [s['attempt_id'] for s in bounded['sources']]
+    assert bounded['omitted_count'] > 0
+    assert large['sources'][1]['note']['english'] == 'x' * 40000
+
+
+def test_realtime_receives_lesson_context_and_start_click_is_not_a_learner_answer(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    provider = FakeOmni()
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        ws.send_json({'type': 'text', 'text': 'I practised buying an apple.'})
+        assert receive(ws, 'turn')['turn']['text'] == 'I practised buying an apple.'
+        receive(ws, 'ready')
+        ws.send_json({'type': 'end'})
+        assert receive(ws, 'ended')['reason'] == 'user_ended'
+    prompt = next(e['session']['instructions'] for e in provider.sent if e['type'] == 'session.update')
+    assert 'brief recap' in prompt and 'apple' in prompt and 'feedback_status' in prompt
+    saved = client.get(path).json()
+    assert saved['user_turns'] == 1
+    assert [t['text'] for t in saved['turns'] if t['role'] == 'user'] == ['I practised buying an apple.']
+    assert any(e['type'] == 'conversation.item.create' and 'Start my English' in str(e) for e in provider.sent)
+
+
+def test_translation_only_reads_an_owned_saved_turn(client, account, dialogue, monkeypatch, engine):
+    from uuid import UUID
+    from core import dialogue as module, dialogue_voice
+    from sqlalchemy.orm import Session
+    from core.models import DialogueSession
+    session = create(client, dialogue)
+    with Session(engine) as db:
+        owner = db.get(DialogueSession, UUID(session['id'])).collection_id
+    token, _, _ = dialogue_voice.claim(owner, UUID(session['id']))
+    turn, _ = dialogue_voice.save_turn(owner, UUID(session['id']), token, 'teacher-translate', 'assistant', 'Could you speak quietly, please?')
+    def translate(kind, context):
+        assert kind == 'translation' and context == {'text': turn['text']}
+        return {'chinese': '能请你小声一点吗？'}
+    monkeypatch.setattr(module, 'planner', translate)
+    path = '/api/v1/dialogue/sessions/' + session['id'] + '/turns/' + turn['id'] + '/translation'
+    assert client.post(path).json() == {'chinese': '能请你小声一点吗？'}
+    assert client.post(path.replace(turn['id'], str(uuid4()))).status_code == 404
+    with TestClient(app, base_url='https://testserver', headers={'Origin': 'http://localhost:3002'}) as other:
+        identity = other.post('/api/v1/auth/register', json={'email': 'translator@example.com', 'password': 'another strong password'}).json()
+        other.headers['X-CSRF-Token'] = identity['csrf_token']
+        assert other.post(path).status_code == 404
