@@ -5,7 +5,7 @@ History is archived, not converted to Attempts lacking immutable snapshots.
 
 import argparse
 import copy
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -29,7 +29,61 @@ from core.models import (
     User,
 )
 
+from core.scheduling import MemoryState, config_version, study_day
+
 SOURCE_ZONE = ZoneInfo("Asia/Shanghai")
+LESSON_NEW_CARD_ORDER = {
+    "new_card_gather_order": "lowest_position",
+    "new_card_sort_order": "order_gathered",
+}
+
+
+def imported_memory(snapshot, config):
+    return MemoryState(
+        stability=snapshot["stability"], difficulty=snapshot["difficulty"],
+        step=(snapshot.get("step") or 0) if snapshot["state"] != "review" else None,
+        desired_retention=config["desired_retention"],
+        fsrs_config_version=config_version(config),
+    ).model_dump()
+
+
+def legacy_lesson_ids(data, user_id):
+    row = next((r for r in data["settings"] if r["key"] == f"my_courses:{user_id}:lesson_ids"), None)
+    value = row["value"] if row else []
+    return json.loads(value) if isinstance(value, str) else value
+
+
+def selection_digest(data, user_id):
+    rows = sorted((row["key"], json.loads(row["value"]) if isinstance(row["value"], str) else row["value"])
+                  for row in data["settings"] if row["key"].startswith(f"my_courses:{user_id}:"))
+    return hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+
+
+def initialize_selection(db, collection, deck, source, user_id, legacy_deck_id, data):
+    selected = legacy_card_ids(data, user_id, legacy_deck_id)
+    apply_imported_selection(db, collection, deck, source, selected)
+    deck.in_my_courses = legacy_deck_id in legacy_lesson_ids(data, user_id) and selected != []
+    deck.scheduling_config = {**deck.scheduling_config, "legacy_selection_initialized": True, "legacy_selection_snapshot": selection_digest(data, user_id)}
+
+
+def legacy_card_ids(data, user_id, deck_id):
+    key = f"my_courses:{user_id}:lesson:{deck_id}:card_ids"
+    row = next((r for r in data["settings"] if r["key"] == key), None)
+    value = row["value"] if row else None
+    return json.loads(value) if isinstance(value, str) else value
+
+
+def apply_imported_selection(db, collection, deck, source, selected):
+    if selected is None:
+        deck.scheduling_config = {**deck.scheduling_config, "study_card_ids": None}
+        return
+    guids = [f"legacy:{source}:card:{value}" for value in selected]
+    ids = db.scalars(select(Card.id).join(Note, Card.note_id == Note.id).where(
+        Card.collection_id == collection.id, Card.deck_id == deck.id, Note.guid.in_(guids),
+    ))
+    deck.scheduling_config = {**deck.scheduling_config, "study_card_ids": sorted(str(value) for value in ids)}
+    deck.in_my_courses = selected != []
+
 
 
 def timestamp(value):
@@ -207,6 +261,7 @@ def import_snapshot(db, data, source):
                 collection_id=collection.id,
                 name=row["title"],
                 deck_guid=f"legacy:{source}:deck:{row['id']}",
+                scheduling_config=dict(LESSON_NEW_CARD_ORDER),
                 parent_id=decks[row["parent_id"]].id
                 if row["parent_id"] is not None
                 else None,
@@ -253,19 +308,11 @@ def import_snapshot(db, data, source):
                 card.queue = "review" if card.type == "review" else "learning"
                 card.new_position = None
                 if card.type == "review":
-                    # Explicit Gregorian date ordinal; local Study Day starts at 04:00.
-                    card.due_day = (
-                        (due.astimezone(SOURCE_ZONE) - timedelta(hours=4))
-                        .date()
-                        .toordinal()
-                    )
+                    card.due_day = study_day(due, collection.timezone)
                 else:
                     card.due_at = due
                 card.last_reviewed_at = last
-                card.fsrs_state = {
-                    "stability": snapshot["stability"],
-                    "difficulty": snapshot["difficulty"],
-                }
+                card.fsrs_state = imported_memory(snapshot, collection.scheduling_config)
                 card.interval_days = max(0, (due - last).total_seconds() / 86400)
                 history = [
                     item
@@ -289,6 +336,9 @@ def import_snapshot(db, data, source):
                 card.schedule_revision = 1
                 report["reviewed_cards"] += 1
             db.flush()
+        if legacy_user is not None:
+            for legacy_deck_id, deck in decks.items():
+                initialize_selection(db, collection, deck, source, legacy_user, legacy_deck_id, data)
     archive = copy.deepcopy(data)
     for row in archive["users"]:
         row["had_password"] = bool(row.pop("password_hash", None))

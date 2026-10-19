@@ -288,6 +288,28 @@ def test_spoken_natural_closing_with_finish_tool_is_not_repeated(client, account
     assert client.get(path).json()['turns'][-1]['text'] == 'You asked politely. Well done! Goodbye.'
 
 
+def test_release_prefix_routes_dialogue_http_and_voice_with_scoped_cookie(client, account, dialogue, monkeypatch):
+    from starlette.applications import Starlette
+    from core import auth, dialogue_voice
+    from core.release_app import make_release_app
+
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni())
+    with TestClient(make_release_app(Starlette(), app), base_url='https://testserver',
+            headers={'Origin': 'http://localhost:3002', 'X-CSRF-Token': client.headers['X-CSRF-Token']}) as release:
+        release.cookies.set(auth.COOKIE, client.cookies.get(auth.COOKIE), path='/api/content/v1')
+        response = release.post('/api/content/v1/dialogue/sessions', json=dialogue)
+        assert response.status_code == 201, response.text
+        path = '/api/content/v1/dialogue/sessions/' + response.json()['id']
+        assert release.get(path).status_code == 200
+        with release.websocket_connect('wss://testserver' + path + '/ws') as ws:
+            receive(ws, 'ready')
+            ws.send_json({'type': 'end'})
+            assert receive(ws, 'ended')['reason'] == 'user_ended'
+        assert release.get(path).json()['status'] == 'finished'
+        # The Collection cookie is deliberately absent from the legacy API path.
+        assert release.get('/api/v1/auth/me').status_code == 404
+
+
 def test_review_rejects_agent_only_evidence_and_concurrent_voice_is_exclusive(client, account, dialogue, monkeypatch):
     from core import dialogue_voice, dialogue as module
     monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni())

@@ -6,7 +6,7 @@ import type { CoreIdentity } from '@/services/contentCore'
 export const libraryEditorEnabled = import.meta.env.VITE_LIBRARY_CONTENT_EDITOR === 'true' && !getUseMockMode()
 
 // The original app keeps its legacy session; content writes use a mapped core session.
-export const libraryContent = axios.create({ baseURL: '/content-api/v1', withCredentials: true, timeout: 15000 })
+export const libraryContent = axios.create({ baseURL: '/api/content/v1', withCredentials: true, timeout: 15000 })
 let csrfToken = ''
 let authenticatedToken: string | null = null
 let sessionRequest: Promise<void> | null = null
@@ -54,8 +54,8 @@ export async function contentResources<T>(path: string, key: string, params: Rec
 export async function logoutLibraryContent() {
   if (!libraryEditorEnabled) return
   try {
-    const { data } = await axios.get<{csrf_token: string}>('/content-api/v1/auth/csrf', { withCredentials: true, timeout: 5000 })
-    await axios.post('/content-api/v1/auth/logout', {}, {
+    const { data } = await axios.get<{csrf_token: string}>('/api/content/v1/auth/csrf', { withCredentials: true, timeout: 5000 })
+    await axios.post('/api/content/v1/auth/logout', {}, {
       withCredentials: true, timeout: 5000, headers: { 'X-CSRF-Token': data.csrf_token },
     })
   } catch (error) {

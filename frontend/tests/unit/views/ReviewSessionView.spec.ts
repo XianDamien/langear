@@ -303,3 +303,23 @@ describe('server-backed review', () => {
     wrapper.unmount()
   })
 })
+
+it('requeues failed feedback while retaining the visible answer and rating controls', async () => {
+  current.card = { ...card, card_template_key: 'sentence_translation', front: { chinese: '你好' }, input_requirement: { type: 'text', required: true } }
+  attempt.front_snapshot = { chinese: '你好' }
+  attempt.back_snapshot = { english: 'Hello' }
+  attempt.ai_status = 'failed'
+  const { wrapper, click } = await start()
+  await wrapper.get('textarea').setValue('Hi')
+  await click('显示答案')
+  expect(wrapper.text()).toContain('处理失败')
+  httpPost.mockImplementationOnce(async path => {
+    expect(path).toBe('/attempts/attempt/retry')
+    return { data: { ...attempt, ai_status: 'pending' } }
+  })
+  await click('重新生成')
+  expect(wrapper.text()).toContain('等待处理')
+  expect(wrapper.text()).toContain('Hello')
+  expect(wrapper.get('[data-testid="rate-good"]').attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})

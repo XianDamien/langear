@@ -30,8 +30,8 @@ def main():
         for path in sorted(dist.iterdir()):
             archive.add(path, arcname=path.name)
     manifest = {
-        'schema': 1, 'sha': sha, 'image': image, 'image_id': info['Id'],
-        'checks': ['backend-pytest', 'frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests'],
+        'schema': 2, 'runtime': 'review', 'sha': sha, 'image': image, 'image_id': info['Id'],
+        'checks': ['backend-pytest', 'frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests', 'collection-core-pytest'],
         'files': {name: digest(output / name) for name in ('frontend.tar.gz', 'backend-image.tar.gz')},
     }
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')

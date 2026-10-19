@@ -25,7 +25,7 @@ const dialogueEntry = ref<DialogueEntry>()
 void dialogueApi.available().then(value => { dialogueAvailable.value = value === true }).catch(() => {})
 const route = useRoute()
 const router = useRouter()
-const { completedRound, deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry } = useReviewSession()
+const { completedRound, deck, state, card: current, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
 const isLegacyDeck = computed(() => deck.value?.deck_guid?.startsWith('legacy:'))
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
@@ -211,6 +211,8 @@ watch([completedRound, dialogueAvailable, busy, error], ([round, available, work
             <ReviewAttemptStatus
               v-if="state?.attempt"
               :attempt="state.attempt"
+              :retrying="busy"
+              @retry="retryProcessing"
             />
           </template>
           <template #rating>

@@ -146,6 +146,10 @@ def native(card, now, tz):
     )
 
 
+def config_version(config):
+    return sha256(repr(sorted(config.items())).encode()).hexdigest()[:16]
+
+
 def schedule(card, rating, now, collection, config):
     updated, _ = engine(config).review_card(
         native(card, now, collection.timezone), RATINGS[rating], review_datetime=now
@@ -154,13 +158,12 @@ def schedule(card, rating, now, collection, config):
     day = study_day(updated.due, collection.timezone)
     is_review = kind == "review"
     interday = day > study_day(now, collection.timezone)
-    config_version = sha256(repr(sorted(config.items())).encode()).hexdigest()[:16]
     memory = MemoryState(
         stability=updated.stability,
         difficulty=updated.difficulty,
         step=updated.step,
         desired_retention=config["desired_retention"],
-        fsrs_config_version=config_version,
+        fsrs_config_version=config_version(config),
     )
     return {
         "type": kind,

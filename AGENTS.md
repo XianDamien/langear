@@ -22,6 +22,14 @@ LanGear is an AI-assisted English retelling training app.
 - The title should include the main change points
 - Only commit task-related files unless explicitly asked otherwise
 
+## Current Development Workflow
+
+- Until the user changes this preference, develop, review, test, and commit in local task worktrees. The selected local worktree is the source of truth for ongoing work.
+- Use staging for backend runtime, integration checks, and release acceptance. Do not default to editing or committing application code in remote checkouts.
+- Before syncing local work to staging, inspect both checkouts for branch, commit, staged changes, and unstaged changes. Preserve unrelated remote work; do not automatically overwrite it or pull it into the local task.
+- When remote execution is needed, sync the intended local commit or task-scoped changes to an explicitly selected remote checkout and verify the runtime image or source mount. Syncing source alone does not switch an immutable release.
+- These instructions take precedence over older skill or workflow guidance that defaults to remote development. Keep the existing staging database isolation and release rules.
+
 ## Quickfire Backend Routing
 
 - In AI-Mark / Quickfire tasks, do not assume the backend code lives in the current frontend workspace by default
@@ -51,13 +59,13 @@ skills/
 
 - Frontend dev: `cd frontend && pnpm dev` (default port `3002`)
 - Frontend E2E: `cd frontend && pnpm test:e2e`
-- Backend dev: use staging Compose at `/home/kemove/langear/dev/compose/docker-compose.yml`; source in `/home/kemove/langear/dev/repo/backend` reloads automatically.
+- Backend dev: edit in the local task worktree; use staging Compose at `/home/kemove/langear/dev/compose/docker-compose.yml` for remote execution when needed. Verify the selected source mount and dev/release mode before syncing; hot reload applies only in dev mode.
 - Backend tests: on staging, use `/home/kemove/langear/dev/compose/test-backend.sh` with pytest arguments to isolate the test database and external credentials.
 
 ## Server Access
 
 - Production: `ssh langear-prod`; repo `/srv/langear/prod/repo`, Compose `/srv/langear/prod/compose/docker-compose.yml`, env `/srv/langear/prod/env/backend.env`.
-- Backend development: `ssh zhaohui-staging-server` over the existing FRP SSH gateway (`8.159.139.145:20224`); repo `/home/kemove/langear/dev/repo`, Compose `/home/kemove/langear/dev/compose/docker-compose.yml`.
+- Staging backend runtime: `ssh zhaohui-staging-server` over the existing FRP SSH gateway (`8.159.139.145:20224`); repo `/home/kemove/langear/dev/repo`, Compose `/home/kemove/langear/dev/compose/docker-compose.yml`. Application development defaults to local worktrees.
 - New dev starts from the deployed prod commit and uses an independent PostgreSQL copy. Do not use the live production database for development.
 - Public dev preview: `https://8.159.139.145:7145` (IP:port, no domain required); it serves the staging frontend and API through FRP. The IP certificate is self-signed. Local `pnpm dev` proxies `/api` directly to this FRP origin; no extra SSH tunnel is needed. `18004` is an optional private staging tunnel; `18000` is the historical production tunnel and requires explicit `LANGEAR_ALLOW_PROD_PROXY=1` to select.
 - `/srv/langear/dev/repo` and `dev.langear.cn` are legacy routes, not the active backend development entry. Do not assume the domain serves the static assets deployed on prod: its DNS still points to `lanproject-dev`.
@@ -81,7 +89,7 @@ skills/
 
 - ASR must use `qwen3-asr-flash`
 - Gemini must use the official `google-genai` SDK path only
-- Do not use Gemini relay
+- Gemini relay endpoints are allowed when explicitly configured through GOOGLE_GEMINI_BASE_URL; continue using the official google-genai SDK and record the endpoint/provider used for model evaluations
 - Do not add Gemini runtime fallback branches
 - Backend Gemini config should come from `backend/.env`
 - OSS user audio and reference audio are handled by backend adapters

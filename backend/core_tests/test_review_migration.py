@@ -70,6 +70,13 @@ def test_translation_processing_uses_snapshots_and_failure_does_not_block_rating
     assert processing.process_one(engine)
     provider.generate_translation_feedback.assert_called_once_with("你好", "Hello", "  Hi  ")
     saved = client.get(f"/api/v1/attempts/{original['attempt']['id']}").json()
+    assert saved["ai_status"] == "pending"
+    from datetime import UTC, datetime, timedelta
+    for _ in range(2):
+        with Session(engine) as db, db.begin():
+            db.scalar(select(ProcessingOutbox)).next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+        assert processing.process_one(engine)
+    saved = client.get(f"/api/v1/attempts/{original['attempt']['id']}").json()
     assert saved["ai_status"] == "failed"
     assert "secret" not in str(saved)
     assert rate(client, q, original, "easy").status_code == 200
@@ -216,3 +223,116 @@ def test_pending_other_template_requires_explicit_resume_and_preserves_answer(cl
     assert recovered["attempt"]["id"] == original["attempt"]["id"]
     assert rate(client, resumed.json()["queue_id"], recovered, "easy").status_code == 200
     assert client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": ["sentence_retelling"]}}).status_code == 200
+
+def test_legacy_selection_maps_notes_to_all_templates_and_restricts_review(client, account, engine, monkeypatch):
+    from core.models import Note
+    monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
+    first = make_note(client, account, {"english": "One", "chinese": "一"}, "sentence_translation")
+    second = make_note(client, account, {"english": "Two", "chinese": "二"}, "sentence_translation")
+    with Session(engine) as db, db.begin():
+        db.get(Deck, UUID(account["deck_id"])).deck_guid = "legacy:fixture:deck:42"
+        db.get(Note, UUID(first["id"])).guid = "legacy:fixture:card:101"
+        db.get(Note, UUID(second["id"])).guid = "legacy:fixture:card:102"
+    path = "/api/v1/review/legacy-lessons/42/study-selection"
+    assert client.get(path).json() == {"card_ids": None}
+    saved = client.put(path, json={"card_ids": [101]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["card_ids"] == [101]
+    assert saved.json()["lesson_ids"] == [42]
+    current = next_card(client, queue(client, account))
+    assert current["new_remaining"] == len(first["cards"])
+    assert current["card"]["note_id"] == first["id"]
+    assert client.put(path, json={"card_ids": [999]}).status_code == 422
+    assert client.get(path).json()["card_ids"] == [101]
+    assert client.put(path, json={"card_ids": []}).json()["lesson_ids"] == []
+    assert next_card(client, queue(client, account))["empty_reason"] == "no_cards"
+    assert client.put(path, json={"card_ids": None}).status_code == 200
+    assert next_card(client, queue(client, account))["new_remaining"] == len(first["cards"]) + len(second["cards"])
+    client.headers.pop("X-CSRF-Token")
+    assert client.put(path, json={"card_ids": []}).status_code == 403
+
+def test_worker_retries_with_backoff_then_exposes_manual_retry(client, account, engine, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    make_note(client, account, {"english": "Hello", "chinese": "你好"}, "sentence_translation")
+    q = queue(client, account)
+    original = flip(client, q, next_card(client, q), {"type": "text", "text": "Hi"}).json()
+    provider = Mock()
+    provider.generate_translation_feedback.side_effect = RuntimeError("secret")
+    monkeypatch.setattr(processing, "feedback_provider", lambda: provider)
+    now = datetime.now(UTC)
+    monkeypatch.setattr(processing, "utcnow", lambda: now, raising=False)
+    assert processing.process_one(engine)
+    path = f"/api/v1/attempts/{original['attempt']['id']}"
+    assert client.get(path).json()["ai_status"] == "pending"
+    assert not processing.process_one(engine)
+    now += timedelta(seconds=5)
+    assert processing.process_one(engine)
+    assert not processing.process_one(engine)
+    now += timedelta(seconds=10)
+    assert processing.process_one(engine)
+    assert client.get(path).json()["ai_status"] == "failed"
+    assert provider.generate_translation_feedback.call_count == 3
+    assert rate(client, q, original, "easy").status_code == 200
+    retry = client.post(path + "/retry")
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["ai_status"] == "pending"
+    assert retry.json()["rating"] == "easy"
+    assert retry.json()["input_snapshot"] == original["attempt"]["input_snapshot"]
+    assert client.post(path + "/retry").status_code == 200
+    provider.generate_translation_feedback.side_effect = None
+    provider.generate_translation_feedback.return_value = {"summary": "正确"}
+    assert processing.process_one(engine)
+    assert client.get(path).json()["ai_status"] == "succeeded"
+    assert not processing.process_one(engine)
+    assert "secret" not in str(client.get(path).json())
+    client.headers.pop("X-CSRF-Token")
+    assert client.post(path + "/retry").status_code == 403
+    foreign = client.post("/api/v1/auth/register", json={"email": "foreign-retry@example.com", "password": "a strong other password"})
+    client.headers["X-CSRF-Token"] = foreign.json()["csrf_token"]
+    assert client.post(path + "/retry").status_code == 404
+
+
+def test_asr_backoff_blocks_ai_until_transcript_resolves(client, account, engine, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    make_note(client, account, {"english": "Hello", "reference_audio": recording(engine, account, ready=True)}, "sentence_retelling")
+    q = queue(client, account)
+    original = flip(client, q, next_card(client, q), {"type": "audio", "temporary_media_asset_id": recording(engine, account)}).json()
+    monkeypatch.setattr(processing, "sign_media", lambda key: "https://test/" + key)
+    transcribe = Mock(side_effect=RuntimeError("unavailable"))
+    provider = Mock()
+    provider.generate_single_feedback.return_value = {"summary": "正确"}
+    monkeypatch.setattr(processing, "transcribe", transcribe)
+    monkeypatch.setattr(processing, "feedback_provider", lambda: provider)
+    now = datetime.now(UTC)
+    monkeypatch.setattr(processing, "utcnow", lambda: now, raising=False)
+    assert processing.process_one(engine)
+    assert not processing.process_one(engine)
+    provider.generate_single_feedback.assert_not_called()
+    transcribe.side_effect = None
+    transcribe.return_value = {"text": "Qwen transcript"}
+    now += timedelta(seconds=5)
+    assert processing.process_one(engine)
+    assert processing.process_one(engine)
+    saved = client.get(f"/api/v1/attempts/{original['attempt']['id']}").json()
+    assert saved["asr_status"] == saved["ai_status"] == "succeeded"
+    assert saved["asr_result"]["text"] == "Qwen transcript"
+
+
+def test_legacy_lesson_membership_is_owned_and_persisted_in_core(client, account, engine, monkeypatch):
+    monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
+    make_note(client, account)
+    with Session(engine) as db, db.begin():
+        db.get(Deck, UUID(account["deck_id"])).deck_guid = "legacy:fixture:deck:42"
+    path = "/api/v1/review/legacy-lessons"
+    assert client.put(path, json={"lesson_ids": []}).json() == {"lesson_ids": []}
+    assert client.put(path, json={"lesson_ids": [42]}).json() == {"lesson_ids": [42]}
+    assert client.get(path).json() == {"lesson_ids": [42]}
+    assert client.get(f"/api/v1/decks/{account['deck_id']}").json()["in_my_courses"] is True
+    assert client.put(path, json={"lesson_ids": [43]}).status_code == 422
+    assert client.get(path).json() == {"lesson_ids": [42]}
+    client.headers.pop("X-CSRF-Token")
+    assert client.put(path, json={"lesson_ids": []}).status_code == 403
+    other = client.post("/api/v1/auth/register", json={"email": "other-member@example.com", "password": "a strong other password"})
+    client.headers["X-CSRF-Token"] = other.json()["csrf_token"]
+    assert client.get(path).json() == {"lesson_ids": []}
+    assert client.put(path, json={"lesson_ids": [42]}).status_code == 422

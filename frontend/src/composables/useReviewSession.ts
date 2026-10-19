@@ -184,10 +184,21 @@ export function useReviewSession() {
       await load(entry.id, entry.legacy, entry.template)
     })
   }
+  async function retryProcessing() {
+    const attempt = state.value?.attempt
+    if (!attempt) return
+    const request = generation
+    await perform(async () => {
+      const { data } = await reviewHttp.post<typeof attempt>(`/attempts/${attempt.id}/retry`)
+      if (request !== generation || state.value?.attempt?.id !== data.id) return
+      state.value.attempt = data
+      poll(request)
+    })
+  }
   async function retry() {
     if (needsRecovery.value || !state.value) return load(entry.id, entry.legacy, entry.template)
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { completedRound, deck, state, card, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry }
+  return { completedRound, deck, state, card, flipped, loading, busy, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
 }

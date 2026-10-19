@@ -79,6 +79,14 @@ def attempt(attempt_id: UUID, collection: Identity):
     return transact(collection, "get_attempt", attempt_id)
 
 
+@router.post("/attempts/{attempt_id}/retry")
+def retry_attempt(attempt_id: UUID, collection: Identity):
+    from core.processing import retry_failed
+    with Session(get_engine(), expire_on_commit=False) as db, db.begin():
+        retry_failed(db, collection, attempt_id)
+        return ReviewService(db, collection).get_attempt(attempt_id)
+
+
 @router.post("/cards/{card_id}/schedule")
 def change_schedule(card_id: UUID, body: ScheduleAction, collection: Identity):
     return transact(collection, "change_schedule", card_id, body)

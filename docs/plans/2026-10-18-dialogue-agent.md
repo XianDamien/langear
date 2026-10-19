@@ -55,6 +55,10 @@
 
 分支：`feat/lan-21-dialogue-agent`。生产发布不属于本次授权范围。
 
+2026-10-19 整合基线更新为 `d6816cb`：保留课程树版 `/library`（现有教材、我的课程、自建牌组），development / staging / production 使用 `VITE_CONTENT_CORE=false`、`VITE_LIBRARY_CONTENT_EDITOR=true`。独立 `content` 模式保留为开发用途，不作为正式入口。课程练习仍经 legacy lesson 映射进入 Review，对话 HTTP / WebSocket 随 Review 客户端使用 `/api/content/v1`；原任务重试与排序修复保留。迁移 `lan21_0009` 合并 Dialogue 与 processing retry 两条历史，不修改已有迁移。
+
+整合验收：前端 118 项、后端 161 项测试通过；前端类型检查、构建及 lint 通过（199 条既有 warning）。新增测试覆盖组合后端 `/api/content` 下的对话创建、读取、Cookie、WebSocket、结束，以及正式环境课程树配置。3108 已改用 development 模式：教材 API 指向现有 staging，对话/内容 API 指向任务隔离库；该库已备份并升级到合并迁移，账号映射服务的网络连接已修复。代理真实注册、Cookie 路径、身份查询和 Dialogue availability 检查通过，未进行浏览器页面验收。
+
 ### 本轮验证记录
 
 - 最新交互先在本地 `/preview/dialogue` 实现，复用对话弹窗外壳与现有橙红/灰白样式，无营销背景；支持手输回答、示例回答、模拟语音及阶段切换。
