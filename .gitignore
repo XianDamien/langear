@@ -18,6 +18,7 @@ Thumbs.db
 .playwright/
 .playwright-cli/
 playwright-cli.json
+/screenshots/
 
 # Local docs drafts
 docs/*
