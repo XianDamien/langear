@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
           ws: true,
           ...contentProxy,
           changeOrigin: true,
-          secure: targetUrl.origin !== 'https://8.159.139.145:7145',
+          secure: new URL(contentProxy.target).origin !== 'https://8.159.139.145:7145',
         },
         '/api': {
           target: proxyTarget,
