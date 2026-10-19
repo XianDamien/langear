@@ -103,3 +103,56 @@ class TestContentService:
 
         assert result["lesson_id"] == lesson.id
         assert result["cards"] == []
+
+
+@pytest.mark.parametrize('user_id', [None, 1, 2])
+def test_tree_query_count_does_not_grow_per_lesson(test_db, sample_deck_tree, user_id):
+    from sqlalchemy import event
+    from app.models import Card, Deck
+
+    unit_id = sample_deck_tree['unit'].id
+    for i in range(12):
+        lesson = Deck(title=f'Lesson {i+2}', type='lesson', parent_id=unit_id, level_index=i+1)
+        test_db.add(lesson)
+        test_db.flush()
+        test_db.add(Card(deck_id=lesson.id, card_index=0, front_text='Example'))
+    test_db.flush()
+    statements = []
+    def count_queries(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+    connection = test_db.connection()
+    event.listen(connection, 'before_cursor_execute', count_queries)
+    try:
+        tree = ContentService(test_db, user_id=user_id).get_deck_tree()
+    finally:
+        event.remove(connection, 'before_cursor_execute', count_queries)
+    assert len(tree['sources'][0]['units'][0]['lessons']) == 13
+    assert len(statements) <= 4, f'{len(statements)} SQL queries for 13 lessons'
+
+
+@pytest.mark.parametrize('legacy_days,personal_days,legacy_due,personal_due,expected_due', [
+    (1, 2, 2, -1, 0),
+    (3, 1, -1, 2, 0),
+    (1, None, -1, 2, 1),
+    (2, 2, 2, -1, 1),
+    (None, 1, -1, 2, 0),
+])
+def test_tree_keeps_effective_personal_progress(test_db, sample_deck_tree, legacy_days, personal_days, legacy_due, personal_due, expected_due):
+    from datetime import timedelta
+    from app.models import User, UserCardSRS
+    from app.models.user_card_fsrs import UserCardFSRS
+    from app.utils.timezone import storage_now
+
+    now = storage_now()
+    test_db.add(User(id=1, username='original'))
+    test_db.add(User(id=2, username='other'))
+    card_id = sample_deck_tree['cards'][0].id
+    legacy = test_db.get(UserCardSRS, card_id)
+    legacy.last_review = None if legacy_days is None else now-timedelta(days=legacy_days)
+    legacy.due = now+timedelta(days=legacy_due)
+    test_db.add(UserCardFSRS(user_id=1, card_id=card_id, state='review', due=now+timedelta(days=personal_due), last_review=None if personal_days is None else now-timedelta(days=personal_days)))
+    test_db.flush()
+    own = ContentService(test_db, user_id=1).get_deck_tree()['sources'][0]['units'][0]['lessons'][0]
+    other = ContentService(test_db, user_id=2).get_deck_tree()['sources'][0]['units'][0]['lessons'][0]
+    assert (own['total_cards'], own['completed_cards'], own['new_cards'], own['due_cards']) == (5, 1, 4, expected_due)
+    assert (other['completed_cards'], other['new_cards'], other['due_cards']) == (0, 5, 0)

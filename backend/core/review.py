@@ -18,7 +18,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from uuid6 import uuid7
 
-from core.content import ContentService
+from core.content import ContentService, present
 from core.errors import DomainError
 from core.models import (
     Attempt,
@@ -220,9 +220,11 @@ class ReviewService(ContentService):
             ).where(CardTemplate.key.in_(scope["card_template_keys"]))
         cards = list(self.db.scalars(query))
         # Match the existing Card Picker: None means all, [] means no cards.
-        return [card for card in cards if
-            (selected := self.decks[card.deck_id].scheduling_config.get("study_card_ids")) is None
-            or str(card.id) in selected]
+        return [card for card in cards if self.card_selected(card)]
+
+    def card_selected(self, card):
+        selected = self.decks[card.deck_id].scheduling_config.get("study_card_ids")
+        return selected is None or str(card.id) in selected
 
 
     def build(self, body):
@@ -306,8 +308,10 @@ class ReviewService(ContentService):
                 return False
         return True
 
-    def eligible(self, q):
-        cards = self.in_scope(q.scope)
+    def eligible(self, q, *, scoped_cards=None, usage=None, renderable_ids=None):
+        cards = self.in_scope(q.scope) if scoped_cards is None else scoped_cards
+        def can_render(card):
+            return self.render(card)["renderable"] if renderable_ids is None else card.id in renderable_ids
         available = {
             c.id: c
             for c in cards
@@ -333,12 +337,12 @@ class ReviewService(ContentService):
             order = [q.current] + [i for i in order if i != q.current]
         seen = set()
         result = []
-        usage = self.usage()
+        usage = self.usage() if usage is None else deepcopy(usage)
         for card_id in order:
             if card_id not in seen and card_id in available:
                 seen.add(card_id)
                 card = available[card_id]
-                if self.capacity(card, usage) and self.render(card)["renderable"]:
+                if self.capacity(card, usage) and can_render(card):
                     result.append(card)
                     self.consume(
                         usage, card.original_deck_id or card.deck_id, card.queue
@@ -350,12 +354,12 @@ class ReviewService(ContentService):
              and self.now < c.due_at <= self.now + LEARN_AHEAD),
             key=lambda c: (c.due_at, c.id),
         )
-        result.extend(c for c in ahead if self.render(c)["renderable"])
+        result.extend(c for c in ahead if can_render(c))
         return result
 
-    def counts(self, q):
-        cards = self.eligible(q)
-        all_cards = self.in_scope(q.scope)
+    def counts(self, q, *, scoped_cards=None, usage=None, renderable_ids=None):
+        all_cards = self.in_scope(q.scope) if scoped_cards is None else scoped_cards
+        cards = self.eligible(q, scoped_cards=all_cards, usage=usage, renderable_ids=renderable_ids)
         future = [c.due_at for c in all_cards if c.queue == "learning" and c.due_at > self.now]
         return {
             "can_undo": bool(q.undo and not self.pending()),
@@ -759,12 +763,27 @@ class ReviewService(ContentService):
 
     def deck_counts(self):
         self.restore_buried()
+        cards_by_deck = {deck.id: [] for deck in self.decks.values() if deck.kind == "standard"}
+        renderable_ids = set()
+        # One snapshot for every deck. Keep queue ordering, quotas, selection and
+        # learning-ahead rules in the same eligibility code used by real review.
+        rows = self.db.execute(
+            select(Card, Note.fields, CardTemplate.required_fields)
+            .join(Note, Card.note_id == Note.id)
+            .join(CardTemplate, Card.card_template_id == CardTemplate.id)
+            .where(Card.collection_id == self.collection.id,
+                   Card.deck_id.in_(cards_by_deck), ~Note.guid.startswith("legacy:"))
+        )
+        for card, fields, required in rows:
+            if self.card_selected(card):
+                cards_by_deck[card.deck_id].append(card)
+                if all(present(fields.get(key)) for key in required):
+                    renderable_ids.add(card.id)
+        usage, stamp = self.usage(), self.stamp()
         result = {}
-        for deck in self.decks.values():
-            if deck.kind != "standard":
-                continue
-            q = RuntimeQueue(uuid7(), {"deck_id": deck.id, "include_descendants": False, "exclude_imported": True}, [], self.day, self.stamp(), self.now + timedelta(hours=2))
-            result[str(deck.id)] = self.counts(q)
+        for deck_id, cards in cards_by_deck.items():
+            q = RuntimeQueue(uuid7(), {"deck_id": deck_id, "include_descendants": False, "exclude_imported": True}, [], self.day, stamp, self.now + timedelta(hours=2))
+            result[str(deck_id)] = self.counts(q, scoped_cards=cards, usage=usage, renderable_ids=renderable_ids)
         return {"decks": result}
 
     def paused_cards(self, deck_id):

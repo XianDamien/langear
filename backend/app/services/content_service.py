@@ -1,5 +1,6 @@
 """Content service for deck tree and card queries."""
 
+from collections import defaultdict
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -25,41 +26,6 @@ class ContentService:
         self.srs_repo = SRSRepository(db)
         self.review_log_repo = ReviewLogRepository(db)
         self.oss_adapter = OSSAdapter()
-
-    def _build_lesson_node(self, lesson_id: int, lesson_title: str) -> dict[str, Any]:
-        total_cards = self.card_repo.count_by_lesson(lesson_id)
-        completed_cards = self.srs_repo.count_completed_by_lesson(lesson_id)
-        due_cards = self.srs_repo.count_due_by_lesson(lesson_id)
-        new_cards = max(0, total_cards - completed_cards)
-        if self.user_id is not None:
-            states = self._get_lesson_srs_map(lesson_id)
-            reviewed = [state for state in states.values() if state is not None and state.last_review is not None]
-            completed_cards = len(reviewed)
-            as_of = to_storage_local(app_now(self.db), self.db)
-            due_cards = sum(state.due <= as_of for state in reviewed)
-            new_cards = max(0, total_cards - completed_cards)
-
-        return {
-            "id": lesson_id,
-            "title": lesson_title,
-            "total_cards": total_cards,
-            "completed_cards": completed_cards,
-            "due_cards": due_cards,
-            "new_cards": new_cards,
-        }
-
-    def _build_unit_node(self, unit_id: int, unit_title: str) -> dict[str, Any]:
-        lessons = self.deck_repo.get_children(unit_id)
-        lesson_nodes = [
-            self._build_lesson_node(lesson.id, lesson.title)
-            for lesson in lessons
-        ]
-
-        return {
-            "id": unit_id,
-            "title": unit_title,
-            "lessons": lesson_nodes,
-        }
 
     def _safe_signed_audio_url(self, audio_path: str | None) -> str | None:
         if not audio_path:
@@ -121,25 +87,25 @@ class ContentService:
                 ]
             }
         """
-        sources = self.deck_repo.get_all_sources()
-
-        result_sources = []
-        for source in sources:
-            units = self.deck_repo.get_children(source.id)
-            unit_nodes = [
-                self._build_unit_node(unit.id, unit.title)
-                for unit in units
-            ]
-
-            result_sources.append(
-                {
-                    "id": source.id,
-                    "title": source.title,
-                    "units": unit_nodes,
-                }
-            )
-
-        return {"sources": result_sources}
+        decks = self.deck_repo.get_tree_decks()
+        sources = [deck for deck in decks if deck.type == "source" and deck.parent_id is None]
+        if not sources:
+            return {"sources": []}
+        children = defaultdict(list)
+        for deck in decks:
+            children[deck.parent_id].append(deck)
+        statistics = self.srs_repo.lesson_statistics(self.user_id)
+        empty = {"total_cards": 0, "completed_cards": 0, "due_cards": 0, "new_cards": 0}
+        return {"sources": [
+            {"id": source.id, "title": source.title, "units": [
+                {"id": unit.id, "title": unit.title, "lessons": [
+                    {"id": lesson.id, "title": lesson.title, **statistics.get(lesson.id, empty)}
+                    for lesson in children[unit.id]
+                ]}
+                for unit in children[source.id]
+            ]}
+            for source in sources
+        ]}
 
     def get_lesson_cards(self, lesson_id: int) -> dict[str, Any]:
         """Get all cards in a lesson (ordered by card_index).

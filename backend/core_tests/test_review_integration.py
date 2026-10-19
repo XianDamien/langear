@@ -186,3 +186,70 @@ def test_undo_key_replays_and_paused_cards_can_be_restored(client, account):
     assert 'back' not in rows[0]
     assert client.post(path, json={'action': 'unsuspend', 'card_schedule_revision': rows[0]['card_schedule_revision']}).status_code == 200
     assert client.get('/api/v1/review/paused-cards', params={'deck_id': account['deck_id']}).json()['cards'] == []
+
+
+def test_deck_counts_queries_do_not_grow_per_deck(client, account, engine):
+    from sqlalchemy import event
+
+    ids = [account['deck_id']]
+    for i in range(12):
+        ids.append(client.post('/api/v1/decks', json={'name': f'Deck {i}'}).json()['id'])
+    for deck_id in ids:
+        make_note(client, account, deck_id=deck_id)
+    statements = []
+    def count_queries(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+    event.listen(engine, 'before_cursor_execute', count_queries)
+    try:
+        response = client.get('/api/v1/review/deck-counts')
+    finally:
+        event.remove(engine, 'before_cursor_execute', count_queries)
+    assert response.status_code == 200, response.text
+    counts = response.json()['decks']
+    assert all(counts[deck_id]['new_remaining'] == 1 for deck_id in ids)
+    assert len(statements) <= 14, f'{len(statements)} SQL queries for 13 decks'
+
+
+@pytest.mark.parametrize('new_limit', [1, 20])
+def test_batched_deck_counts_match_individual_queue_rules(client, account, engine, learning_time, new_limit):
+    from core.models import Collection, Deck, Note
+    from core.review import RuntimeQueue
+    from uuid6 import uuid7
+
+    ids = [account['deck_id']]
+    for i in range(4):
+        ids.append(client.post('/api/v1/decks', json={'name': f'Counts {i}', 'parent_id': ids[0]}).json()['id'])
+    for deck_id in ids:
+        for _ in range(2):
+            make_note(client, account, deck_id=deck_id)
+    with Session(engine) as db, db.begin():
+        collection = db.get(Collection, UUID(account['collection']['id']))
+        collection.scheduling_config = {**collection.scheduling_config, 'new_limit': new_limit}
+        by_deck = {deck_id: list(db.scalars(select(Card).where(Card.deck_id == UUID(deck_id)).order_by(Card.new_position))) for deck_id in ids}
+        # Suspended and due-review cards, imminent/future learning, unrenderable
+        # notes, imported content and an explicitly empty Card Picker.
+        by_deck[ids[1]][0].queue = 'suspended'
+        review = by_deck[ids[1]][1]
+        review.type = review.queue = 'review'
+        review.new_position = None
+        review.due_day = study_day(learning_time, collection.timezone)
+        for card, minutes in zip(by_deck[ids[2]], [5, 25]):
+            card.type = card.queue = 'learning'
+            card.new_position = None
+            card.due_at = learning_time+timedelta(minutes=minutes)
+        db.get(Note, by_deck[ids[3]][0].note_id).fields = {'meaning': '词'}
+        db.get(Note, by_deck[ids[3]][1].note_id).guid = 'legacy:count-test:card:1'
+        deck = db.get(Deck, UUID(ids[4]))
+        deck.scheduling_config = {'study_card_ids': []}
+    with Session(engine) as db, db.begin():
+        collection = db.get(Collection, UUID(account['collection']['id']))
+        service = ReviewService(db, collection)
+        expected = {}
+        for deck_id in ids:
+            q = RuntimeQueue(uuid7(), {'deck_id': UUID(deck_id), 'include_descendants': False, 'exclude_imported': True}, [], service.day, service.stamp(), service.now+timedelta(hours=2))
+            expected[deck_id] = service.counts(q)
+        assert service.deck_counts()['decks'] == expected
+        assert expected[ids[0]]['new_remaining'] == min(new_limit, 2)
+        assert expected[ids[2]]['learning_remaining'] == 1
+        assert expected[ids[3]]['new_remaining'] == 0
+        assert expected[ids[4]]['empty_reason'] == 'no_cards'

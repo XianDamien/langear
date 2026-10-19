@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.fsrs_review_log import FSRSReviewLog
@@ -17,6 +18,38 @@ class SRSRepository:
     def __init__(self, db: Session):
         """Initialize repository with database session."""
         self.db = db
+
+    def lesson_statistics(self, user_id: int | None = None) -> dict[int, dict[str, int]]:
+        """Aggregate all lesson counters in one query, with personal progress isolation."""
+        from app.models.card import Card
+        from app.models.user_card_fsrs import UserCardFSRS
+
+        query = self.db.query(Card.deck_id)
+        if user_id is None:
+            query = query.outerjoin(UserCardSRS, UserCardSRS.card_id == Card.id)
+            last_review, due = UserCardSRS.last_review, UserCardSRS.due
+        else:
+            query = query.outerjoin(UserCardFSRS, and_(
+                UserCardFSRS.card_id == Card.id, UserCardFSRS.user_id == user_id,
+            ))
+            last_review, due = UserCardFSRS.last_review, UserCardFSRS.due
+            if user_id == 1:
+                query = query.outerjoin(UserCardSRS, UserCardSRS.card_id == Card.id)
+                # Match PersonalSRSRepository.effective: newer legacy progress belongs
+                # only to user 1; equal review times prefer the personal snapshot.
+                legacy_newer = and_(UserCardSRS.last_review.isnot(None), or_(
+                    last_review.is_(None), UserCardSRS.last_review > last_review,
+                ))
+                due = case((legacy_newer, UserCardSRS.due), else_=due)
+                last_review = case((legacy_newer, UserCardSRS.last_review), else_=last_review)
+        rows = query.with_entities(
+            Card.deck_id, func.count(Card.id), func.count(last_review),
+            func.sum(case((and_(last_review.isnot(None), due <= storage_now(self.db)), 1), else_=0)),
+        ).group_by(Card.deck_id).all()
+        return {lesson_id: {
+            "total_cards": total, "completed_cards": completed,
+            "new_cards": total - completed, "due_cards": due_count,
+        } for lesson_id, total, completed, due_count in rows}
 
     def get_by_card_id(self, card_id: int) -> UserCardSRS | None:
         """Get SRS state for a card.

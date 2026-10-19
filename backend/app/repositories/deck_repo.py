@@ -25,6 +25,10 @@ class DeckRepository:
             .all()
         )
 
+    def get_tree_decks(self) -> list[Deck]:
+        """Fetch the hierarchy once, preserving sibling order."""
+        return self.db.query(Deck).order_by(Deck.level_index, Deck.id).all()
+
     def get_sources_by_ids(self, deck_ids: list[int]) -> list[Deck]:
         """Get source decks by IDs."""
         if not deck_ids:
