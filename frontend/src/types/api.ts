@@ -246,6 +246,10 @@ export interface SettingsData {
   deckTitle?: string
   dailyNewLimit?: number
   dailyReviewLimit?: number
+  newCardGatherOrder?: string | null
+  newCardSortOrder?: string | null
+  effectiveNewCardGatherOrder?: string
+  effectiveNewCardSortOrder?: string
   desiredRetention: number
   learningSteps: string
   relearningSteps: string
@@ -259,6 +263,9 @@ export interface BackendSettingsData {
   deck_title?: string
   daily_new_limit?: number
   daily_review_limit?: number
+  new_card_gather_order?: string | null
+  new_card_sort_order?: string | null
+  new_card_order_overrides?: { new_card_gather_order: string | null; new_card_sort_order: string | null }
   desired_retention: number
   learning_steps: number[]
   relearning_steps: number[]

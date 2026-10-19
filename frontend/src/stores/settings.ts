@@ -15,6 +15,10 @@ export const useSettingsStore = defineStore('settings', () => {
   const deckTitle = ref('')
   const dailyNewLimit = ref<number | undefined>()
   const dailyReviewLimit = ref<number | undefined>()
+  const newCardGatherOrder = ref<string | null | undefined>()
+  const newCardSortOrder = ref<string | null | undefined>()
+  const effectiveNewCardGatherOrder = ref<string | undefined>()
+  const effectiveNewCardSortOrder = ref<string | undefined>()
   let loadVersion = 0
   const saving = ref(false)
   const loading = ref(false)
@@ -27,6 +31,10 @@ export const useSettingsStore = defineStore('settings', () => {
     deckTitle.value = data.deckTitle ?? ''
     dailyNewLimit.value = data.dailyNewLimit
     dailyReviewLimit.value = data.dailyReviewLimit
+    newCardGatherOrder.value = data.newCardGatherOrder
+    newCardSortOrder.value = data.newCardSortOrder
+    effectiveNewCardGatherOrder.value = data.effectiveNewCardGatherOrder
+    effectiveNewCardSortOrder.value = data.effectiveNewCardSortOrder
     desiredRetention.value = data.desiredRetention
     learningSteps.value = data.learningSteps
     relearningSteps.value = data.relearningSteps
@@ -67,6 +75,7 @@ export const useSettingsStore = defineStore('settings', () => {
         maximumInterval: maximumInterval.value,
         defaultSourceScope: defaultSourceScope.value,
         ...(deckId.value === undefined ? {} : {
+          newCardGatherOrder: newCardGatherOrder.value, newCardSortOrder: newCardSortOrder.value,
           deckId: deckId.value, dailyNewLimit: dailyNewLimit.value, dailyReviewLimit: dailyReviewLimit.value,
         }),
       })
@@ -85,6 +94,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     desiredRetention, learningSteps, relearningSteps, maximumInterval,
     deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled,
+    newCardGatherOrder, newCardSortOrder, effectiveNewCardGatherOrder, effectiveNewCardSortOrder,
     defaultSourceScope, saving, loading, loadError, saveError, load, save,
   }
 })

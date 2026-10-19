@@ -11,7 +11,26 @@ const route = useRoute()
 const { desiredRetention, learningSteps, relearningSteps, maximumInterval, defaultSourceScope, saving, loading, loadError, saveError } =
   storeToRefs(settingsStore)
 const { deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled } = storeToRefs(settingsStore)
-const coreDeck = computed(() => typeof deckId.value === 'string')
+const coreDeck = computed(() => deckId.value !== undefined)
+const { newCardGatherOrder, newCardSortOrder, effectiveNewCardGatherOrder, effectiveNewCardSortOrder } = storeToRefs(settingsStore)
+function orderPreset(gather: string | null | undefined, sort: string | null | undefined) {
+  if (gather == null && sort == null) return 'inherit'
+  if (gather === 'lowest_position' && sort === 'order_gathered') return 'source'
+  if (gather === 'random_cards' && sort === 'order_gathered') return 'random'
+  return 'custom'
+}
+const newCardOrder = computed({
+  get: () => orderPreset(newCardGatherOrder.value, newCardSortOrder.value),
+  set: (value: string) => {
+    if (value === 'custom') return
+    newCardGatherOrder.value = value === 'inherit' ? null : value === 'source' ? 'lowest_position' : 'random_cards'
+    newCardSortOrder.value = value === 'inherit' ? null : 'order_gathered'
+  },
+})
+const effectiveOrderLabel = computed(() => {
+  const preset = orderPreset(effectiveNewCardGatherOrder.value, effectiveNewCardSortOrder.value)
+  return preset === 'source' ? '按课文／添加顺序' : preset === 'random' ? '随机' : preset === 'custom' ? '自定义排序' : '上级设置'
+})
 const retentionPercent = computed({
   get: () => Number((desiredRetention.value * 100).toFixed(4)),
   set: (value: number) => { desiredRetention.value = value / 100 },
@@ -65,6 +84,42 @@ async function handleSave() {
       <RetroCard class="space-y-6">
         <form class="space-y-6" @submit.prevent="handleSave">
           <template v-if="deckId">
+            <div>
+              <label
+                for="new-card-order"
+                class="block text-sm font-bold text-slate-500 mb-2"
+              >新卡出现顺序</label>
+              <select
+                id="new-card-order"
+                v-model="newCardOrder"
+                class="w-full border border-slate-200 p-2 text-slate-900 bg-white outline-none focus:border-brand-accent"
+              >
+                <option value="source">
+                  按课文／添加顺序
+                </option>
+                <option value="random">
+                  随机
+                </option>
+                <option value="inherit">
+                  继承上级设置
+                </option>
+                <option
+                  v-if="newCardOrder === 'custom'"
+                  value="custom"
+                >
+                  保留当前自定义排序
+                </option>
+              </select>
+              <p
+                v-if="newCardOrder === 'inherit'"
+                class="mt-2 text-xs text-slate-500"
+              >
+                当前生效：{{ effectiveOrderLabel }}
+              </p>
+              <p class="mt-2 text-xs text-slate-500">
+                仅影响尚未学习的新卡，复习卡仍按复习计划出现。保存后重新进入练习生效。
+              </p>
+            </div>
             <div>
               <label for="daily-new-limit" class="block text-sm font-bold text-slate-500 mb-2">每日新学数量</label>
               <input id="daily-new-limit" v-model.number="dailyNewLimit" type="number" min="0" max="10000" step="1" required class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">

@@ -23,6 +23,10 @@ function toFrontendSettings(data: BackendSettingsData): SettingsData {
       deckId: data.deck_id, deckTitle: data.deck_title,
       schedulingEnabled: data.scheduling_enabled,
       dailyNewLimit: data.daily_new_limit, dailyReviewLimit: data.daily_review_limit,
+      newCardGatherOrder: data.new_card_order_overrides?.new_card_gather_order,
+      newCardSortOrder: data.new_card_order_overrides?.new_card_sort_order,
+      effectiveNewCardGatherOrder: data.new_card_gather_order ?? undefined,
+      effectiveNewCardSortOrder: data.new_card_sort_order ?? undefined,
     }),
   }
 }
@@ -49,6 +53,8 @@ function toBackendSettings(data: SettingsData): BackendSettingsData {
     maximum_interval: data.maximumInterval,
     ...(scoped ? {
       daily_new_limit: data.dailyNewLimit, daily_review_limit: data.dailyReviewLimit,
+      ...(data.newCardGatherOrder === undefined ? {} : { new_card_gather_order: data.newCardGatherOrder }),
+      ...(data.newCardSortOrder === undefined ? {} : { new_card_sort_order: data.newCardSortOrder }),
     } : { default_source_scope: parsePositiveIntegers(data.defaultSourceScope, '默认教材范围') }),
   }
 }

@@ -68,7 +68,30 @@ describe('existing settings API contract', () => {
     expect(put).not.toHaveBeenCalled()
   })
 
-  it('rejects settings returned for a different imported deck', async () => {
+  it('maps effective order separately and saves inheritance to the resolved legacy deck', async () => {
+    const id = '01900000-0000-7000-8000-000000000017'
+    const scoped = {
+      ...backend, deck_id: id, daily_new_limit: 3, daily_review_limit: 7,
+      new_card_gather_order: 'lowest_position', new_card_sort_order: 'order_gathered',
+      new_card_order_overrides: { new_card_gather_order: null, new_card_sort_order: null },
+    }
+    coreGet.mockImplementation(async (path: string) => ({ data: path === '/review/legacy-lessons/17' ? { deck_id: id } : scoped }))
+    corePut.mockResolvedValue({ data: scoped })
+    const { data } = await fetchSettings(17)
+    expect(data).toMatchObject({ deckId: 17, newCardGatherOrder: null, newCardSortOrder: null, effectiveNewCardGatherOrder: 'lowest_position' })
+    await saveSettings(data)
+    expect(corePut).toHaveBeenLastCalledWith(`/decks/${id}/settings`, expect.objectContaining({ new_card_gather_order: null, new_card_sort_order: null }))
+    await saveSettings({ ...data, newCardGatherOrder: 'lowest_position', newCardSortOrder: 'order_gathered' })
+    expect(corePut).toHaveBeenLastCalledWith(`/decks/${id}/settings`, expect.objectContaining({ new_card_gather_order: 'lowest_position', new_card_sort_order: 'order_gathered' }))
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it('does not send order fields to legacy account settings', async () => {
+    await saveSettings({ ...frontend, newCardGatherOrder: 'lowest_position', newCardSortOrder: 'order_gathered' })
+    expect(put).toHaveBeenCalledWith('/settings', backend)
+  })
+
+  it('rejects settings returned for a different imported deck' , async () => {
     coreGet.mockResolvedValueOnce({ data: { deck_id: '01900000-0000-7000-8000-000000000018' } })
       .mockResolvedValueOnce({ data: { ...backend, deck_id: '01900000-0000-7000-8000-000000000019' } })
     await expect(fetchSettings(18)).rejects.toThrow('牌组设置未正确返回')
