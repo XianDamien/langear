@@ -32,6 +32,10 @@ from core.models import (
 from core.scheduling import MemoryState, config_version, study_day
 
 SOURCE_ZONE = ZoneInfo("Asia/Shanghai")
+LESSON_NEW_CARD_ORDER = {
+    "new_card_gather_order": "lowest_position",
+    "new_card_sort_order": "order_gathered",
+}
 
 
 def imported_memory(snapshot, config):
@@ -257,6 +261,7 @@ def import_snapshot(db, data, source):
                 collection_id=collection.id,
                 name=row["title"],
                 deck_guid=f"legacy:{source}:deck:{row['id']}",
+                scheduling_config=dict(LESSON_NEW_CARD_ORDER),
                 parent_id=decks[row["parent_id"]].id
                 if row["parent_id"] is not None
                 else None,

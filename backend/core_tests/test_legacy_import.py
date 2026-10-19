@@ -148,6 +148,84 @@ def test_import_preserves_content_scope_memory_and_is_idempotent(engine, snapsho
         assert db.get(Note, note_id).fields["english"] == "Locally edited"
 
 
+@pytest.mark.parametrize("template_ord", [0, 1, 2])
+def test_imported_new_sentences_follow_lesson_order(engine, snapshot, template_ord):
+    from core.scheduling import effective, ordered
+
+    snapshot["cards"] = [
+        {**snapshot["cards"][0], "id": 100 - index, "card_index": index,
+         "front_text": f"Sentence {index}."}
+        for index in reversed(range(12))
+    ]
+    snapshot["user_card_fsrs"] = []
+    with Session(engine) as db, db.begin():
+        import_snapshot(db, snapshot, "fixture")
+        # Both Library and user copies must retain the source sentence order.
+        for collection in db.scalars(select(Collection)):
+            decks = {d.id: d for d in db.scalars(select(Deck).where(Deck.collection_id == collection.id))}
+            lesson = next(d for d in decks.values() if d.deck_guid == "legacy:fixture:deck:2")
+            cards = list(db.scalars(select(Card).where(Card.deck_id == lesson.id, Card.template_ord == template_ord)))
+            notes = {n.id: n for n in db.scalars(select(Note).where(Note.collection_id == collection.id))}
+            queue = ordered(cards, collection, effective(collection, lesson.id, decks), datetime(2026, 10, 18, tzinfo=UTC), decks)
+            assert [notes[c.note_id].fields["english"] for c in queue] == [f"Sentence {index}." for index in range(12)]
+
+
+def test_lesson_order_repair_is_scoped_reversible_and_preserves_progress(engine, snapshot):
+    from core.legacy_import import LESSON_NEW_CARD_ORDER
+    from core.legacy_repair import repair_lesson_order
+
+    with Session(engine) as db, db.begin():
+        import_snapshot(db, snapshot, "fixture")
+        # Reproduce an existing import made before Lesson ordering defaults.
+        for deck in db.scalars(select(Deck)):
+            deck.scheduling_config = {k: v for k, v in deck.scheduling_config.items() if k not in LESSON_NEW_CARD_ORDER}
+        col = db.scalar(select(Collection).where(Collection.owner_user_id == stable_id("fixture", "user", 2)))
+        lesson = db.scalar(select(Deck).where(Deck.collection_id == col.id, Deck.deck_guid == "legacy:fixture:deck:2"))
+        lesson_id = lesson.id
+        before_config = dict(lesson.scheduling_config)
+        before_cards = list(db.execute(select(Card.__table__).order_by(Card.id)))
+        before_decks = {d.id: dict(d.scheduling_config) for d in db.scalars(select(Deck))}
+    with Session(engine) as db:
+        assert repair_lesson_order(db, "fixture", lesson_id) == {"order_decks": 1}
+        db.rollback()
+    with Session(engine) as db, db.begin():
+        assert db.get(Deck, lesson_id).scheduling_config == before_config
+        assert repair_lesson_order(db, "fixture", lesson_id) == {"order_decks": 1}
+        assert repair_lesson_order(db, "fixture", lesson_id) == {"order_decks": 0}
+        assert db.get(Deck, lesson_id).scheduling_config == {**before_config, **LESSON_NEW_CARD_ORDER}
+        assert list(db.execute(select(Card.__table__).order_by(Card.id))) == before_cards
+        assert {d.id: d.scheduling_config for d in db.scalars(select(Deck)) if d.id != lesson_id} == {
+            key: value for key, value in before_decks.items() if key != lesson_id
+        }
+
+
+@pytest.mark.parametrize("override_at", ["lesson", "parent", "collection"])
+@pytest.mark.parametrize("key,value", [
+    ("new_card_gather_order", "random_cards"),
+    ("new_card_sort_order", "random_card"),
+])
+def test_lesson_order_repair_preserves_explicit_sorting(engine, snapshot, override_at, key, value):
+    from core.legacy_import import LESSON_NEW_CARD_ORDER
+    from core.legacy_repair import repair_lesson_order
+    from core.scheduling import effective
+
+    with Session(engine) as db, db.begin():
+        import_snapshot(db, snapshot, "fixture")
+        for deck in db.scalars(select(Deck)):
+            deck.scheduling_config = {k: v for k, v in deck.scheduling_config.items() if k not in LESSON_NEW_CARD_ORDER}
+        col = db.scalar(select(Collection).where(Collection.owner_user_id == stable_id("fixture", "user", 2)))
+        decks = {d.id: d for d in db.scalars(select(Deck).where(Deck.collection_id == col.id))}
+        lesson = next(d for d in decks.values() if d.deck_guid == "legacy:fixture:deck:2")
+        target = {"lesson": lesson, "parent": decks[lesson.parent_id], "collection": col}[override_at]
+        if override_at == "collection" and key == "new_card_gather_order":
+            value = "highest_position"
+        target.scheduling_config = {**target.scheduling_config, key: value}
+        before = effective(col, lesson.id, decks)
+        db.flush()
+        assert repair_lesson_order(db, "fixture", lesson.id) == {"order_decks": 0}
+        assert effective(col, lesson.id, decks) == before
+
+
 def test_imported_login_upgrades_hash_but_registration_stays_strong(
     engine, snapshot, client
 ):

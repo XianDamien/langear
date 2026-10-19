@@ -7,8 +7,33 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from core.db import get_engine
-from core.legacy_import import imported_memory, initialize_selection, selection_digest
-from core.models import Card, Collection, Deck, LegacyImport, Note
+from core.legacy_import import LESSON_NEW_CARD_ORDER, imported_memory, initialize_selection, selection_digest
+from core.models import DEFAULT_SCHEDULING, Card, Collection, Deck, LegacyImport, Note
+from core.scheduling import ancestry
+
+
+def repair_lesson_order(db, source, deck_id):
+    """Opt in one imported Lesson to source order without touching learning state."""
+    db.execute(text("SELECT pg_advisory_xact_lock(302002)"))
+    if db.get(LegacyImport, source) is None:
+        raise ValueError("Import source not found")
+    deck = db.get(Deck, deck_id)
+    if deck is None or not deck.deck_guid.startswith(f"legacy:{source}:deck:"):
+        raise ValueError("Imported Lesson not found")
+    collection = db.scalar(select(Collection).where(Collection.id == deck.collection_id).with_for_update())
+    decks = {d.id: d for d in db.scalars(select(Deck).where(
+        Deck.collection_id == collection.id
+    ).execution_options(populate_existing=True))}
+    # Leave explicit user sorting (including inherited overrides) alone.
+    if any(decks[parent].scheduling_config.get(key) is not None
+           for parent in ancestry(deck.id, decks) for key in LESSON_NEW_CARD_ORDER):
+        return {"order_decks": 0}
+    if any(collection.scheduling_config.get(key, DEFAULT_SCHEDULING[key]) != DEFAULT_SCHEDULING[key]
+           for key in LESSON_NEW_CARD_ORDER):
+        return {"order_decks": 0}
+    deck.scheduling_config = {**deck.scheduling_config, **LESSON_NEW_CARD_ORDER}
+    db.flush()
+    return {"order_decks": 1}
 
 
 def repair(db, source, selection_snapshot=None):
@@ -61,9 +86,14 @@ def main():
     parser.add_argument("--source", required=True)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--selection-snapshot", type=Path, help="Explicit cutover snapshot of current legacy my_courses settings")
+    parser.add_argument("--lesson-order-only", action="store_true", help="Repair only new-card order for one imported Lesson")
+    parser.add_argument("--deck-id", type=UUID, help="Lesson UUID, required with --lesson-order-only")
     args = parser.parse_args()
+    if args.lesson_order_only != (args.deck_id is not None) or (args.lesson_order_only and args.selection_snapshot):
+        parser.error("Use --lesson-order-only with --deck-id, without --selection-snapshot")
     with Session(get_engine()) as db:
-        result = repair(db, args.source, json.loads(args.selection_snapshot.read_text()) if args.selection_snapshot else None)
+        result = (repair_lesson_order(db, args.source, args.deck_id) if args.lesson_order_only else
+                  repair(db, args.source, json.loads(args.selection_snapshot.read_text()) if args.selection_snapshot else None))
         if args.apply:
             db.commit()
         else:
