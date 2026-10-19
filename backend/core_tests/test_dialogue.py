@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
-from core.main import app
 from core.config import get_settings
 from core_tests.test_review import make_note, queue, next_card, flip, rate
 
@@ -62,6 +61,7 @@ def test_authorized_context_idempotency_and_no_scheduling_side_effects(client, a
 
 
 def test_other_collection_cannot_read_use_or_connect_to_dialogue(client, account, dialogue):
+    from core.main import app
     session = create(client, dialogue)
     with TestClient(app, base_url='https://testserver', headers={'Origin': 'http://localhost:3002'}) as other:
         identity = other.post('/api/v1/auth/register', json={'email': 'other@example.com', 'password': 'another strong password'}).json()
@@ -289,6 +289,7 @@ def test_spoken_natural_closing_with_finish_tool_is_not_repeated(client, account
 
 
 def test_release_prefix_routes_dialogue_http_and_voice_with_scoped_cookie(client, account, dialogue, monkeypatch):
+    from core.main import app
     from starlette.applications import Starlette
     from core import auth, dialogue_voice
     from core.release_app import make_release_app
@@ -396,6 +397,7 @@ def test_realtime_receives_lesson_context_and_start_click_is_not_a_learner_answe
 
 
 def test_translation_only_reads_an_owned_saved_turn(client, account, dialogue, monkeypatch, engine):
+    from core.main import app
     from uuid import UUID
     from core import dialogue as module, dialogue_voice
     from sqlalchemy.orm import Session
