@@ -80,6 +80,31 @@ def deck_node(service, deck, stats, children):
     }
 
 
+def deck_ancestry(deck, by_id):
+    """Root-first UUID chain for one Deck; a cycle stops instead of looping."""
+    chain, seen = [], set()
+    current = deck
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        chain.append(current.id)
+        current = by_id.get(current.parent_id)
+    return list(reversed(chain))
+
+
+def deck_rows(service, decks, stats):
+    """Flat Deck list carrying what Library and My Courses both need."""
+    by_id = {deck.id: deck for deck in decks}
+    return [
+        {
+            **service.deck_data(deck),
+            "depth": len(deck_ancestry(deck, by_id)) - 1,
+            "path": [str(value) for value in deck_ancestry(deck, by_id)],
+            "stats": stats[deck.id],
+        }
+        for deck in decks
+    ]
+
+
 def deck_tree(db, collection):
     """Nested Standard Deck tree plus a flat list; membership is per Deck."""
     service = ContentService(db, collection)
@@ -106,10 +131,7 @@ def deck_tree(db, collection):
         )
 
     roots = [build(child_id) for child_id in children.get(None, [])]
-    return {
-        "decks": [service.deck_data(deck) | {"stats": stats[deck.id]} for deck in decks],
-        "tree": roots,
-    }
+    return {"decks": deck_rows(service, decks, stats), "tree": roots}
 
 
 def my_courses(db, collection):

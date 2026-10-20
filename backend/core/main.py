@@ -17,7 +17,7 @@ from starlette.exceptions import HTTPException
 from core import auth, schemas
 from core.config import get_settings
 from core.content import ContentService
-from core.courses import deck_tree
+from core.courses import deck_rows, deck_statistics, deck_tree
 from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_settings
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
@@ -250,6 +250,17 @@ def password(
     )
 
 
+@app.post("/api/v1/auth/disable")
+def disable_account(
+    body: schemas.DisableAccount,
+    request: Request,
+    response: Response,
+    collection=Depends(auth.identity),
+    db=Depends(get_db, scope="function"),
+):
+    return auth.disable_self(db, request, response, body)
+
+
 @app.get("/api/v1/auth/csrf")
 def csrf(
     request: Request,
@@ -320,14 +331,24 @@ def decks(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
-    rows = service.db.scalars(
-        select(Deck)
-        .where(Deck.collection_id == service.collection.id)
-        .order_by(Deck.id)
-        .limit(limit)
-        .offset(offset)
+    rows = list(
+        service.db.scalars(
+            select(Deck)
+            .where(Deck.collection_id == service.collection.id)
+            .order_by(Deck.id)
+            .limit(limit)
+            .offset(offset)
+        )
     )
-    return {"decks": [service.deck_data(row) for row in rows]}
+    # Statistics aggregate the full subtree, so they load the whole Collection
+    # rather than only the requested page.
+    all_decks = list(
+        service.db.scalars(
+            select(Deck).where(Deck.collection_id == service.collection.id)
+        )
+    )
+    stats = deck_statistics(service.db, service.collection, all_decks)
+    return {"decks": deck_rows(service, rows, stats)}
 
 
 @app.post("/api/v1/decks", status_code=201)

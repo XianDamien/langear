@@ -2,10 +2,30 @@
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from core.models import Deck, Note
+from core.models import Collection, Deck, Note
 from core_tests.test_review import flip, make_note, next_card, queue, rate
+
+
+def test_deck_list_includes_hierarchy_membership_and_statistics(client, account):
+    root = account["deck_id"]
+    child = client.post("/api/v1/decks", json={"name": "Lesson", "parent_id": root}).json()["id"]
+    make_note(client, account)
+    make_note(client, account, {"word": "pear", "meaning": "梨"}, deck_id=child)
+    client.put(f"/api/v1/decks/{child}/membership", json={"joined": True})
+    rows = client.get("/api/v1/decks").json()["decks"]
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[child]["parent_id"] == root
+    assert by_id[child]["depth"] == 1
+    assert by_id[root]["depth"] == 0
+    assert by_id[root]["stats"]["total_cards"] == 2
+    assert by_id[child]["stats"]["total_cards"] == 1
+    assert by_id[child]["in_my_courses"] is True
+    assert by_id[root]["in_my_courses"] is False
+    assert by_id[root]["path"] == [root]
+    assert by_id[child]["path"] == [root, child]
 
 
 def test_deck_tree_reports_subtree_statistics_and_membership(client, account):
@@ -100,3 +120,62 @@ def test_imported_flag_is_not_set_by_client_supplied_guids(client, account, engi
             Deck.__table__.select().where(Deck.collection_id == UUID(account["collection"]["id"]))
         )
         assert deck is not None
+
+
+def test_migration_backfills_source_metadata_for_pre_existing_legacy_rows(engine):
+    """Rows imported before lan33_0011 must stay findable through provenance."""
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+
+    from core.content import ContentService
+    from core.legacy_selection import lesson
+
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic-core.ini"))
+    command.downgrade(config, "lan21_0010")
+    with engine.begin() as connection:
+        collection_id = connection.scalar(
+            text("SELECT id FROM collections WHERE kind = 'library'")
+        )
+        note_type_id = connection.scalar(
+            text("SELECT id FROM note_types WHERE key = 'sentence'")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO decks (id, collection_id, name, deck_guid, kind, parent_kind,"
+                " in_my_courses, scheduling_config, created_at, updated_at)"
+                " VALUES (gen_random_uuid(), :c, 'Old lesson', 'legacy:fixture:deck:7',"
+                " 'standard', 'standard', false, '{}', now(), now())"
+            ),
+            {"c": collection_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO notes (id, collection_id, guid, note_type_id, fields, tags,"
+                " revision, created_at, updated_at)"
+                " VALUES (gen_random_uuid(), :c, 'legacy:fixture:card:9', :nt,"
+                " '{\"english\": \"Old sentence.\"}', '[]', 1, now(), now())"
+            ),
+            {"c": collection_id, "nt": note_type_id},
+        )
+    command.upgrade(config, "head")
+    with Session(engine) as db:
+        collection = db.get(Collection, collection_id)
+        deck = db.scalar(select(Deck).where(Deck.deck_guid == "legacy:fixture:deck:7"))
+        note = db.scalar(select(Note).where(Note.guid == "legacy:fixture:card:9"))
+        assert deck.imported is True
+        assert note.imported is True
+        assert deck.source_metadata == {
+            "kind": "deck",
+            "source": "fixture",
+            "legacy_id": "7",
+        }
+        assert note.source_metadata == {
+            "kind": "card",
+            "source": "fixture",
+            "legacy_id": "9",
+        }
+        # The runtime lookup the legacy bridge uses must resolve the row.
+        assert lesson(ContentService(db, collection), 7).id == deck.id

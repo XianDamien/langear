@@ -19,7 +19,8 @@ def transcribe(audio_url: str) -> dict:
     dashscope.api_key = settings.asr_api_key.get_secret_value()
     try:
         response = dashscope.MultiModalConversation.call(
-            model=settings.asr_model or MODEL,
+            # The contract fixes the model; never let configuration drift it.
+            model=MODEL,
             messages=[{"role": "user", "content": [{"audio": audio_url}]}],
             asr_options={"enable_itn": False},
         )

@@ -217,6 +217,39 @@ def test_disabled_account_cannot_use_existing_session_or_sign_in(client, account
     ).status_code == 401
 
 
+def test_account_can_disable_itself_through_the_api(client, account, engine):
+    """Deactivation is self-service; no learner can disable another account."""
+    path = "/api/v1/auth/disable"
+    # Wrong password must not deactivate the account.
+    refused = client.post(path, json={"password": "not the password"})
+    assert refused.status_code == 401
+    assert refused.json()["error"]["code"] == "INVALID_CREDENTIALS"
+    assert client.get("/api/v1/auth/me").status_code == 200
+    response = client.post(path, json={"password": "a strong test password"})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"disabled": True}
+    # The live session is revoked and sign-in is refused afterwards.
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": "learner@example.com", "password": "a strong test password"},
+    ).status_code == 401
+    with Session(engine) as db:
+        assert db.get(User, __import__("uuid").UUID(account["user"]["id"])).disabled is True
+
+
+def test_operator_can_disable_an_account_without_an_admin_role(client, account, engine):
+    """Operators disable accounts through the CLI, not through a product route."""
+    from uuid import UUID
+
+    from core.auth import disable_user
+
+    with Session(engine) as db, db.begin():
+        result = disable_user(db, UUID(account["user"]["id"]))
+    assert result == {"user_id": account["user"]["id"], "disabled": True}
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
 def test_settings_defaults_partial_update_inheritance_and_scope(client, account, engine):
     response = client.get("/api/v1/settings")
     assert response.status_code == 200, response.text
@@ -314,6 +347,17 @@ def test_dashboard_counts_attempts_streak_and_imported_history(client, account, 
     assert data["stats"]["streakDays"] == 1
     assert data["heatmap"][-1]["count"] == 1
     assert data["weeklyTrend"][-1]["sentences"] == 1
+
+
+def test_dashboard_counts_imported_cards_as_pending_reviews(client, account, engine):
+    """Migrated content is real study work and must appear in the queue counts."""
+    from core_tests.test_review_migration import imported_lesson, imported_note
+
+    card = make_note(client, account)["cards"][0]
+    assert client.get("/api/v1/dashboard").json()["stats"]["reviewsPending"] == 1
+    imported_lesson(engine, account)
+    imported_note(engine, card["note_id"], 101)
+    assert client.get("/api/v1/dashboard").json()["stats"]["reviewsPending"] == 1
 
 
 def test_dashboard_merges_imported_days_without_double_counting(client, account, engine):

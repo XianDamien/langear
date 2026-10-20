@@ -138,5 +138,9 @@ class PasswordChange(Body):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class DisableAccount(Body):
+    password: str = Field(min_length=1, max_length=128)
+
+
 class DeckMembership(Body):
     joined: bool

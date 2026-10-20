@@ -104,7 +104,9 @@ def due_counts(db, collection):
             {
                 "deck_id": deck_id,
                 "include_descendants": True,
-                "exclude_imported": True,
+                # Imported cards are ordinary study work for a migrated learner;
+                # only the Library editor filter hides them.
+                "exclude_imported": False,
             }
         )
         for card in cards:

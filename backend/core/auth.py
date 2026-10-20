@@ -234,6 +234,24 @@ def disable_user(db, user_id):
     return {"user_id": str(user.id), "disabled": True}
 
 
+def disable_self(db, request, response, body):
+    """Self-service deactivation; requires the current password, never a role."""
+    user = db.get(User, request.state.user_id)
+    rate_limit(request, "disable", user.email or user.username or str(user.id))
+    if not verify_password(user.password_hash, body.password):
+        raise DomainError(401, "INVALID_CREDENTIALS", "Current password is invalid.")
+    user.disabled = True
+    db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
+    response.delete_cookie(
+        COOKIE,
+        path="/api/v1",
+        secure=get_settings().cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+    return {"disabled": True}
+
+
 def identity(request: Request, db=Depends(get_db, scope="function")):
     token = request.cookies.get(COOKIE)
     row = (

@@ -180,24 +180,34 @@ def test_migration_rehearsal_is_repeatable_with_zero_second_writes(engine):
     assert first_verify["daily_activity"]["accounted"]
 
 
-def test_migration_stops_when_source_changes_between_snapshots(engine):
+def test_migration_converges_a_changed_source_after_the_first_import(engine):
+    """Later snapshots reconcile instead of aborting, and record what they saw."""
     first = copy.deepcopy(base_snapshot.__wrapped__())
     first["review_log"][0]["created_at"] = "2026-10-16T09:00:00"
     with Session(engine) as db, db.begin():
         reconcile(db, first, "moving", apply=True)
     moved = copy.deepcopy(first)
     moved["decks"][1]["title"] = "Renamed upstream"
-    from core.errors import DomainError
-
+    moved["review_log"].append(
+        {
+            "id": 2,
+            "user_id": 2,
+            "card_id": 2,
+            "rating": "good",
+            "created_at": "2026-10-18T09:00:00",
+        }
+    )
+    with Session(engine) as db, db.begin():
+        report = reconcile(db, moved, "moving", apply=True)
+    assert report["applied"] is True
+    assert report["counts"]["decks_renamed"] >= 1
     with Session(engine) as db:
-        try:
-            reconcile(db, moved, "moving", apply=True)
-        except DomainError as error:
-            assert error.code == "SNAPSHOT_CHANGED"
-        else:  # pragma: no cover - explicit failure mode
-            raise AssertionError("a changed snapshot must abort")
-    with Session(engine) as db:
-        assert db.get(LegacyImport, "moving").checksum == snapshot_checksum(first)
+        ledger = db.get(LegacyImport, "moving")
+        # The original import ledger stays immutable as an audit record, while
+        # the reconciliation snapshot is tracked separately.
+        assert ledger.checksum == snapshot_checksum(first)
+        assert ledger.report["reconciled_checksum"] == snapshot_checksum(moved)
+        assert ledger.report["reconciled_high_water"]["review_log"] is not None
         assert db.scalar(select(func.count()).select_from(Deck).where(Deck.imported.is_(True))) > 0
 
 

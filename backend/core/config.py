@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,12 +36,15 @@ class Settings(BaseSettings):
     dashboard_heatmap_days: int = 90
     dashboard_trend_days: int = 7
     asr_api_key: SecretStr | None = None
-    asr_model: str = "qwen3-asr-flash"
     ai_feedback_provider: str = "gemini"
     ai_feedback_prompt_version: str = "v1"
     gemini_api_key: SecretStr | None = None
     gemini_model_id: str = "gemini-3.1-flash-lite-preview"
-    gemini_base_url: str | None = None
+    # The deployment environment configures the relay without the CORE_ prefix.
+    gemini_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GOOGLE_GEMINI_BASE_URL", "CORE_GEMINI_BASE_URL"),
+    )
     qwen_omni_api_key: SecretStr | None = None
     qwen_omni_model_id: str = "qwen3.8-omni-flash"
     qwen_omni_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"

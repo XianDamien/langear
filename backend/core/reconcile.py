@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from core.auth import HASHER
@@ -35,6 +35,9 @@ from core.models import (
     Deck,
     InvitationCode,
     LegacyImport,
+    LoginSession,
+    MediaAsset,
+    MediaReference,
     Note,
     User,
 )
@@ -356,13 +359,22 @@ def reconcile(db, data, source, apply=False):
         "activities": {"planned": len(plan.activities), "inserted": 0, "rejected": 0},
     }
     report["activities"]["rejected"] = plan.rejected_history_rows
-
     if apply:
-        # The bulk first-time import is deterministic and transactional. It also
-        # refuses a changed snapshot, which protects concurrent source writes.
-        try:
-            imported = import_snapshot(db, data, source)
-            report["already_imported"] = imported.get("already_imported", False)
+        ledger = db.get(LegacyImport, source)
+        first_import = ledger is None
+        if first_import:
+            # The bulk first-time import creates content; it also refuses a
+            # changed snapshot, which protects concurrent source writes.
+            try:
+                imported = import_snapshot(db, data, source)
+            except ValueError as exc:
+                if "snapshot changed" in str(exc):
+                    raise DomainError(
+                        409,
+                        "SNAPSHOT_CHANGED",
+                        "The migration source changed; regenerate the snapshot.",
+                    ) from None
+                raise
             report["counts"].update(
                 {
                     "users_created": imported.get("users", 0),
@@ -372,52 +384,221 @@ def reconcile(db, data, source, apply=False):
                     "media_total": imported.get("media", 0),
                 }
             )
-        except ValueError as exc:
-            # A changed snapshot is unambiguous; anything else needs inspection.
-            if "snapshot changed" in str(exc):
-                raise DomainError(
-                    409,
-                    "SNAPSHOT_CHANGED",
-                    "The migration source changed; regenerate the snapshot.",
-                ) from None
-            raise
-        mapping = (db.get(LegacyImport, source).report or {}).get("user_mapping", {})
-        inserted = 0
-        for row in plan.activities:
-            user_id = mapping.get(str(row["legacy_user_id"]))
-            if not user_id:
-                # Keep it archived and reported; never guess an owner.
-                continue
-            collection = db.scalar(
-                select(Collection).where(Collection.owner_user_id == UUID(user_id))
-            )
-            if collection is None:
-                continue
-            exists = db.scalar(
-                select(DailyActivity.id).where(
-                    DailyActivity.collection_id == collection.id,
-                    DailyActivity.source_key == row["source_key"],
-                )
-            )
-            if exists is None:
-                db.add(
-                    DailyActivity(
-                        collection_id=collection.id,
-                        activity_date=date.fromisoformat(row["activity_date"]),
-                        origin="legacy",
-                        source_key=row["source_key"],
-                        reviews=row["reviews"],
-                        new_cards=row["new_cards"],
-                    )
-                )
-                inserted += 1
-        report["activities"]["inserted"] = inserted
+        else:
+            report["already_imported"] = True
+        # Everything below is incremental: it works on the first run too, and is
+        # the only path that applies account status, invites, settings and
+        # daily activity on later snapshots.
+        counts = apply_plan(db, plan, data)
+        counts.update(sync_content(db, data, source))
+        report["counts"].update(counts)
+        report["activities"]["inserted"] = counts["activities_inserted"]
         if snapshot_checksum(data) != before:
             raise DomainError(
                 409, "SNAPSHOT_CHANGED", "The migration source changed during apply."
             )
+        # Record the new high-water mark so a later run can tell what it saw.
+        ledger = db.get(LegacyImport, source)
+        if ledger is not None:
+            ledger.report = {
+                **ledger.report,
+                "reconciled_checksum": before,
+                "reconciled_high_water": plan.high_water,
+                "reconciled_counts": report["counts"],
+            }
         report["applied"] = True
     return report
+
+
+def apply_plan(db, plan, data):
+    """Apply the non-content plan items; safe to rerun with the same input."""
+    counts = {
+        "users_created": 0,
+        "users_updated": 0,
+        "invitations_created": 0,
+        "invitations_updated": 0,
+        "settings_applied": 0,
+        "activities_inserted": 0,
+        "deck_renames_preserved": len(plan.deck_updates),
+        "notes_created": 0,
+        "notes_kept": len(plan.notes),
+        "decks_renamed": 0,
+        "notes_updated": 0,
+        "notes_withdrawn": 0,
+        "decks_withdrawn": 0,
+    }
+    by_id = {row["id"]: row for row in data.get("users", [])}
+    for entry in plan.users:
+        if entry["action"] == "create":
+            continue  # Created by the first-import path, keyed by ledger mapping.
+        user = db.get(User, UUID(entry["user_id"]))
+        if user is None:
+            continue
+        if user.disabled != entry["disabled"]:
+            user.disabled = entry["disabled"]
+            if user.disabled:
+                db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
+            counts["users_updated"] += 1
+    for code, values in sorted(plan.invitations.items()):
+        invite = db.scalar(
+            select(InvitationCode).where(InvitationCode.code == code).with_for_update()
+        )
+        if invite is None:
+            invite = InvitationCode(
+                code=code,
+                max_uses=values["max_uses"],
+                used_count=values["used_count"],
+            )
+            db.add(invite)
+            counts["invitations_created"] += 1
+        else:
+            if values["used_count"] < invite.used_count:
+                # Usage is monotonic; a lower legacy count never revokes a use.
+                continue
+            changed = (
+                invite.used_count != values["used_count"]
+                or invite.max_uses != values["max_uses"]
+            )
+            invite.used_count = max(invite.used_count, values["used_count"])
+            invite.max_uses = values["max_uses"]
+            if changed:
+                counts["invitations_updated"] += 1
+        invite.disabled_at = utcnow() if values["disabled"] else None
+        if values["expired"] and invite.expires_at is None:
+            invite.expires_at = utcnow()
+    ledger = db.get(LegacyImport, plan.source)
+    mapping = (ledger.report or {}).get("user_mapping", {}) if ledger else {}
+    for entry in plan.settings:
+        user_id = mapping.get(entry["legacy_user_id"])
+        if not user_id:
+            continue
+        collection = db.scalar(
+            select(Collection)
+            .where(Collection.owner_user_id == UUID(user_id))
+            .with_for_update()
+        )
+        if collection is None:
+            continue
+        collection.scheduling_config = {
+            **(collection.scheduling_config or {}),
+            "desired_retention": entry["desired_retention"],
+            "learning_steps": entry["learning_steps"],
+            "relearning_steps": entry["relearning_steps"],
+            "maximum_review_interval": entry["maximum_review_interval"],
+        }
+        counts["settings_applied"] += 1
+    for row in plan.activities:
+        user_id = mapping.get(str(row["legacy_user_id"]))
+        if not user_id:
+            continue
+        collection = db.scalar(
+            select(Collection).where(Collection.owner_user_id == UUID(user_id))
+        )
+        if collection is None:
+            continue
+        exists = db.scalar(
+            select(DailyActivity.id).where(
+                DailyActivity.collection_id == collection.id,
+                DailyActivity.source_key == row["source_key"],
+            )
+        )
+        if exists is None:
+            db.add(
+                DailyActivity(
+                    collection_id=collection.id,
+                    activity_date=date.fromisoformat(row["activity_date"]),
+                    origin="legacy",
+                    source_key=row["source_key"],
+                    reviews=row["reviews"],
+                    new_cards=row["new_cards"],
+                )
+            )
+            counts["activities_inserted"] += 1
+    db.flush()
+    _ = by_id
+    return counts
+
+
+def edited_since_import(row, imported_at):
+    """A row touched after the import was changed by the learner, not the source."""
+    if imported_at is None:
+        return False
+    updated = getattr(row, "updated_at", None)
+    return updated is not None and updated > imported_at
+
+
+def sync_content(db, data, source):
+    """Reconcile imported Deck/Note content against the current snapshot.
+
+    Deletion rules: a legacy row present in core but absent from the snapshot is
+    *withdrawn*, not hard-deleted — Cards go away so it stops appearing in study
+    queues, while schedules, Attempts and the import ledger stay for audit.
+    Conflict rules: a row whose core revision moved past the imported one was
+    edited by the learner, so the source never overwrites it.
+    """
+    counts = {
+        "decks_renamed": 0,
+        "decks_withdrawn": 0,
+        "notes_updated": 0,
+        "notes_withdrawn": 0,
+    }
+    snapshot_decks = {str(row["id"]): row for row in data.get("decks", [])}
+    snapshot_notes = {str(row["id"]): row for row in data.get("cards", [])}
+    imported_decks = list(
+        db.scalars(
+            select(Deck).where(
+                Deck.imported.is_(True),
+                Deck.source_metadata["source"].astext == source,
+            )
+        )
+    )
+    ledger = db.get(LegacyImport, source)
+    imported_at = ledger.imported_at if ledger else None
+    for deck in imported_decks:
+        legacy_id = (deck.source_metadata or {}).get("legacy_id")
+        if legacy_id not in snapshot_decks:
+            for card in db.scalars(select(Card).where(Card.deck_id == deck.id)):
+                db.delete(card)
+            deck.in_my_courses = False
+            counts["decks_withdrawn"] += 1
+            continue
+        row = snapshot_decks[legacy_id]
+        if deck.name != row["title"] and not edited_since_import(deck, imported_at):
+            deck.name = row["title"]
+            counts["decks_renamed"] += 1
+    imported_notes = list(
+        db.scalars(
+            select(Note).where(
+                Note.imported.is_(True),
+                Note.source_metadata["source"].astext == source,
+            )
+        )
+    )
+    for note in imported_notes:
+        metadata = note.source_metadata or {}
+        legacy_id = metadata.get("legacy_id")
+        if legacy_id not in snapshot_notes:
+            for card in db.scalars(select(Card).where(Card.note_id == note.id)):
+                db.delete(card)
+            note.fields = {}
+            note.revision += 1
+            counts["notes_withdrawn"] += 1
+            continue
+        row = snapshot_notes[legacy_id]
+        if edited_since_import(note, imported_at):
+            continue
+        fields = {"english": row.get("front_text"), "chinese": row.get("back_text")}
+        changed = {
+            key: value
+            for key, value in fields.items()
+            if value is not None and note.fields.get(key) != value
+        }
+        if changed:
+            note.fields = {**note.fields, **changed}
+            note.revision += 1
+            counts["notes_updated"] += 1
+    db.flush()
+    return counts
 
 
 def verify(db, data, source):
@@ -465,6 +646,13 @@ def verify(db, data, source):
         },
         "media": {
             "source": len({row["audio_path"] for row in data.get("cards", []) if row.get("audio_path")}),
+            "assets": db.scalar(select(func.count()).select_from(MediaAsset)),
+            "library_shared": db.scalar(
+                select(func.count())
+                .select_from(MediaAsset)
+                .where(MediaAsset.scope == "library_shared")
+            ),
+            "references": db.scalar(select(func.count()).select_from(MediaReference)),
         },
         "daily_activity": {
             "attributable": len(activities),
@@ -484,7 +672,15 @@ def verify(db, data, source):
             checks[entity]["imported"] == checks[entity]["per_destination"]
             and checks[entity]["distinct_legacy_ids"] == checks[entity]["source"]
         )
-    checks["media"]["replicated"] = True
+    checks["media"]["missing_assets"] = (
+        0
+        if ledger is None
+        else max(0, checks["media"]["source"] - checks["media"]["library_shared"])
+    )
+    # A source media item is accounted for only when core holds a shared asset
+    # for it; assets without references are a normal state for imported Notes
+    # whose fields were cleared, so the reference count is reported, not gated.
+    checks["media"]["replicated"] = checks["media"]["missing_assets"] == 0
     checks["daily_activity"]["accounted"] = (
         checks["daily_activity"]["archived_review_rows"]
         == sum(row["reviews"] for row in activities) + rejected

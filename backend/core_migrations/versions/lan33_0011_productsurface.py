@@ -68,10 +68,32 @@ def upgrade():
     )
     # Existing imported rows are backfilled from the identifiers written by the
     # one-shot importer, so runtime code can stop parsing `deck_guid`/`guid`.
+    # The provenance columns must be filled too: lookups read `source_metadata`,
+    # so a flag-only backfill would hide every pre-migration row.
     op.execute(
-        "UPDATE decks SET imported = true WHERE deck_guid LIKE 'legacy:%'"
+        """
+        UPDATE decks
+        SET imported = true,
+            source_metadata = jsonb_build_object(
+                'kind', 'deck',
+                'source', split_part(deck_guid, ':', 2),
+                'legacy_id', split_part(deck_guid, ':', 4)
+            )
+        WHERE deck_guid LIKE 'legacy:%'
+        """
     )
-    op.execute("UPDATE notes SET imported = true WHERE guid LIKE 'legacy:%'")
+    op.execute(
+        """
+        UPDATE notes
+        SET imported = true,
+            source_metadata = jsonb_build_object(
+                'kind', 'card',
+                'source', split_part(guid, ':', 2),
+                'legacy_id', split_part(guid, ':', 4)
+            )
+        WHERE guid LIKE 'legacy:%'
+        """
+    )
     op.create_table(
         "daily_activities",
         sa.Column("id", sa.Uuid(), primary_key=True),
