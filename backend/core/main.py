@@ -349,7 +349,7 @@ def decks(
         )
     )
     stats = deck_statistics(service.db, service.collection, all_decks)
-    return {"decks": deck_rows(service, rows, stats)}
+    return {"decks": deck_rows(service, rows, stats, all_decks)}
 
 
 @app.post("/api/v1/decks", status_code=201)

@@ -91,9 +91,9 @@ def deck_ancestry(deck, by_id):
     return list(reversed(chain))
 
 
-def deck_rows(service, decks, stats):
+def deck_rows(service, decks, stats, all_decks=None):
     """Flat Deck list carrying what Library and My Courses both need."""
-    by_id = {deck.id: deck for deck in decks}
+    by_id = {deck.id: deck for deck in (all_decks if all_decks is not None else decks)}
     return [
         {
             **service.deck_data(deck),

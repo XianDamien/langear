@@ -28,6 +28,20 @@ def test_deck_list_includes_hierarchy_membership_and_statistics(client, account)
     assert by_id[child]["path"] == [root, child]
 
 
+def test_paginated_deck_keeps_ancestors_outside_the_page(client, account):
+    root = account["deck_id"]
+    child = client.post(
+        "/api/v1/decks", json={"name": "Lesson", "parent_id": root}
+    ).json()["id"]
+    all_ids = [row["id"] for row in client.get("/api/v1/decks").json()["decks"]]
+    response = client.get(
+        "/api/v1/decks", params={"limit": 1, "offset": all_ids.index(child)}
+    )
+    assert response.status_code == 200
+    assert response.json()["decks"][0]["path"] == [root, child]
+    assert response.json()["decks"][0]["depth"] == 1
+
+
 def test_deck_tree_reports_subtree_statistics_and_membership(client, account):
     root = account["deck_id"]
     child = client.post("/api/v1/decks", json={"name": "Lesson", "parent_id": root}).json()["id"]
