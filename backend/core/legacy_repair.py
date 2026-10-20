@@ -18,7 +18,7 @@ def repair_lesson_order(db, source, deck_id):
     if db.get(LegacyImport, source) is None:
         raise ValueError("Import source not found")
     deck = db.get(Deck, deck_id)
-    if deck is None or not deck.deck_guid.startswith(f"legacy:{source}:deck:"):
+    if deck is None or not deck.imported or (deck.source_metadata or {}).get("source") != source:
         raise ValueError("Imported Lesson not found")
     collection = db.scalar(select(Collection).where(Collection.id == deck.collection_id).with_for_update())
     decks = {d.id: d for d in db.scalars(select(Deck).where(
@@ -47,7 +47,8 @@ def repair(db, source, selection_snapshot=None):
         if collection is None:
             continue
         cards = db.scalars(select(Card).join(Note, Card.note_id == Note.id).where(
-            Card.collection_id == collection.id, Note.guid.startswith(f"legacy:{source}:card:"),
+            Card.collection_id == collection.id, Note.imported.is_(True),
+            Note.source_metadata["source"].astext == source,
             Card.schedule_revision == 1, Card.last_reviewed_at.is_not(None),
         ).with_for_update(of=Card))
         for card in cards:
@@ -63,7 +64,8 @@ def repair(db, source, selection_snapshot=None):
             card.schedule_revision += 1
             report["memory_cards"] += 1
         for deck in db.scalars(select(Deck).where(
-            Deck.collection_id == collection.id, Deck.deck_guid.startswith(f"legacy:{source}:deck:")
+            Deck.collection_id == collection.id, Deck.imported.is_(True),
+            Deck.source_metadata["source"].astext == source,
         )):
             config = deck.scheduling_config
             if config.get("legacy_selection_user_updated"):
@@ -75,7 +77,10 @@ def repair(db, source, selection_snapshot=None):
             data = selection_snapshot if selection_snapshot is not None else ledger.archive
             if config.get("legacy_selection_snapshot") == selection_digest(data, old_user):
                 continue
-            initialize_selection(db, collection, deck, source, old_user, int(deck.deck_guid.rsplit(":", 1)[1]), data)
+            legacy_id = (deck.source_metadata or {}).get("legacy_id")
+            if legacy_id is None:
+                continue
+            initialize_selection(db, collection, deck, source, old_user, int(legacy_id), data)
             report["selection_decks"] += 1
     db.flush()
     return report

@@ -119,7 +119,9 @@ def legacy_lesson(collection: Identity, lesson_id: int = ApiPath(gt=0)):
     with Session(get_engine()) as db:
         deck = db.scalar(select(Deck).where(
             Deck.collection_id == collection.id,
-            Deck.deck_guid == f"legacy:{source}:deck:{lesson_id}",
+            Deck.imported.is_(True),
+            Deck.source_metadata["source"].astext == source,
+            Deck.source_metadata["legacy_id"].astext == str(lesson_id),
         )) if source else None
         if deck is None:
             raise DomainError(404, "LEGACY_LESSON_NOT_IMPORTED", "This lesson has not been migrated.")

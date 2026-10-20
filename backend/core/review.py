@@ -196,7 +196,7 @@ class ReviewService(ContentService):
         templates = scope.get("card_template_keys")
         imported = scope.get("exclude_imported") and self.repo.get(
             Note, card.note_id
-        ).guid.startswith("legacy:")
+        ).imported
         if card.deck_id not in ids or (templates and template.key not in templates) or imported:
             raise DomainError(
                 409, "PENDING_REVIEW_OUTSIDE_SCOPE",
@@ -227,7 +227,7 @@ class ReviewService(ContentService):
             Card.collection_id == self.collection.id, Card.deck_id.in_(ids)
         )
         if scope.get("exclude_imported"):
-            query = query.where(~Note.guid.startswith("legacy:"))
+            query = query.where(~Note.imported)
         if scope.get("card_template_keys"):
             query = query.where(CardTemplate.key.in_(scope["card_template_keys"]))
         cards = []
@@ -789,7 +789,7 @@ class ReviewService(ContentService):
             .join(Note, Card.note_id == Note.id)
             .join(CardTemplate, Card.card_template_id == CardTemplate.id)
             .where(Card.collection_id == self.collection.id,
-                   Card.deck_id.in_(cards_by_deck), ~Note.guid.startswith("legacy:"))
+                   Card.deck_id.in_(cards_by_deck), ~Note.imported)
         )
         for card, fields, required in rows:
             if self.card_selected(card):

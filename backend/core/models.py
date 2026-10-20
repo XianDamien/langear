@@ -1,12 +1,13 @@
 """PostgreSQL content baseline; all ownership edges are composite foreign keys."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID
 from uuid6 import uuid7
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -41,14 +42,39 @@ class Entity:
     )
 
 
+class InvitationCode(Entity, Base):
+    """Registration invite; the usage cap is enforced by the database."""
+
+    __tablename__ = "invitation_codes"
+    code: Mapped[str] = mapped_column(String(64), unique=True)
+    note: Mapped[str | None] = mapped_column(String(255))
+    max_uses: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    used_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "max_uses > 0 AND used_count >= 0 AND used_count <= max_uses",
+            name="ck_invitation_usage",
+        ),
+    )
+
+
 class User(Entity, Base):
     __tablename__ = "users"
     email: Mapped[str | None] = mapped_column(String(254), unique=True)
     username: Mapped[str | None] = mapped_column(String(100), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    invitation_code_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("invitation_codes.id", ondelete="SET NULL")
+    )
     __table_args__ = (
         CheckConstraint("email = lower(trim(email))", name="ck_user_email_normalized"),
+        CheckConstraint(
+            "username IS NULL OR username = lower(trim(username))",
+            name="ck_user_username_normalized",
+        ),
     )
 
 
@@ -78,6 +104,8 @@ class Collection(Entity, Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     schema_version: Mapped[int] = mapped_column(Integer, default=1)
     next_new_position: Mapped[int] = mapped_column(BigInteger, default=0)
+    # Core deck UUIDs that the global Study Session starts from by default.
+    default_deck_scope: Mapped[list] = mapped_column(JSONB, default=list)
     scheduling_config: Mapped[dict] = mapped_column(
         JSONB, default=lambda: dict(DEFAULT_SCHEDULING)
     )
@@ -168,6 +196,11 @@ class Deck(Entity, Scoped, Base):
     name: Mapped[str] = mapped_column(String(200))
     deck_guid: Mapped[str] = mapped_column(String(100), default=lambda: str(uuid7()))
     kind: Mapped[str] = mapped_column(String(16), default="standard")
+    # Provenance of imported or generated content. Runtime code reads the
+    # `imported` flag and `source_metadata`; it never parses identifiers out of
+    # `deck_guid`.
+    imported: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    source_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
     parent_id: Mapped[UUID | None] = mapped_column(Uuid)
     parent_kind: Mapped[str] = mapped_column(String(16), default="standard")
     scheduling_config: Mapped[dict] = mapped_column(JSONB, default=dict)
@@ -213,6 +246,8 @@ class Note(Entity, Scoped, Base):
     fields: Mapped[dict] = mapped_column(JSONB)
     tags: Mapped[list] = mapped_column(JSONB, default=list)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    imported: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    source_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
     __table_args__ = (
         UniqueConstraint("collection_id", "id"),
         UniqueConstraint("collection_id", "id", "note_type_id"),
@@ -410,6 +445,31 @@ class Attempt(Entity, Scoped, Base):
             "collection_id",
             unique=True,
             postgresql_where=text("rating IS NULL"),
+        ),
+    )
+
+
+class DailyActivity(Entity, Scoped, Base):
+    """Imported, user-attributable daily history; live days come from Attempts.
+
+    A legacy aggregate and a live core day never both contribute: the dashboard
+    prefers counted Attempts for a day and only falls back to imported history.
+    """
+
+    __tablename__ = "daily_activities"
+    activity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    origin: Mapped[str] = mapped_column(String(16), default="legacy")
+    source_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    reviews: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    new_cards: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("collection_id", "source_key"),
+        CheckConstraint("origin IN ('legacy','core')", name="ck_daily_activity_origin"),
+        CheckConstraint(
+            "reviews >= 0 AND new_cards >= 0", name="ck_daily_activity_counters"
+        ),
+        Index(
+            "ix_daily_activity_date", "collection_id", "activity_date"
         ),
     )
 

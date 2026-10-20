@@ -1,7 +1,7 @@
 from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Body(BaseModel):
@@ -23,13 +23,18 @@ class Login(Body):
 
 
 class Credentials(Body):
-    email: str = Field(min_length=3, max_length=254)
+    email: str | None = Field(default=None, min_length=3, max_length=254)
+    username: str | None = Field(default=None, min_length=3, max_length=50)
     password: str = Field(min_length=12, max_length=128)
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value):
+        if value is None:
+            return None
         value = value.strip().lower()
+        if not value:
+            return None
         if (
             value.count("@") != 1
             or any(c.isspace() for c in value)
@@ -39,9 +44,28 @@ class Credentials(Body):
             raise ValueError("Invalid email address")
         return value
 
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value):
+        if value is None:
+            return None
+        value = value.strip().lower()
+        if not value:
+            return None
+        if not all(c.isalnum() or c in "._-" for c in value):
+            raise ValueError("Username may contain letters, digits, dot, dash and underscore")
+        return value
+
+    @model_validator(mode="after")
+    def require_identifier(self):
+        if self.email is None and self.username is None:
+            raise ValueError("An email or username is required")
+        return self
+
 
 class Register(Credentials):
     timezone: str = "Asia/Shanghai"
+    invitation_code: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("timezone")
     @classmethod
@@ -51,6 +75,11 @@ class Register(Credentials):
         except (ZoneInfoNotFoundError, ValueError):
             raise ValueError("An IANA timezone is required")
         return value
+
+    @field_validator("invitation_code")
+    @classmethod
+    def normalize_code(cls, value):
+        return value.strip() if value is not None else None
 
 
 class DeckCreate(Body):

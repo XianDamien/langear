@@ -173,6 +173,7 @@ class ContentService:
             "deck_guid": deck.deck_guid,
             "in_my_courses": deck.in_my_courses,
             "scheduling_config": deck.scheduling_config,
+            "source_metadata": deck.source_metadata or {},
         }
 
     def create_deck(self, body):

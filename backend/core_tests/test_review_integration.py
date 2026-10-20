@@ -271,7 +271,7 @@ def test_batched_deck_counts_match_individual_queue_rules(client, account, engin
             card.new_position = None
             card.due_at = learning_time+timedelta(minutes=minutes)
         db.get(Note, by_deck[ids[3]][0].note_id).fields = {'meaning': '词'}
-        db.get(Note, by_deck[ids[3]][1].note_id).guid = 'legacy:count-test:card:1'
+        db.get(Note, by_deck[ids[3]][1].note_id).imported = True
         deck = db.get(Deck, UUID(ids[4]))
         deck.scheduling_config = {'study_card_ids': []}
     with Session(engine) as db, db.begin():

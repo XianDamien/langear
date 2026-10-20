@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from core.config import get_settings
-from core.models import LegacyImport, LoginSession
+from core.models import LegacyImport, LoginSession, Note
 
 
 def configure_bridge(monkeypatch, engine, account):
@@ -93,7 +93,8 @@ def test_invalid_or_unmapped_identity_cannot_open_session(
         assert db.scalar(select(func.count()).select_from(LoginSession)) == 1
 
 
-def test_incremental_content_filter_and_collection_isolation(client, account):
+def test_incremental_content_filter_and_collection_isolation(client, account, engine):
+    created = []
     for guid in ["legacy:fixture:1", "user-authored"]:
         response = client.post(
             "/api/v1/notes",
@@ -105,6 +106,12 @@ def test_incremental_content_filter_and_collection_isolation(client, account):
             },
         )
         assert response.status_code == 201
+        created.append(response.json()["id"])
+    # Import provenance is an explicit flag now, so a client-supplied GUID does
+    # not hide user content from the editor.
+    assert len(client.get("/api/v1/cards", params={"exclude_imported": True}).json()["cards"]) == 4
+    with Session(engine) as db, db.begin():
+        db.get(Note, UUID(created[0])).imported = True
     assert len(client.get("/api/v1/cards").json()["cards"]) == 4
     result = client.get(
         "/api/v1/cards",

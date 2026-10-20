@@ -7,9 +7,31 @@ from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
 
 from core.config import get_settings
-from core.models import Attempt, Card, CardTemplate, Deck, MediaAsset, ProcessingOutbox, utcnow
+from core.models import Attempt, Card, CardTemplate, Deck, MediaAsset, Note, ProcessingOutbox, utcnow
 from core import processing
 from core_tests.test_review import make_note, queue, next_card, flip, rate
+
+
+def imported_lesson(engine, account, legacy_id="42"):
+    with Session(engine) as db, db.begin():
+        deck = db.get(Deck, UUID(account["deck_id"]))
+        deck.imported = True
+        deck.source_metadata = {
+            "kind": "deck",
+            "source": "fixture",
+            "legacy_id": str(legacy_id),
+        }
+
+
+def imported_note(engine, note_id, legacy_id):
+    with Session(engine) as db, db.begin():
+        note = db.get(Note, UUID(note_id))
+        note.imported = True
+        note.source_metadata = {
+            "kind": "card",
+            "source": "fixture",
+            "legacy_id": str(legacy_id),
+        }
 
 
 def recording(engine, account, ready=False):
@@ -22,8 +44,7 @@ def recording(engine, account, ready=False):
 
 def test_legacy_entry_uses_current_collection_and_configured_source(client, account, engine, monkeypatch):
     monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
-    with Session(engine) as db, db.begin():
-        db.get(Deck, UUID(account["deck_id"])).deck_guid = "legacy:fixture:deck:42"
+    imported_lesson(engine, account)
     assert client.get("/api/v1/review/legacy-lessons/42").json() == {"deck_id": account["deck_id"]}
     assert client.get("/api/v1/review/legacy-lessons/43").status_code == 404
     assert client.get("/api/v1/review/legacy-lessons/0").status_code == 422
@@ -101,21 +122,29 @@ def test_worker_rolls_back_abandoned_job_for_restart(client, account, engine, mo
 
 
 def test_realtime_transcript_is_bound_to_collection_card_and_ready_stream(client, account, engine, monkeypatch):
-    # Reuse the production transient store without loading runtime credentials.
-    import sys
-    from types import SimpleNamespace
-    store = Mock()
-    session = SimpleNamespace(lesson_id=UUID(account["collection"]["id"]).int, card_id=0, status="ready", final_text="Hello")
-    store.get_session.return_value = session
-    monkeypatch.setitem(sys.modules, "app.services.realtime_session_service", SimpleNamespace(get_realtime_session_store=lambda: store))
+    from core.integrations.realtime_session import get_store
+
+    store = get_store()
+    store.clear()
+    owner = UUID(account["collection"]["id"]).int
     asset = recording(engine, account)
     make_note(client, account, {"english": "Hello", "reference_audio": recording(engine, account, ready=True)}, "sentence_retelling")
     q = queue(client, account)
     current = next_card(client, q)
-    data = {"type": "audio", "temporary_media_asset_id": asset, "realtime_session_id": "stream"}
+    foreign = store.create_session(deck_id=UUID(account["deck_id"]), card_id=uuid4(), owner=owner, model="test")
+    store.mark_ready(foreign.id, "Hello")
+    data = {"type": "audio", "temporary_media_asset_id": asset, "realtime_session_id": foreign.id}
     assert flip(client, q, current, data).status_code == 422
-    session.card_id = UUID(current["card"]["id"]).int
-    saved = flip(client, q, current, data).json()
+    stream = store.create_session(
+        deck_id=UUID(account["deck_id"]),
+        card_id=UUID(current["card"]["id"]),
+        owner=owner,
+        model="test",
+    )
+    store.mark_ready(stream.id, "Hello")
+    saved = flip(
+        client, q, current, {**data, "realtime_session_id": stream.id}
+    ).json()
     assert saved["attempt"]["asr_result"]["text"] == "Hello"
     assert saved["attempt"]["asr_status"] == "succeeded"
     with Session(engine) as db:
@@ -148,36 +177,37 @@ def test_worker_skips_a_job_owned_by_another_transaction(client, account, engine
 
 
 def test_review_socket_reuses_bridge_only_after_card_ownership_check(client, account, engine, monkeypatch):
-    import sys
-    from types import SimpleNamespace
-    calls = []
+    from core.config import get_settings
 
-    async def bridge(websocket, lesson_id, card_id):
-        calls.append((lesson_id, card_id))
-        await websocket.accept()
-        await websocket.send_json({"type": "session.created"})
-        await websocket.close()
-
-    monkeypatch.setitem(sys.modules, "app.routers.realtime", SimpleNamespace(realtime_asr_ws=bridge))
+    monkeypatch.setattr(get_settings(), "realtime_asr_provider", "mock")
     make_note(client, account, {"english": "Hello", "reference_audio": recording(engine, account, ready=True)}, "sentence_retelling")
     card = next_card(client, queue(client, account))["card"]["id"]
     url = f"/api/v1/review/realtime/asr/ws?card_id={card}"
     with client.websocket_connect("wss://testserver" + url, headers={"Origin": "http://localhost:3002"}) as socket:
-        assert socket.receive_json()["type"] == "session.created"
-    assert calls == [(UUID(account["collection"]["id"]).int, UUID(card).int)]
+        created = socket.receive_json()
+        assert created["type"] == "session.created"
+        assert created["realtime_session_id"]
+        socket.send_json({"type": "audio.append", "chunk_base64": "aGVsbG8="})
+        assert socket.receive_json()["type"] == "transcript.partial"
+        assert socket.receive_json()["type"] == "conversation.item.input_audio_transcription.text"
+        socket.send_json({"type": "audio.commit"})
+        seen = set()
+        while "transcript.final" not in seen:
+            seen.add(socket.receive_json()["type"])
+        socket.send_json({"type": "session.end"})
+        types = set()
+        while "session.closed" not in types:
+            types.add(socket.receive_json()["type"])
     client.post("/api/v1/auth/register", json={"email": "foreign@example.com", "password": "a strong other password"})
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("wss://testserver" + url, headers={"Origin": "http://localhost:3002"}):
             pass
-    assert len(calls) == 1
 
 
 def test_expired_realtime_stream_recovers_from_the_owned_audio(client, account, engine, monkeypatch):
-    import sys
-    from types import SimpleNamespace
-    store = Mock()
-    store.get_session.return_value = None
-    monkeypatch.setitem(sys.modules, "app.services.realtime_session_service", SimpleNamespace(get_realtime_session_store=lambda: store))
+    from core.integrations.realtime_session import get_store
+
+    get_store().clear()
     asset = recording(engine, account)
     make_note(client, account, {"english": "Hello", "reference_audio": recording(engine, account, ready=True)}, "sentence_retelling")
     q = queue(client, account)
@@ -229,10 +259,9 @@ def test_legacy_selection_maps_notes_to_all_templates_and_restricts_review(clien
     monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
     first = make_note(client, account, {"english": "One", "chinese": "一"}, "sentence_translation")
     second = make_note(client, account, {"english": "Two", "chinese": "二"}, "sentence_translation")
-    with Session(engine) as db, db.begin():
-        db.get(Deck, UUID(account["deck_id"])).deck_guid = "legacy:fixture:deck:42"
-        db.get(Note, UUID(first["id"])).guid = "legacy:fixture:card:101"
-        db.get(Note, UUID(second["id"])).guid = "legacy:fixture:card:102"
+    imported_lesson(engine, account)
+    imported_note(engine, first["id"], 101)
+    imported_note(engine, second["id"], 102)
     path = "/api/v1/review/legacy-lessons/42/study-selection"
     assert client.get(path).json() == {"card_ids": None}
     saved = client.put(path, json={"card_ids": [101]})
@@ -321,8 +350,7 @@ def test_asr_backoff_blocks_ai_until_transcript_resolves(client, account, engine
 def test_legacy_lesson_membership_is_owned_and_persisted_in_core(client, account, engine, monkeypatch):
     monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
     make_note(client, account)
-    with Session(engine) as db, db.begin():
-        db.get(Deck, UUID(account["deck_id"])).deck_guid = "legacy:fixture:deck:42"
+    imported_lesson(engine, account)
     path = "/api/v1/review/legacy-lessons"
     assert client.put(path, json={"lesson_ids": []}).json() == {"lesson_ids": []}
     assert client.put(path, json={"lesson_ids": [42]}).json() == {"lesson_ids": [42]}

@@ -1,0 +1,34 @@
+{
+  "prompt_version": "1.3.0",
+  "description": "Gemini single feedback prompt for reference-audio vs user-audio speaking evaluation",
+  "owner": "langear@lan",
+  "updated_at": "2026-10-20T15:10:00+08:00",
+  "tags": ["gemini", "single-feedback", "audio", "prompt-v2-structure"],
+  "files": {
+    "system": "system.md",
+    "user": "user.md"
+  },
+  "notes": "Adopts the Quickfire-style structured prompt layout with separate system and user sections. This is the only single_feedback prompt copy: the legacy unversioned prompts/single_feedback/ duplicate was merged into v1 and removed on 2026-10-15, so GEMINI_PROMPT_VERSION=v1 now loads everything.",
+  "changelog": [
+    {
+      "version": "1.3.0",
+      "date": "2026-10-20",
+      "changes": "Restore the three-dimension evaluation as a first-class output: pronunciation / completeness / fluency each carry one sentence and stay scoped to their own dimension, and every suggestion now declares a `dimension` so the UI can attach advice to the matching evaluation. Also fixes the issues schema example (empty array) and the numbering gap in user.md."
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-10-20",
+      "changes": "Make pronunciation feedback conservative around word stress and accent variants; return only concise actionable suggestions and keep issues empty to avoid duplicated problem/advice lists."
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-10-15",
+      "changes": "Require all feedback fields (pronunciation / completeness / fluency / issues.problem / suggestions.text) to be written in Chinese, while transcription_text and target_word stay in original English; Chinese-annotate the JSON schema so English placeholders no longer leak into feedback. Also merges the previously inactive prompts/single_feedback/ revision: multimodal role wording, Gemini-owned display transcription, clarified issue-point timestamp semantics, and a hard ban on word-level / segment-level transcription timestamps."
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-03-20",
+      "changes": "Migrate from single txt prompt to structured system.md + user.md + metadata.json layout."
+    }
+  ]
+}

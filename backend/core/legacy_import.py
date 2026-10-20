@@ -77,9 +77,10 @@ def apply_imported_selection(db, collection, deck, source, selected):
     if selected is None:
         deck.scheduling_config = {**deck.scheduling_config, "study_card_ids": None}
         return
-    guids = [f"legacy:{source}:card:{value}" for value in selected]
     ids = db.scalars(select(Card.id).join(Note, Card.note_id == Note.id).where(
-        Card.collection_id == collection.id, Card.deck_id == deck.id, Note.guid.in_(guids),
+        Card.collection_id == collection.id, Card.deck_id == deck.id,
+        Note.imported.is_(True),
+        Note.source_metadata["legacy_id"].astext.in_([str(value) for value in selected]),
     ))
     deck.scheduling_config = {**deck.scheduling_config, "study_card_ids": sorted(str(value) for value in ids)}
     deck.in_my_courses = selected != []
@@ -261,6 +262,13 @@ def import_snapshot(db, data, source):
                 collection_id=collection.id,
                 name=row["title"],
                 deck_guid=f"legacy:{source}:deck:{row['id']}",
+                imported=True,
+                source_metadata={
+                    "kind": "deck",
+                    "source": source,
+                    "legacy_id": str(row["id"]),
+                    "level_index": row.get("level_index"),
+                },
                 scheduling_config=dict(LESSON_NEW_CARD_ORDER),
                 parent_id=decks[row["parent_id"]].id
                 if row["parent_id"] is not None
@@ -282,6 +290,13 @@ def import_snapshot(db, data, source):
             note = Note(
                 collection_id=collection.id,
                 guid=f"legacy:{source}:card:{row['id']}",
+                imported=True,
+                source_metadata={
+                    "kind": "card",
+                    "source": source,
+                    "legacy_id": str(row["id"]),
+                    "legacy_deck_id": str(row["deck_id"]),
+                },
                 note_type_id=nt.id,
                 fields=cleaned,
                 tags=[],

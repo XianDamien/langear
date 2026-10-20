@@ -27,13 +27,13 @@ HEARTBEAT_MAX_AGE = 600
 
 
 def transcribe(url):
-    from app.adapters.asr_adapter import ASRAdapter
-    return ASRAdapter().transcribe(url)
+    from core.integrations.asr import transcribe as run
+    return run(url)
 
 
 def feedback_provider():
-    from app.adapters.ai_feedback_adapter import create_ai_feedback_provider
-    return create_ai_feedback_provider()
+    from core.integrations.feedback import create_provider
+    return create_provider()
 
 
 def audio_url(db, asset_id, collection_id):

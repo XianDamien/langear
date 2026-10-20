@@ -22,8 +22,9 @@ from core.models import (
     AuthRateLimit,
     Collection,
     Deck,
-    LoginSession,
+    InvitationCode,
     LegacyImport,
+    LoginSession,
     User,
     utcnow,
 )
@@ -122,12 +123,48 @@ def open_session(db, user, request, response):
     return {**public_identity(user, collection), "csrf_token": csrf}
 
 
+def claim_invitation(db, code):
+    """Consume one use atomically; the CHECK constraint is the final guard."""
+    invitation = db.scalar(
+        select(InvitationCode)
+        .where(InvitationCode.code == code)
+        .with_for_update()
+    )
+    now = utcnow()
+    if invitation is None:
+        raise DomainError(422, "INVITATION_INVALID", "Invitation code is invalid.")
+    if invitation.disabled_at is not None:
+        raise DomainError(422, "INVITATION_DISABLED", "Invitation code is disabled.")
+    if invitation.expires_at is not None and invitation.expires_at < now:
+        raise DomainError(422, "INVITATION_EXPIRED", "Invitation code has expired.")
+    if invitation.used_count >= invitation.max_uses:
+        raise DomainError(422, "INVITATION_EXHAUSTED", "Invitation code is used up.")
+    invitation.used_count += 1
+    db.flush()
+    return invitation
+
+
 def register(db, body, request, response):
     require_origin(request)
-    rate_limit(request, "register", body.email)
-    if db.scalar(select(User.id).where(User.username == body.email)):
-        raise DomainError(409, "CONFLICT", "This account identity already exists.")
-    user = User(email=body.email, password_hash=HASHER.hash(body.password))
+    identifier = body.email or body.username
+    rate_limit(request, "register", identifier)
+    if body.email and db.scalar(select(User.id).where(User.email == body.email)):
+        raise DomainError(409, "EMAIL_CONFLICT", "This email is already registered.")
+    if body.username and db.scalar(select(User.id).where(User.username == body.username)):
+        raise DomainError(409, "USERNAME_CONFLICT", "This username is taken.")
+    invitation = None
+    if get_settings().invitation_required:
+        if not body.invitation_code:
+            raise DomainError(
+                422, "INVITATION_REQUIRED", "An invitation code is required."
+            )
+        invitation = claim_invitation(db, body.invitation_code)
+    user = User(
+        email=body.email,
+        username=body.username,
+        password_hash=HASHER.hash(body.password),
+        invitation_code_id=invitation.id if invitation else None,
+    )
     db.add(user)
     db.flush()
     collection = Collection(owner_user_id=user.id, timezone=body.timezone)
@@ -165,6 +202,7 @@ def verify_password(stored_hash, password):
 def login(db, body, request, response):
     require_origin(request)
     rate_limit(request, "login", body.email)
+    # The wire key stays `email`: users may sign in with a username or an email.
     users = list(
         db.scalars(
             select(User).where(
@@ -183,6 +221,17 @@ def login(db, body, request, response):
     ):
         user.password_hash = HASHER.hash(body.password)
     return open_session(db, user, request, response)
+
+
+def disable_user(db, user_id):
+    """Disable an account and revoke every session it still holds."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise DomainError(404, "NOT_FOUND", "Resource not found.")
+    user.disabled = True
+    db.execute(delete(LoginSession).where(LoginSession.user_id == user.id))
+    db.flush()
+    return {"user_id": str(user.id), "disabled": True}
 
 
 def identity(request: Request, db=Depends(get_db, scope="function")):

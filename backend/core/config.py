@@ -32,6 +32,23 @@ class Settings(BaseSettings):
     session_idle_seconds: int = 86400
     confirmation_seconds: int = 600
     auth_limit: int = 20
+    invitation_required: bool = False
+    dashboard_heatmap_days: int = 90
+    dashboard_trend_days: int = 7
+    asr_api_key: SecretStr | None = None
+    asr_model: str = "qwen3-asr-flash"
+    ai_feedback_provider: str = "gemini"
+    ai_feedback_prompt_version: str = "v1"
+    gemini_api_key: SecretStr | None = None
+    gemini_model_id: str = "gemini-3.1-flash-lite-preview"
+    gemini_base_url: str | None = None
+    qwen_omni_api_key: SecretStr | None = None
+    qwen_omni_model_id: str = "qwen3.8-omni-flash"
+    qwen_omni_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    realtime_asr_provider: str = "dashscope"
+    realtime_asr_model: str = "qwen3-asr-flash-realtime"
+    realtime_asr_language: str = "zh"
+    realtime_asr_ws_base_url: str | None = None
 
     @field_validator("database_url")
     @classmethod
