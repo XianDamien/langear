@@ -101,13 +101,31 @@ class BundleTests(unittest.TestCase):
 
     def test_review_overlay_runs_both_apis_and_worker_from_one_image(self):
         for immutable in (True, False):
-            config = overlay(self.manifest['image_id'], self.root, immutable, review=True)
+            config = overlay(self.manifest['image_id'], self.root, immutable, runtime='review')
             self.assertIn('app.release:app', config)
             self.assertIn('review-worker:', config)
             self.assertEqual(config.count(self.manifest['image_id']), 2)
             self.assertIn('core.processing, --healthcheck', config)
             self.assertIn('env/review.env', config)
             self.assertEqual('--reload' in config, not immutable)
+
+    def test_core_overlay_drops_legacy_entry_point_but_keeps_worker(self):
+        for immutable in (True, False):
+            config = overlay(self.manifest['image_id'], self.root, immutable, runtime='core')
+            self.assertIn('core.core_only:app', config)
+            self.assertNotIn('app.release:app', config)
+            self.assertIn('review-worker:', config)
+            self.assertIn('core.processing, --healthcheck', config)
+            self.assertIn('env/review.env', config)
+
+    def test_core_manifest_requires_postgres_core_tests(self):
+        self.manifest.update(schema=2, runtime='core')
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'Missing CI'):
+            verify_bundle(self.root)
+        self.manifest['checks'].append('collection-core-pytest')
+        self.save()
+        self.assertEqual(verify_bundle(self.root)['runtime'], 'core')
 
     def test_review_manifest_requires_postgres_core_tests(self):
         self.manifest.update(schema=2, runtime='review')

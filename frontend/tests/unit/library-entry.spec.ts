@@ -3,23 +3,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => { vi.unstubAllEnvs(); vi.resetModules() })
 
-describe('course-tree application entry', () => {
-  it.each(['development', 'staging', 'production'])('keeps the existing library and content editor in %s', mode => {
+describe('core-only application entry', () => {
+  it.each(['development', 'staging', 'production'])('declares one core API base in %s', mode => {
     const env = loadEnv(mode, process.cwd(), 'VITE_')
-    expect(env.VITE_CONTENT_CORE).toBe('false')
-    expect(env.VITE_LIBRARY_CONTENT_EDITOR).toBe('true')
+    expect(env.VITE_API_BASE_URL).toBe('/api/content/v1')
+    expect(env.VITE_CONTENT_CORE).toBeUndefined()
+    expect(env.VITE_LIBRARY_CONTENT_EDITOR).toBeUndefined()
+    expect(env.VITE_CONTENT_API_BASE_URL).toBeUndefined()
   })
 
-  it.each([
-    { core: 'false', base: '/api/content/v1', expected: '/api/content/v1/dialogue/sessions/session/ws' },
-    { core: 'true', base: '/api/v1', expected: '/api/v1/dialogue/sessions/session/ws' },
-  ])('keeps dialogue transport on the selected review backend ($core)', async ({ core, base, expected }) => {
+  it('keeps dialogue transport on the single core backend', async () => {
     vi.resetModules()
-    vi.stubEnv('VITE_CONTENT_CORE', core)
-    vi.stubEnv('VITE_CONTENT_API_BASE_URL', base)
+    vi.stubEnv('VITE_API_BASE_URL', '/api/content/v1')
     const { dialogueSocketUrl } = await import('@/services/dialogue')
     const url = new URL(dialogueSocketUrl('session'))
-    expect(url.pathname).toBe(expected)
+    expect(url.pathname).toBe('/api/content/v1/dialogue/sessions/session/ws')
     expect(url.protocol).toBe(window.location.protocol === 'https:' ? 'wss:' : 'ws:')
   })
 })

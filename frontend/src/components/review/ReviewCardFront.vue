@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ResourceCard } from '@/services/contentCore'
+import type { ResourceCard } from '@/services/content'
 
 defineProps<{ card: Pick<ResourceCard, 'front' | 'card_template_key'> }>()
 </script>

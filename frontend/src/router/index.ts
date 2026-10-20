@@ -1,8 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { contentCoreEnabled } from '@/services/contentCore'
-import { useCoreAuthStore } from '@/stores/coreAuth'
-import { getUseMockMode } from '@/config/runtimeFlags'
-import { hasAccessToken } from '@/services/authToken'
+import { useAuthStore } from '@/stores/auth'
+import { isUuid } from '@/services/api/settings'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,7 +13,7 @@ const router = createRouter({
     }] : []),
     {
       path: '/',
-      redirect: contentCoreEnabled ? '/library' : '/dashboard',
+      redirect: '/dashboard',
     },
     {
       path: '/login',
@@ -31,7 +29,7 @@ const router = createRouter({
     {
       path: '/library',
       name: 'Library',
-      component: contentCoreEnabled ? () => import('@/views/ResourceLibraryView.vue') : () => import('@/views/LibraryView.vue'),
+      component: () => import('@/views/LibraryView.vue'),
     },
     {
       path: '/my-courses',
@@ -39,10 +37,18 @@ const router = createRouter({
       component: () => import('@/views/MyCoursesView.vue'),
     },
     {
+      // Retired numeric-lesson URL: telemetry only, no ID mapping.
       path: '/study/:lessonId',
       name: 'Study',
       component: () => import('@/views/StudySessionView.vue'),
-      meta: { fullscreen: true },
+      meta: { fullscreen: true, retired: true },
+    },
+    {
+      // Retired numeric-lesson summary URL: telemetry only.
+      path: '/summary/:lessonId',
+      name: 'Summary',
+      component: () => import('@/views/SummaryView.vue'),
+      meta: { retired: true },
     },
     {
       path: '/review/:deckId',
@@ -53,7 +59,10 @@ const router = createRouter({
     {
       path: '/decks/:deckId/settings',
       name: 'DeckSettings',
-      redirect: to => ({ name: 'Settings', query: { deck_id: String(to.params.deckId) } }),
+      redirect: to => ({
+        name: 'Settings',
+        query: isUuid(String(to.params.deckId)) ? { deck_id: String(to.params.deckId) } : {},
+      }),
     },
     {
       path: '/cards/:cardId',
@@ -61,41 +70,41 @@ const router = createRouter({
       component: () => import('@/views/CardDetailView.vue'),
     },
     {
-      path: '/summary/:lessonId',
-      name: 'Summary',
-      component: () => import('@/views/SummaryView.vue'),
+      path: '/dialogue/history',
+      name: 'DialogueHistory',
+      component: () => import('@/views/DialogueHistoryView.vue'),
     },
     {
       path: '/settings',
       name: 'Settings',
       component: () => import('@/views/SettingsView.vue'),
     },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/dashboard',
+    },
   ],
 })
 
 router.beforeEach(async (to) => {
   if (import.meta.env.DEV && to.name === 'DialoguePreview') return true
-  if (getUseMockMode()) return to.name === 'Login' ? { name: 'Dashboard' } : true
-  if (contentCoreEnabled) {
-    const auth = useCoreAuthStore()
-    if (to.name === 'Login') return true
-    try { await auth.check() }
-    catch { return { name: 'Login', query: { redirect: to.fullPath } } }
-    if (!['Library', 'Study', 'DeckReview', 'Settings', 'DeckSettings'].includes(String(to.name))) return { name: 'Library' }
-    return true
-  }
-  if (to.meta.public) {
-    if (to.name === 'Login' && hasAccessToken()) {
-      return { name: 'Dashboard' }
-    }
+
+  const auth = useAuthStore()
+
+  if (to.name === 'Login') {
+    if (await auth.check()) return { name: 'Dashboard' }
     return true
   }
 
-  if (!hasAccessToken()) {
-    return {
-      name: 'Login',
-      query: { redirect: to.fullPath },
-    }
+  if (!(await auth.check())) {
+    return { name: 'Login', query: { redirect: to.fullPath } }
+  }
+
+  if (to.name === 'DeckReview' && !isUuid(String(to.params.deckId))) {
+    return { name: 'MyCourses', query: { notice: 'invalid-deck' } }
+  }
+  if (to.name === 'CardDetail' && !isUuid(String(to.params.cardId))) {
+    return { name: 'MyCourses', query: { notice: 'invalid-card' } }
   }
 
   return true

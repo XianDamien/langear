@@ -5,12 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:content": "vite --mode content",
     "dev:staging": "vite --mode staging",
-    "dev:mock": "sh -c 'vite --mode mock --host \"${HOST:-localhost}\" --port \"${PORT:-3002}\"'",
     "build": "vue-tsc -b && vite build",
     "build:staging": "vue-tsc -b && vite build --mode staging",
-    "build:mock": "vue-tsc -b && vite build --mode mock",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . --ext .ts,.vue",
@@ -18,9 +15,9 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:content": "playwright test --config playwright.content.config.ts",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:review": "playwright test --config playwright.review.config.ts"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

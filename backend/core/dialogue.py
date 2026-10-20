@@ -6,7 +6,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, Request
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from core import auth
 from core.config import get_settings
@@ -163,6 +163,60 @@ def create_session(body: DialogueCreate, context=Depends(service)):
     if existing.deck_id != body.deck_id or set(existing.context['practice_attempt_ids']) != set(map(str, body.attempt_ids)):
         raise DomainError(409, 'DIALOGUE_ENTRY_CONFLICT', 'This entry belongs to another practice round.')
     return session_data(db, existing)
+
+
+@router.get('/sessions')
+def list_sessions(context=Depends(service)):
+    """Collection-scoped dialogue history; never exposes another learner's turns."""
+    db, collection, _ = context
+    rows = db.execute(
+        select(DialogueSession, Deck.name)
+        .join(Deck, Deck.id == DialogueSession.deck_id)
+        .where(DialogueSession.collection_id == collection.id)
+        .order_by(DialogueSession.created_at.desc(), DialogueSession.id.desc())
+    ).all()
+    reviewed = set(
+        db.scalars(
+            select(DialogueReview.session_id).where(
+                DialogueReview.collection_id == collection.id
+            )
+        )
+    )
+    return {
+        'sessions': [
+            {
+                'id': str(session.id),
+                'deck_id': str(session.deck_id),
+                'deck_name': deck_name,
+                'title': (session.scenario or {}).get('title'),
+                'status': session.status,
+                'user_turns': session.user_turns,
+                'created_at': session.created_at.isoformat(),
+                'has_review': session.id in reviewed,
+            }
+            for session, deck_name in rows
+        ]
+    }
+
+
+@router.delete('/sessions/{session_id}', status_code=204)
+def delete_session(session_id: UUID, context=Depends(service)):
+    db, collection, repo = context
+    session = repo.get(DialogueSession, session_id)
+    db.execute(
+        delete(DialogueReview).where(
+            DialogueReview.collection_id == collection.id,
+            DialogueReview.session_id == session.id,
+        )
+    )
+    db.execute(
+        delete(DialogueTurn).where(
+            DialogueTurn.collection_id == collection.id,
+            DialogueTurn.session_id == session.id,
+        )
+    )
+    db.delete(session)
+    db.flush()
 
 
 @router.get('/sessions/{session_id}')

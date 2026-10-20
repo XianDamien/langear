@@ -1,20 +1,27 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useContentDecksStore } from '@/stores/contentDecks'
 import { ElMessage } from 'element-plus'
 import { cardEditorFields } from '@/services/cardEditorFields'
 import RetroButton from '@/components/ui/RetroButton.vue'
-import { fieldLabels, resourceError, templateLabels, type ResourceDeck, type ResourceCard, type ResourceNoteType, type ResourceMedia } from '@/services/contentCore'
+import {
+  createNote,
+  fetchMediaAssets,
+  fetchNoteTypes,
+  fieldLabels,
+  resourceError,
+  templateLabels,
+  type ResourceMedia,
+  type ResourceNoteType,
+} from '@/services/content'
+import { useDecksStore } from '@/stores/decks'
 
-import { contentResources, libraryContent } from '@/services/libraryContent'
-
-const contentDecks = useContentDecksStore()
-const { decks, cards } = storeToRefs(contentDecks)
+const emit = defineEmits<{ created: [] }>()
+const decksStore = useDecksStore()
+const { rows } = storeToRefs(decksStore)
 const cardLoading = ref(false)
 const noteTypes = ref<ResourceNoteType[]>([])
 const media = ref<ResourceMedia[]>([])
-const selectedDeck = ref('')
 const deckDialog = ref(false)
 const cardDialog = ref(false)
 const saving = ref(false)
@@ -29,55 +36,81 @@ const activeTemplate = computed(() => cardTypes.value.find(t => t.key === typeKe
 const activeType = computed(() => noteTypes.value.find(t => t.key === activeTemplate.value?.noteTypeKey))
 const editorFields = computed(() => cardEditorFields(activeType.value?.fields || [], activeTemplate.value))
 const fields = computed(() => drafts[typeKey.value]!)
-const standardDecks = computed(() => decks.value.filter(d => d.kind === 'standard'))
+const standardDecks = computed(() => rows.value.filter(d => d.kind === 'standard'))
 const generated = computed(() => activeTemplate.value && activeTemplate.value.required_fields.every(f => fields.value[f]?.trim()) ? [activeTemplate.value] : [])
 const skipped = computed(() => activeTemplate.value && !generated.value.length ? [activeTemplate.value] : [])
 const canSaveCard = computed(() => !!targetDeck.value && !!activeType.value && activeType.value.fields.every(f => !f.required || fields.value[f.key]?.trim()) && generated.value.length > 0)
 watch(typeKey, () => { formError.value = '' })
 
-const deckPath = contentDecks.deckPath
+const deckPath = decksStore.deckPath
+
 async function openDeck() {
-  deckName.value = ''; formError.value = ''; deckDialog.value = true
+  deckName.value = ''
+  formError.value = ''
+  deckDialog.value = true
 }
+
 async function openCard() {
-  formError.value = ''; cardDialog.value = true; cardLoading.value = true
+  formError.value = ''
+  cardDialog.value = true
+  cardLoading.value = true
   try {
-    const [newDecks, types, assets] = await Promise.all([
-      contentResources<ResourceDeck>('/decks', 'decks'),
-      libraryContent.get<{note_types: ResourceNoteType[]}>('/note-types'),
-      contentResources<ResourceMedia>('/media-assets', 'media_assets'),
-    ])
-    decks.value = newDecks; noteTypes.value = types.data.note_types; media.value = assets
-    targetDeck.value = standardDecks.value.find(d => d.id === selectedDeck.value)?.id || standardDecks.value[0]?.id || ''
-  } catch (error) { formError.value = resourceError(error) }
-  finally { cardLoading.value = false }
+    const [types, assets] = await Promise.all([fetchNoteTypes(), fetchMediaAssets()])
+    if (!rows.value.length) await decksStore.load()
+    noteTypes.value = types
+    media.value = assets
+    targetDeck.value = standardDecks.value[0]?.id || ''
+  } catch (error) {
+    formError.value = resourceError(error)
+  } finally {
+    cardLoading.value = false
+  }
 }
+
 async function saveDeck() {
   if (!deckName.value.trim() || saving.value) return
-  saving.value = true; formError.value = ''
+  saving.value = true
+  formError.value = ''
   try {
-    const { data } = await libraryContent.post<ResourceDeck>('/decks', { name: deckName.value.trim() })
-    decks.value.push(data); selectedDeck.value = data.id; deckDialog.value = false
+    await decksStore.createDeck(deckName.value.trim())
+    deckDialog.value = false
+    emit('created')
     ElMessage.success('牌组已添加')
-  } catch (error) { formError.value = resourceError(error) }
-  finally { saving.value = false }
+  } catch (error) {
+    formError.value = resourceError(error)
+  } finally {
+    saving.value = false
+  }
 }
+
 async function saveCard() {
   if (!canSaveCard.value || saving.value) return
-  saving.value = true; formError.value = ''
+  saving.value = true
+  formError.value = ''
   try {
-    const { data } = await libraryContent.post<{cards: ResourceCard[]}>('/notes', {
-      deck_id: targetDeck.value, note_type_key: activeType.value!.key, card_template_key: typeKey.value,
+    const { data } = await createNote({
+      deckId: targetDeck.value,
+      noteTypeKey: activeType.value!.key,
+      cardTemplateKey: typeKey.value,
       fields: Object.fromEntries(Object.entries(fields.value).filter(([, value]) => value.trim())),
       tags: (tagDrafts[typeKey.value] || '').split(/[,，\s]+/).filter(Boolean),
     })
-    cards.value.push(...data.cards); selectedDeck.value = targetDeck.value
-    drafts[typeKey.value] = {}; tagDrafts[typeKey.value] = ''; cardDialog.value = false
+    drafts[typeKey.value] = {}
+    tagDrafts[typeKey.value] = ''
+    cardDialog.value = false
+    emit('created')
     ElMessage.success(`已添加 ${data.cards.length} 张卡片`)
-  } catch (error) { formError.value = resourceError(error) }
-  finally { saving.value = false }
+  } catch (error) {
+    formError.value = resourceError(error)
+  } finally {
+    saving.value = false
+  }
 }
-function closeDialog(done: () => void) { if (!saving.value) done() }
+
+function closeDialog(done: () => void) {
+  if (!saving.value) done()
+}
+
 defineExpose({ openDeck, openCard })
 </script>
 
@@ -166,7 +199,7 @@ defineExpose({ openDeck, openCard })
             v-for="deck in standardDecks"
             :key="deck.id"
             :value="deck.id"
-          >{{ deckPath(deck) }}</option></select></label>
+          >{{ deckPath(deck.id) }}</option></select></label>
           <label><span class="editor-label">卡片类型</span><select
             v-model="typeKey"
             class="editor-input"

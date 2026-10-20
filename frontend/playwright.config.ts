@@ -29,13 +29,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm dev --host ${host} --port ${port}`,
+    command: `./node_modules/.bin/vite --host ${host} --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
-      VITE_USE_MOCK: 'true',
-      VITE_E2E_MODE: 'true',
+      VITE_API_BASE_URL: '/api/content/v1',
       VITE_POLLING_INTERVAL: '200',
       VITE_POLLING_TIMEOUT: '10000',
     },

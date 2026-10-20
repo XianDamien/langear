@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { reviewHttp, reviewError } from '@/services/review'
-import { templateLabels } from '@/services/contentCore'
+import { templateLabels } from '@/services/content'
 import RetroButton from '@/components/ui/RetroButton.vue'
 const props = defineProps<{ deckId: string }>()
 const emit = defineEmits<{ close: []; changed: [] }>()

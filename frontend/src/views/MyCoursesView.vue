@@ -1,75 +1,48 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useContentDecksStore } from '@/stores/contentDecks'
-import { libraryEditorEnabled } from '@/services/libraryContent'
-import { resourceError } from '@/services/contentCore'
-import { legacyReviewLocation } from '@/services/reviewNavigation'
-import { reviewError } from '@/services/review'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
-import { useDeckStore } from '@/stores/deck'
-import { useUserCoursesStore } from '@/stores/userCourses'
-import {
-  buildSelectedTree,
-  findDeckById,
-  findFirstSelectedLessonId,
-} from '@/utils/deckSelection'
+import { useDecksStore } from '@/stores/decks'
+import { resourceError } from '@/services/content'
 
-const coreDecks = useContentDecksStore()
-const coreError = ref('')
-async function loadCore() {
-  if (!libraryEditorEnabled) return
-  coreError.value = ''
-  try { await coreDecks.load() } catch (error) { coreError.value = resourceError(error) }
-}
+const route = useRoute()
 const router = useRouter()
-const deckStore = useDeckStore()
-const userCoursesStore = useUserCoursesStore()
-const { deckTree, loading } = storeToRefs(deckStore)
-const {
-  selectedLessonIdSet,
-  loading: coursesLoading,
-} = storeToRefs(userCoursesStore)
+const decksStore = useDecksStore()
+const { myCourses, loading } = storeToRefs(decksStore)
+const error = ref('')
 
-const myCourseTree = computed(() => [
-  ...(libraryEditorEnabled ? coreDecks.myDecks : []),
-  ...buildSelectedTree(deckTree.value, selectedLessonIdSet.value),
-])
-const pageLoading = computed(() => loading.value || coursesLoading.value || (libraryEditorEnabled && coreDecks.loading))
-
-onMounted(() => {
-  if (!deckTree.value.length) {
-    deckStore.load()
+const notice = computed(() => {
+  switch (route.query.notice) {
+    case 'legacy-link-invalid':
+      return '旧链接已失效，已返回我的课程。'
+    case 'invalid-deck':
+      return '该课程链接无效。'
+    case 'invalid-card':
+      return '该卡片链接无效。'
+    default:
+      return ''
   }
-  userCoursesStore.load()
-  loadCore()
 })
 
-async function handleSelectLesson(lessonId: string) {
-  coreError.value = ''
-  deckStore.selectLesson(lessonId)
-  try { await router.push(await legacyReviewLocation(lessonId)) }
-  catch (error) { coreError.value = reviewError(error) }
+async function load() {
+  error.value = ''
+  try {
+    await decksStore.load()
+  } catch (cause) {
+    error.value = resourceError(cause)
+  }
+}
+
+onMounted(load)
+
+function handlePlayDeck(deckId: string) {
+  void router.push({ name: 'DeckReview', params: { deckId } })
 }
 
 function handleEditDeckSettings(deckId: string) {
-  router.push({ name: 'Settings', query: { deck_id: deckId } })
-}
-
-function handlePlayDeck(deckId: string) {
-  const deck = findDeckById(myCourseTree.value, deckId)
-  if (!deck) return
-  if (deck.origin === 'core') {
-    router.push({ name: 'DeckReview', params: { deckId } })
-    return
-  }
-
-  const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
-  if (lessonId) {
-    void handleSelectLesson(lessonId)
-  }
+  void router.push({ name: 'Settings', query: { deck_id: deckId } })
 }
 </script>
 
@@ -79,33 +52,40 @@ function handlePlayDeck(deckId: string) {
       我的课程
     </h2>
 
+    <p
+      v-if="notice"
+      role="status"
+      class="mb-4 border border-slate-200 bg-white p-3 text-sm text-slate-600"
+    >
+      {{ notice }}
+    </p>
     <div
-      v-if="coreError"
+      v-if="error"
       role="alert"
       class="mb-4 text-amber-700"
     >
-      {{ coreError }}
+      {{ error }}
       <button
         type="button"
         class="underline"
-        @click="loadCore"
+        @click="load"
       >
         重试
       </button>
     </div>
     <div
-      v-if="pageLoading"
+      v-if="loading"
       class="py-20 text-center text-slate-500"
     >
       加载中...
     </div>
 
     <div
-      v-else-if="!myCourseTree.length && !coreError"
+      v-else-if="!myCourses.length && !error"
       class="border-2 border-dashed border-slate-200 p-8 text-center"
     >
       <p class="mb-4 text-slate-500">
-        你还没有加入任何课程。去题库资源挑选一些 lesson 吧。
+        你还没有加入任何课程。去题库资源挑选一些牌组吧。
       </p>
       <RetroButton
         variant="primary"
@@ -121,14 +101,11 @@ function handlePlayDeck(deckId: string) {
       class="space-y-2"
     >
       <DeckTreeItem
-        v-for="deck in myCourseTree"
-        :key="`${deck.origin || 'legacy'}:${deck.id}`"
+        v-for="deck in myCourses"
+        :key="deck.id"
         :deck="deck"
         mode="my-courses"
-        :selected-lesson-id-set="selectedLessonIdSet"
-        :selected-core-deck-ids="coreDecks.joinedIds"
         :depth="0"
-        @select-lesson="handleSelectLesson"
         @play-deck="handlePlayDeck"
         @edit-deck-settings="handleEditDeckSettings"
       />

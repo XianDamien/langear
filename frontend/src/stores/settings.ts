@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { fetchSettings, saveSettings } from '@/services/api/settings'
+import { fetchSettings, isUuid, saveSettings } from '@/services/api/settings'
 import type { SettingsData } from '@/types/api'
 import { ElMessage } from 'element-plus'
 
@@ -9,8 +9,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const learningSteps = ref('15')
   const relearningSteps = ref('15')
   const maximumInterval = ref(36500)
-  const defaultSourceScope = ref('')
-  const deckId = ref<number | string | undefined>()
+  const defaultDeckScope = ref('')
+  const deckId = ref<string | undefined>()
   const schedulingEnabled = ref<boolean | undefined>()
   const deckTitle = ref('')
   const dailyNewLimit = ref<number | undefined>()
@@ -39,15 +39,16 @@ export const useSettingsStore = defineStore('settings', () => {
     learningSteps.value = data.learningSteps
     relearningSteps.value = data.relearningSteps
     maximumInterval.value = data.maximumInterval
-    defaultSourceScope.value = data.defaultSourceScope
+    defaultDeckScope.value = data.defaultDeckScope
   }
 
-  async function load(requestedDeckId?: number | string) {
+  async function load(requestedDeckId?: string) {
     const version = ++loadVersion
     loading.value = true
     loadError.value = null
     saveError.value = null
     try {
+      if (requestedDeckId !== undefined && !isUuid(requestedDeckId)) throw new Error('无效的牌组')
       const { data } = await fetchSettings(requestedDeckId)
       if (version !== loadVersion) return
       if (requestedDeckId !== undefined && data.deckId !== requestedDeckId) {
@@ -73,10 +74,13 @@ export const useSettingsStore = defineStore('settings', () => {
         learningSteps: learningSteps.value,
         relearningSteps: relearningSteps.value,
         maximumInterval: maximumInterval.value,
-        defaultSourceScope: defaultSourceScope.value,
+        defaultDeckScope: defaultDeckScope.value,
         ...(deckId.value === undefined ? {} : {
-          newCardGatherOrder: newCardGatherOrder.value, newCardSortOrder: newCardSortOrder.value,
-          deckId: deckId.value, dailyNewLimit: dailyNewLimit.value, dailyReviewLimit: dailyReviewLimit.value,
+          newCardGatherOrder: newCardGatherOrder.value,
+          newCardSortOrder: newCardSortOrder.value,
+          deckId: deckId.value,
+          dailyNewLimit: dailyNewLimit.value,
+          dailyReviewLimit: dailyReviewLimit.value,
         }),
       })
       if (data.deckId !== requestedDeckId) throw new Error('保存结果与当前牌组不匹配，请重试')
@@ -95,6 +99,6 @@ export const useSettingsStore = defineStore('settings', () => {
     desiredRetention, learningSteps, relearningSteps, maximumInterval,
     deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled,
     newCardGatherOrder, newCardSortOrder, effectiveNewCardGatherOrder, effectiveNewCardSortOrder,
-    defaultSourceScope, saving, loading, loadError, saveError, load, save,
+    defaultDeckScope, saving, loading, loadError, saveError, load, save,
   }
 })

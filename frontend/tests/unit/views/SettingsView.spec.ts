@@ -4,12 +4,14 @@ import { mountWithApp } from '../../helpers/mountWithApp'
 import SettingsView from '@/views/SettingsView.vue'
 import { useSettingsStore } from '@/stores/settings'
 
+const deckId = '01900000-0000-7000-8000-000000000017'
+
 async function render(settings: Record<string, unknown> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/settings', component: SettingsView }] })
-  await router.push('/settings?deck_id=17')
+  await router.push(`/settings?deck_id=${deckId}`)
   const wrapper = mountWithApp(SettingsView, {
     pinia: { initialState: { settings: {
-      deckId: 17, deckTitle: 'Lesson 1', dailyNewLimit: 20, dailyReviewLimit: 200,
+      deckId, deckTitle: 'Lesson 1', dailyNewLimit: 20, dailyReviewLimit: 200,
       newCardGatherOrder: null, newCardSortOrder: null,
       effectiveNewCardGatherOrder: 'random_cards', effectiveNewCardSortOrder: 'order_gathered',
       ...settings,
@@ -22,7 +24,7 @@ async function render(settings: Record<string, unknown> = {}) {
 describe('deck new-card order settings', () => {
   it('keeps inherited order on unrelated saves and explicitly selects textbook order', async () => {
     const { wrapper, store } = await render()
-    expect(store.load).toHaveBeenCalledWith(17)
+    expect(store.load).toHaveBeenCalledWith(deckId)
     expect(wrapper.get<HTMLSelectElement>('#new-card-order').element.value).toBe('inherit')
     expect(wrapper.text()).toContain('当前生效：随机')
     expect(wrapper.find('#learning-steps').exists()).toBe(false)

@@ -1,9 +1,9 @@
 import axios from 'axios'
 import type { PollingResponseCompleted } from '@/types/api'
-import { contentCoreEnabled, coreHttp, resourceError, type ResourceCard } from './contentCore'
-import { libraryContent } from './libraryContent'
+import { coreHttp, errorCode, externalHttp } from './coreApi'
+import { resourceError, type ResourceCard } from './content'
 
-export const reviewHttp = contentCoreEnabled ? coreHttp : libraryContent
+export const reviewHttp = coreHttp
 export type SentenceTemplate = 'sentence_retelling' | 'sentence_translation' | 'sentence_dictation'
 export type ReviewTemplate = SentenceTemplate | 'vocabulary_english_to_chinese' | 'vocabulary_chinese_to_english'
 export const sentenceTemplates: SentenceTemplate[] = ['sentence_retelling', 'sentence_translation', 'sentence_dictation']
@@ -48,7 +48,7 @@ export function reviewKey(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 export function reviewErrorCode(error: unknown): string | undefined {
-  return axios.isAxiosError(error) ? error.response?.data?.error?.code : undefined
+  return errorCode(error)
 }
 export function reviewError(error: unknown): string {
   const code = reviewErrorCode(error)
@@ -75,9 +75,9 @@ export async function uploadReviewAudio(blob: Blob, progress: (percent: number) 
   const { data } = await reviewHttp.post<{ media_asset_id: string; upload_url: string; headers: Record<string, string> }>('/media-assets/audio-uploads', {
     content_type: 'audio/webm', size_bytes: blob.size,
   })
-  // A separate client keeps application cookies and CSRF/Authorization off OSS.
-  await axios.put(data.upload_url, blob, {
-    headers: data.headers, timeout: 120000,
+  // A separate client keeps application cookies and CSRF off OSS.
+  await externalHttp.put(data.upload_url, blob, {
+    headers: data.headers,
     onUploadProgress: event => progress(Math.round(event.loaded * 100 / (event.total || blob.size))),
   })
   await reviewHttp.post(`/media-assets/${data.media_asset_id}/confirm-upload`)

@@ -1,5 +1,5 @@
-import type { ResourceField, ResourceTemplate } from './contentCore'
-import { fieldLabels } from './contentCore'
+import type { ResourceField, ResourceTemplate } from './content'
+import { fieldLabels } from './content'
 
 interface FieldPresentation { key: string; label: string; help?: string }
 

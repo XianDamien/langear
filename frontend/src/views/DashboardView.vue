@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
-import { useDeckStore } from '@/stores/deck'
-import { useUserCoursesStore } from '@/stores/userCourses'
-import { legacyReviewLocation } from '@/services/reviewNavigation'
-import { reviewError } from '@/services/review'
-import { buildSelectedTree, findDeckById, findFirstSelectedLessonId } from '@/utils/deckSelection'
+import { useDecksStore } from '@/stores/decks'
 import StatsCards from '@/components/dashboard/StatsCards.vue'
 import ActivityChart from '@/components/dashboard/ActivityChart.vue'
 import RecentDecks from '@/components/dashboard/RecentDecks.vue'
@@ -15,12 +11,9 @@ import Leaderboard from '@/components/dashboard/Leaderboard.vue'
 
 const router = useRouter()
 const dashboardStore = useDashboardStore()
-const deckStore = useDeckStore()
-const userCoursesStore = useUserCoursesStore()
-const { stats, weeklyTrend, loading, error } = storeToRefs(dashboardStore)
-const { deckTree } = storeToRefs(deckStore)
-const { selectedLessonIdSet } = storeToRefs(userCoursesStore)
-const myCourseTree = computed(() => buildSelectedTree(deckTree.value, selectedLessonIdSet.value))
+const decksStore = useDecksStore()
+const { stats, weeklyTrend, leaderboard, loading, error } = storeToRefs(dashboardStore)
+const { myCourses } = storeToRefs(decksStore)
 const coursesLoading = ref(true)
 const coursesError = ref<string | null>(null)
 
@@ -28,7 +21,7 @@ async function loadCourses() {
   coursesLoading.value = true
   coursesError.value = null
   try {
-    await Promise.all([deckStore.load(), userCoursesStore.load()])
+    await decksStore.load()
   } catch {
     coursesError.value = '课程加载失败，请重试'
   } finally {
@@ -37,20 +30,13 @@ async function loadCourses() {
 }
 
 onMounted(() => {
-  dashboardStore.load()
-  loadCourses()
+  void dashboardStore.load()
+  void loadCourses()
 })
 
-async function handlePlayDeck(deckId: string) {
+function handlePlayDeck(deckId: string) {
   if (coursesLoading.value || coursesError.value) return
-  const deck = findDeckById(myCourseTree.value, deckId)
-  if (!deck) return
-  const lessonId = findFirstSelectedLessonId(deck, selectedLessonIdSet.value)
-  if (lessonId) {
-    deckStore.selectLesson(lessonId)
-    try { await router.push(await legacyReviewLocation(lessonId)) }
-    catch (error) { coursesError.value = reviewError(error) }
-  }
+  void router.push({ name: 'DeckReview', params: { deckId } })
 }
 </script>
 
@@ -73,13 +59,13 @@ async function handlePlayDeck(deckId: string) {
       <ActivityChart :data="weeklyTrend" />
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <RecentDecks
-          :decks="myCourseTree"
+          :decks="myCourses"
           :loading="coursesLoading"
           :error="coursesError"
           @play="handlePlayDeck"
           @retry="loadCourses"
         />
-        <Leaderboard />
+        <Leaderboard :entries="leaderboard" />
       </div>
     </template>
     <div

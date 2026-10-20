@@ -16,8 +16,9 @@ import ReviewCardBack from '@/components/review/ReviewCardBack.vue'
 import SentencePracticeCard from '@/components/review/SentencePracticeCard.vue'
 import PracticeFields from '@/components/study/modules/PracticeFields.vue'
 import { useReviewSession } from '@/composables/useReviewSession'
-import { templateLabels } from '@/services/contentCore'
+import { templateLabels } from '@/services/content'
 import { sentenceTemplates, type ReviewTemplate } from '@/services/review'
+import { isUuid } from '@/services/api/settings'
 
 const showPaused = ref(false)
 const dialogueAvailable = ref(false)
@@ -35,9 +36,14 @@ const wordAnswer = computed(() => ({
 const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
 const dueLabel = computed(() => state.value?.next_due_at ? new Date(state.value.next_due_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
 function loadEntry() {
+  const deckId = String(route.params.deckId || '')
+  if (!isUuid(deckId)) {
+    void router.replace({ name: 'MyCourses' })
+    return Promise.resolve()
+  }
   const key = String(route.query.template || '')
   const template = Object.hasOwn(templateLabels, key) ? key as ReviewTemplate : undefined
-  return load(String(route.params.deckId), false, template)
+  return load(deckId, template)
 }
 function changeTemplate(event: Event) {
   const template = (event.target as HTMLSelectElement).value

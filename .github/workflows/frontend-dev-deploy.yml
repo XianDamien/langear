@@ -62,7 +62,7 @@ jobs:
       - name: Frontend tests and build
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: /api/v1
+          VITE_API_BASE_URL: /api/content/v1
         run: |
           pnpm install --frozen-lockfile
           pnpm test:unit
@@ -70,6 +70,7 @@ jobs:
       - name: Build immutable backend and package matching frontend
         env:
           RELEASE_SHA: ${{ github.sha }}
+          RELEASE_RUNTIME: review
         run: |
           docker build --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "langear-release:$RELEASE_SHA" backend

@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { getUseMockMode } from '@/config/runtimeFlags'
 import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 
-const mockMode = getUseMockMode()
 const route = useRoute()
 const mobileMenuOpen = ref(false)
 const langPair = ref('en-zh')
@@ -14,13 +12,6 @@ const isFullscreen = computed(() => route.meta.fullscreen === true)
 </script>
 
 <template>
-  <div
-    v-if="mockMode"
-    role="status"
-    class="fixed bottom-2 right-2 z-50 rounded bg-amber-100 px-3 py-1 text-xs text-amber-900"
-  >
-    模拟模式 · 演示数据
-  </div>
   <!-- Fullscreen layout for study session -->
   <div
     v-if="isFullscreen"

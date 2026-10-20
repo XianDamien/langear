@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import { buildE2ERealtimeSessionId, isE2EMode } from '@/utils/e2e'
 
 export type RealtimeAsrStatus =
   | 'idle'
@@ -20,19 +19,6 @@ type CommitResolver = ((ok: boolean) => void) | null
 const realtimeAsrModel =
   import.meta.env.VITE_REALTIME_ASR_MODEL || 'qwen3-asr-flash-realtime'
 
-function buildRealtimeWsUrl(lessonId: number, cardId: number): string {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-  const wsBase = `${apiBase.replace(/\/$/, '')}/realtime/asr/ws`
-  const url = /^https?:\/\//.test(wsBase)
-    ? new URL(wsBase)
-    : new URL(wsBase, window.location.origin)
-
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  url.searchParams.set('lesson_id', String(lessonId))
-  url.searchParams.set('card_id', String(cardId))
-  return url.toString()
-}
-
 export function useRealtimeAsr() {
   const status = ref<RealtimeAsrStatus>('idle')
   const partialTranscript = ref('')
@@ -41,7 +27,6 @@ export function useRealtimeAsr() {
   const errorCode = ref<string | null>(null)
   const errorMessage = ref<string | null>(null)
 
-  let demoTranscript = ''
   let socket: WebSocket | null = null
   let seq = 0
   let startTs = 0
@@ -92,10 +77,9 @@ export function useRealtimeAsr() {
         if (messageType === 'session.created') {
           const backendSessionId = payload.realtime_session_id
           if (backendSessionId) {
-            // Keep backend-generated session id for /study/submissions validation.
+            // Backend-generated session id is attached to the Attempt.
             realtimeSessionId.value = backendSessionId
           } else if (!realtimeSessionId.value && payload.session?.id) {
-            // Fallback for providers that do not expose realtime_session_id.
             realtimeSessionId.value = payload.session.id
           }
           return
@@ -163,7 +147,7 @@ export function useRealtimeAsr() {
     }
   }
 
-  async function connect(lessonId: number, cardId: number, reviewUrl?: string): Promise<boolean> {
+  async function connect(cardId: string, baseURL: string): Promise<boolean> {
     reset()
     status.value = 'connecting'
     errorCode.value = null
@@ -171,17 +155,11 @@ export function useRealtimeAsr() {
     seq = 0
     startTs = Date.now()
 
-    if (isE2EMode) {
-      const { getMockRecording } = await import('@/services/mock/study')
-      demoTranscript = getMockRecording(cardId).transcript
-      realtimeSessionId.value = buildE2ERealtimeSessionId(lessonId, cardId)
-      status.value = 'streaming'
-      return true
-    }
-
     return await new Promise((resolve) => {
-      const wsUrl = reviewUrl || buildRealtimeWsUrl(lessonId, cardId)
-      const ws = new WebSocket(wsUrl)
+      const url = new URL(`${baseURL.replace(/\/$/, '')}/review/realtime/asr/ws`, window.location.origin)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      url.searchParams.set('card_id', cardId)
+      const ws = new WebSocket(url.toString())
       socket = ws
       let connectResolved = false
       let timeout: number | null = null
@@ -228,11 +206,6 @@ export function useRealtimeAsr() {
   }
 
   function appendAudioChunk(chunkBase64: string) {
-    if (isE2EMode) {
-      partialTranscript.value = demoTranscript
-      status.value = 'streaming'
-      return
-    }
     if (!socket || socket.readyState !== WebSocket.OPEN) return
     if (status.value === 'failed') return
 
@@ -242,8 +215,6 @@ export function useRealtimeAsr() {
       JSON.stringify({
         type: 'input_audio_buffer.append',
         audio: chunkBase64,
-        // Keep legacy fields for backend compatibility.
-        chunk_base64: chunkBase64,
         seq,
         ts_ms: tsMs,
       }),
@@ -251,13 +222,6 @@ export function useRealtimeAsr() {
   }
 
   async function commit(): Promise<boolean> {
-    if (isE2EMode) {
-      finalTranscript.value = demoTranscript
-      partialTranscript.value = demoTranscript
-      status.value = 'ready'
-      return true
-    }
-
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       handleError({
         code: 'REALTIME_SESSION_FAILED',
@@ -287,11 +251,6 @@ export function useRealtimeAsr() {
   }
 
   function endSession() {
-    if (isE2EMode) {
-      if (status.value !== 'failed') status.value = 'idle'
-      return
-    }
-
     endingSession = true
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'session.end' }))
@@ -329,13 +288,7 @@ export function useRealtimeAsr() {
     realtimeSessionId,
     errorCode,
     errorMessage,
-    connect,
-    async connectReview(cardId: string, baseURL: string) {
-      const url = new URL(`${baseURL}/review/realtime/asr/ws`, window.location.origin)
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-      url.searchParams.set('card_id', cardId)
-      return connect(0, Number(cardId) || 1, url.toString())
-    },
+    connectReview: (cardId: string, baseURL: string) => connect(cardId, baseURL),
     appendAudioChunk,
     commit,
     endSession,

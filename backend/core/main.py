@@ -28,6 +28,7 @@ from core.uploads import router as upload_router
 from core.realtime import router as realtime_router
 from core.dialogue import router as dialogue_router
 from core.dialogue_voice import router as dialogue_voice_router
+from core.telemetry import router as telemetry_router
 from core.models import (
     Card,
     Collection,
@@ -580,4 +581,5 @@ app.include_router(product_router)
 
 app.include_router(dialogue_router)
 app.include_router(dialogue_voice_router)
+app.include_router(telemetry_router)
 app.include_router(legacy_selection_router)

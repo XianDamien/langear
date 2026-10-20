@@ -8,7 +8,7 @@ import ReviewRatingButtons from './ReviewRatingButtons.vue'
 import SentenceTextPracticeCard from './SentenceTextPracticeCard.vue'
 import { useRecorder } from '@/composables/useRecorder'
 import { reviewHttp, type PracticeInput, type ReviewAttempt } from '@/services/review'
-import type { ResourceCard } from '@/services/contentCore'
+import type { ResourceCard } from '@/services/content'
 
 const props = defineProps<{ card: ResourceCard; isFlipped: boolean; busy?: boolean; attempt?: ReviewAttempt }>()
 const emit = defineEmits<{ flip: [input: PracticeInput] }>()
@@ -77,7 +77,7 @@ async function toggleRecording() {
     try {
       await realtime.connectReview(props.card.id, reviewHttp.defaults.baseURL || '/api/v1')
       if (disposed) { realtime.reset(); return }
-      await recorder.startRecording(chunk => realtime.appendAudioChunk(chunk), props.card.id)
+      await recorder.startRecording(chunk => realtime.appendAudioChunk(chunk))
     } finally { recordingBusy.value = false }
   }
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
-import { libraryContent } from '@/services/libraryContent'
-import { contentCoreEnabled, coreHttp, fieldLabels } from '@/services/contentCore'
+import { coreHttp } from '@/services/coreApi'
+import { fieldLabels } from '@/services/content'
 
 const props = defineProps<{ fields: Record<string, string> }>()
 const urls = ref<Record<string, string>>({})
@@ -20,7 +20,7 @@ async function loadMedia() {
   errors.value = {}
   await Promise.all(entries.value.filter(([key]) => mediaKeys.has(key)).map(async ([key, id]) => {
     try {
-      const { data } = await (contentCoreEnabled ? coreHttp : libraryContent).get<{ url: string }>(`/media-assets/${id}/url`)
+      const { data } = await coreHttp.get<{ url: string }>(`/media-assets/${id}/url`)
       if (current === generation) urls.value[key] = data.url
     } catch {
       if (current === generation) errors.value[key] = true

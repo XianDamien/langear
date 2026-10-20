@@ -60,6 +60,19 @@ def test_authorized_context_idempotency_and_no_scheduling_side_effects(client, a
     assert client.get('/api/v1/attempts/' + dialogue['attempt_ids'][0]).json() == attempt
 
 
+def test_history_lists_and_deletes_only_the_current_collection(client, account, dialogue):
+    session = create(client, dialogue)
+    listed = client.get('/api/v1/dialogue/sessions').json()['sessions']
+    assert [row['id'] for row in listed] == [session['id']]
+    assert listed[0]['deck_id'] == account['deck_id']
+    assert listed[0]['title'] == 'At the fruit shop'
+    assert listed[0]['has_review'] is False
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    assert client.delete(path).status_code == 204
+    assert client.get(path).status_code == 404
+    assert client.get('/api/v1/dialogue/sessions').json()['sessions'] == []
+
+
 def test_other_collection_cannot_read_use_or_connect_to_dialogue(client, account, dialogue):
     from core.main import app
     session = create(client, dialogue)
@@ -67,6 +80,8 @@ def test_other_collection_cannot_read_use_or_connect_to_dialogue(client, account
         identity = other.post('/api/v1/auth/register', json={'email': 'other@example.com', 'password': 'another strong password'}).json()
         other.headers['X-CSRF-Token'] = identity['csrf_token']
         assert other.get('/api/v1/dialogue/sessions/' + session['id']).status_code == 404
+        assert other.get('/api/v1/dialogue/sessions').json()['sessions'] == []
+        assert other.delete('/api/v1/dialogue/sessions/' + session['id']).status_code == 404
         assert other.post('/api/v1/dialogue/sessions', json=dialogue).status_code == 404
         assert other.post('/api/v1/dialogue/sessions/' + session['id'] + '/finish').status_code == 404
         with pytest.raises(WebSocketDisconnect):

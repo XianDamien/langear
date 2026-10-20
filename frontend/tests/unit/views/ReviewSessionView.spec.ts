@@ -3,19 +3,25 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReviewSessionView from '@/views/ReviewSessionView.vue'
 vi.mock('@/components/dialogue/DialogueModal.vue', () => ({ default: { props: ['entry'], emits: ['close'], template: `<div data-testid="dialogue-modal">{{ entry.attempt_ids.join(',') }}<button @click="$emit('close')">关闭对话</button></div>` } }))
-import { libraryContent } from '@/services/libraryContent'
+import { coreHttp } from '@/services/coreApi'
 import type { ReviewNext } from '@/services/review'
 
-vi.mock('@/services/libraryContent', () => ({ libraryContent: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
+vi.mock('@/services/coreApi', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/services/coreApi')>()),
+  coreHttp: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+}))
 const options = ['again', 'hard', 'good', 'easy'].map(rating => ({ rating, display_interval: '15m' }))
 const card = { id: 'a', deck_id: 'deck-a', note_id: 'n1', card_template_key: 'vocabulary_english_to_chinese', front: { word: 'journey' }, card_schedule_revision: 0, input_requirement: { type: 'none', required: false } }
 const counts = { new_remaining: 1, review_remaining: 0, learning_remaining: 0, can_undo: false, next_due_at: null, empty_reason: null }
 let current: Record<string, unknown>
 let attempt: Record<string, unknown>
-const httpGet = vi.mocked(libraryContent.get)
-const httpPost = vi.mocked(libraryContent.post)
-const httpPut = vi.mocked(libraryContent.put)
-async function start(path = '/review/deck-a') {
+const httpGet = vi.mocked(coreHttp.get)
+const httpPost = vi.mocked(coreHttp.post)
+const httpPut = vi.mocked(coreHttp.put)
+const deckA = '01900000-0000-7000-8000-00000000000a'
+const deckB = '01900000-0000-7000-8000-00000000000b'
+const deckC = '01900000-0000-7000-8000-00000000000c'
+async function start(path = `/review/${deckA}`) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/review/:deckId', component: ReviewSessionView },
     { path: '/library', component: { template: '<div>Library</div>' } },
@@ -120,9 +126,9 @@ describe('server-backed review', () => {
   })
 
   it('defaults imported courses to retelling and keeps a separate template scope through skip and refresh', async () => {
-    httpGet.mockImplementation(async path => ({ data: path.startsWith('/decks/') ? { id: 'deck-a', name: 'Lesson 1', deck_guid: 'legacy:fixture:deck:1' } : current }))
+    httpGet.mockImplementation(async path => ({ data: path.startsWith('/decks/') ? { id: deckA, name: 'Lesson 1', deck_guid: 'legacy:fixture:deck:1' } : current }))
     const { wrapper, router, click } = await start()
-    const scope = (template: string) => ({ scope: { deck_id: 'deck-a', include_descendants: true, exclude_imported: false, card_template_keys: [template] } })
+    const scope = (template: string) => ({ scope: { deck_id: deckA, include_descendants: true, exclude_imported: false, card_template_keys: [template] } })
     expect(httpPost).toHaveBeenCalledWith('/review/queues', scope('sentence_retelling'))
     await wrapper.get('select[aria-label="练习类型"]').setValue('sentence_dictation')
     await flushPromises()
@@ -131,7 +137,7 @@ describe('server-backed review', () => {
     await click('今日跳过')
     expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
     wrapper.unmount()
-    const refreshed = await start('/review/deck-a?template=sentence_dictation')
+    const refreshed = await start(`/review/${deckA}?template=sentence_dictation`)
     expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
     expect((refreshed.wrapper.get('select').element as HTMLSelectElement).value).toBe('sentence_dictation')
     refreshed.wrapper.unmount()
@@ -317,8 +323,8 @@ describe('server-backed review', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     let release!: (value: { data: ReviewNext }) => void
     httpGet.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
-    await router.push('/review/deck-b')
-    await router.push('/review/deck-c')
+    await router.push(`/review/${deckB}`)
+    await router.push(`/review/${deckC}`)
     await flushPromises()
     release({ data: { ...counts, queue_id: 'old', card: null, review_token: null, empty_reason: 'no_cards' } })
     await flushPromises()

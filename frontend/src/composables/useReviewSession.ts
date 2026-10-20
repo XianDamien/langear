@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import axios from 'axios'
 import type { DialogueEntry } from '@/services/dialogue'
-import type { ResourceCard, ResourceDeck } from '@/services/contentCore'
+import type { ResourceCard, ResourceDeck } from '@/services/content'
 import { reviewHttp, reviewKey, reviewError, reviewErrorCode, uploadReviewAudio, type FlippedReview, type PracticeInput, type Rating, type ReviewInput, type ReviewNext, type ReviewQueue, type ReviewTemplate, type PendingReview } from '@/services/review'
 
 type PendingWrite = { key: string; kind: 'flip'; body: { card_id: string; review_token: string; input: ReviewInput } } |
@@ -29,7 +29,7 @@ export function useReviewSession() {
   } : undefined)
   let generation = 0
   let deckId = ''
-  let entry: { id: string; legacy: boolean; template?: ReviewTemplate } = { id: '', legacy: false }
+  let entry: { id: string; template?: ReviewTemplate } = { id: '' }
   let pending: PendingWrite | null = null
   let retryAction: (() => Promise<void>) | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -96,14 +96,14 @@ export function useReviewSession() {
       await next(request)
     }
   }
-  async function load(id: string, legacy = false, template?: ReviewTemplate) {
+  async function load(id: string, template?: ReviewTemplate) {
     const request = ++generation
     completedRound.value = undefined
     roundAttemptIds.clear()
     roundKey = reviewKey()
     clearTimeout(pollTimer)
     deckId = id
-    entry = { id, legacy, template }
+    entry = { id, template }
     pendingReview.value = undefined
     practiceTemplate.value = undefined
     state.value = undefined
@@ -116,13 +116,6 @@ export function useReviewSession() {
     error.value = ''
     needsRecovery.value = false
     try {
-      if (legacy) {
-        const { data } = await reviewHttp.get<{ deck_id: string }>(`/review/legacy-lessons/${encodeURIComponent(id)}`)
-        if (request !== generation) return
-        id = data.deck_id
-        deckId = id
-        pending = savedWrite()
-      }
       const { data: resource } = await reviewHttp.get<ResourceDeck>(`/decks/${id}`)
       if (request !== generation) return
       deck.value = resource
@@ -188,7 +181,7 @@ export function useReviewSession() {
     if (!current?.card || current.attempt) return
     await perform(async () => {
       await reviewHttp.post(`/cards/${current.card!.id}/schedule`, { action, card_schedule_revision: current.card!.card_schedule_revision })
-      await load(entry.id, entry.legacy, entry.template)
+      await load(entry.id, entry.template)
     })
   }
   async function retryProcessing() {
@@ -203,7 +196,7 @@ export function useReviewSession() {
     })
   }
   async function retry() {
-    if (needsRecovery.value || !state.value) return load(entry.id, entry.legacy, entry.template)
+    if (needsRecovery.value || !state.value) return load(entry.id, entry.template)
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })

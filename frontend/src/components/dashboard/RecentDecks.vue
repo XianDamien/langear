@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Play } from 'lucide-vue-next'
-import type { Deck } from '@/types/domain'
+import type { DeckView } from '@/stores/decks'
 
 defineProps<{
-  decks: Deck[]
+  decks: DeckView[]
   loading?: boolean
   error?: string | null
 }>()

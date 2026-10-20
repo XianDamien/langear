@@ -8,7 +8,7 @@ import RetroButton from '@/components/ui/RetroButton.vue'
 
 const settingsStore = useSettingsStore()
 const route = useRoute()
-const { desiredRetention, learningSteps, relearningSteps, maximumInterval, defaultSourceScope, saving, loading, loadError, saveError } =
+const { desiredRetention, learningSteps, relearningSteps, maximumInterval, defaultDeckScope, saving, loading, loadError, saveError } =
   storeToRefs(settingsStore)
 const { deckId, deckTitle, dailyNewLimit, dailyReviewLimit, schedulingEnabled } = storeToRefs(settingsStore)
 const coreDeck = computed(() => deckId.value !== undefined)
@@ -39,7 +39,7 @@ const retentionPercent = computed({
 function loadSettings() {
   const raw = route.query.deck_id
   const value = Array.isArray(raw) ? raw[0] : raw
-  return settingsStore.load(value === undefined ? undefined : /^\d+$/.test(value || '') ? Number(value) : value || '')
+  return settingsStore.load(value || undefined)
 }
 watch(() => route.query.deck_id, loadSettings, { immediate: true })
 
@@ -137,8 +137,8 @@ async function handleSave() {
               id="desired-retention"
               v-model.number="retentionPercent"
               type="number"
-              :min="coreDeck ? 70 : 1"
-              :max="coreDeck ? 99 : 99.9"
+              :min="70"
+              :max="99"
               step="0.1"
               required
               class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none"
@@ -171,14 +171,14 @@ async function handleSave() {
           </div>
 
           <div v-if="!deckId">
-            <label for="default-source-scope" class="block text-sm font-bold uppercase text-slate-500 mb-2">
-              默认教材范围
+            <label for="default-deck-scope" class="block text-sm font-bold uppercase text-slate-500 mb-2">
+              默认牌组范围
             </label>
             <input
-              id="default-source-scope"
-              v-model.trim="defaultSourceScope"
+              id="default-deck-scope"
+              v-model.trim="defaultDeckScope"
               type="text"
-              placeholder="留空表示全部，或填写 source ID，逗号分隔"
+              placeholder="留空表示全部，或填写牌组 UUID，逗号分隔"
               class="w-full border border-slate-200 p-2 text-slate-900 font-sans focus:border-brand-accent outline-none bg-white"
             >
           </div>

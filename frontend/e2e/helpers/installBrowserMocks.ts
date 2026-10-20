@@ -174,11 +174,14 @@ export async function installBrowserMocks(page: Page) {
       configurable: true,
       value: class MockAudioContext {
         sampleRate = 48000
+        state = 'running'
         destination = {} as AudioDestinationNode
+        audioWorklet = { addModule: async () => undefined }
 
         createMediaStreamSource() {
           return {
-            connect() {
+            connect(target?: { __emitMockPcmFrame?: () => void }) {
+              target?.__emitMockPcmFrame?.()
               return undefined
             },
             disconnect() {
@@ -220,7 +223,43 @@ export async function installBrowserMocks(page: Page) {
           }
         }
 
+        async resume() {
+          this.state = 'running'
+        }
+
         async close() {
+          return undefined
+        }
+      },
+    })
+
+    Object.defineProperty(window, 'AudioWorkletNode', {
+      configurable: true,
+      value: class MockAudioWorkletNode {
+        port = {
+          onmessage: null as ((event: { data: Float32Array }) => void) | null,
+          close() {
+            return undefined
+          },
+        }
+
+        constructor() {
+          window.setTimeout(() => {
+            this.port.onmessage?.({ data: new Float32Array(contract.pcmFrame) })
+          }, 0)
+        }
+
+        __emitMockPcmFrame() {
+          window.setTimeout(() => {
+            this.port.onmessage?.({ data: new Float32Array(contract.pcmFrame) })
+          }, 0)
+        }
+
+        connect() {
+          return undefined
+        }
+
+        disconnect() {
           return undefined
         }
       },

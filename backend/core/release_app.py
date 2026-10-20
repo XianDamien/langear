@@ -24,6 +24,20 @@ class CorePrefix:
         await self.app(inner, receive, scoped_send)
 
 
+def make_core_app(core):
+    """Core-only runtime: the same /api/content/v1 transition path as paired releases."""
+    @asynccontextmanager
+    async def lifespan(app):
+        async with core.router.lifespan_context(core):
+            yield
+
+    return Starlette(lifespan=lifespan, routes=[
+        Mount("/api/content", app=CorePrefix(core, "/api/content")),
+        Mount("/content-api", app=CorePrefix(core, "/content-api")),
+        Mount("/", app=core),
+    ])
+
+
 def make_release_app(legacy, core):
     @asynccontextmanager
     async def lifespan(app):

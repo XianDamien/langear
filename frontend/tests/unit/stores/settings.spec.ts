@@ -4,12 +4,18 @@ import { useSettingsStore } from '@/stores/settings'
 import { fetchSettings, saveSettings } from '@/services/api/settings'
 import { ElMessage } from 'element-plus'
 
-vi.mock('@/services/api/settings', () => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }))
+vi.mock('@/services/api/settings', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/services/api/settings')>()),
+  fetchSettings: vi.fn(),
+  saveSettings: vi.fn(),
+}))
 vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn() } }))
 
+const deckA = '01900000-0000-7000-8000-000000000018'
+const deckB = '01900000-0000-7000-8000-000000000019'
 const values = {
   desiredRetention: 0.91, learningSteps: '1,15', relearningSteps: '15',
-  maximumInterval: 1200, defaultSourceScope: '1',
+  maximumInterval: 1200, defaultDeckScope: '',
 }
 
 describe('settings persistence feedback', () => {
@@ -47,32 +53,32 @@ describe('settings persistence feedback', () => {
   it('rejects an unscoped response when loading a deck', async () => {
     vi.mocked(fetchSettings).mockResolvedValue({ data: values } as Awaited<ReturnType<typeof fetchSettings>>)
     const store = useSettingsStore()
-    await store.load(18)
+    await store.load(deckA)
     expect(store.loadError).toBeTruthy()
     expect(await store.save()).toBe(false)
     expect(saveSettings).not.toHaveBeenCalled()
   })
 
   it('does not show success if a deck save returns global defaults', async () => {
-    vi.mocked(fetchSettings).mockResolvedValue({ data: { ...values, deckId: 18, dailyNewLimit: 3, dailyReviewLimit: 7 } } as Awaited<ReturnType<typeof fetchSettings>>)
+    vi.mocked(fetchSettings).mockResolvedValue({ data: { ...values, deckId: deckA, dailyNewLimit: 3, dailyReviewLimit: 7 } } as Awaited<ReturnType<typeof fetchSettings>>)
     vi.mocked(saveSettings).mockResolvedValue({ data: values } as Awaited<ReturnType<typeof saveSettings>>)
     const store = useSettingsStore()
-    await store.load(18)
+    await store.load(deckA)
     expect(await store.save()).toBe(false)
-    expect(store.deckId).toBe(18)
+    expect(store.deckId).toBe(deckA)
     expect(ElMessage.success).not.toHaveBeenCalled()
   })
 
   it('keeps the latest deck when an earlier request finishes late', async () => {
     let finish!: (response: Awaited<ReturnType<typeof fetchSettings>>) => void
     vi.mocked(fetchSettings).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-    vi.mocked(fetchSettings).mockResolvedValueOnce({ data: { ...values, deckId: 19, dailyNewLimit: 9 } } as Awaited<ReturnType<typeof fetchSettings>>)
+    vi.mocked(fetchSettings).mockResolvedValueOnce({ data: { ...values, deckId: deckB, dailyNewLimit: 9 } } as Awaited<ReturnType<typeof fetchSettings>>)
     const store = useSettingsStore()
-    const oldLoad = store.load(18)
-    await store.load(19)
-    finish({ data: { ...values, deckId: 18, dailyNewLimit: 3 } } as Awaited<ReturnType<typeof fetchSettings>>)
+    const oldLoad = store.load(deckA)
+    await store.load(deckB)
+    finish({ data: { ...values, deckId: deckA, dailyNewLimit: 3 } } as Awaited<ReturnType<typeof fetchSettings>>)
     await oldLoad
-    expect(store.deckId).toBe(19)
+    expect(store.deckId).toBe(deckB)
     expect(store.dailyNewLimit).toBe(9)
   })
 })

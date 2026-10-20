@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { logoutLibraryContent } from '@/services/libraryContent'
-import { contentCoreEnabled } from '@/services/contentCore'
-import { useCoreAuthStore } from '@/stores/coreAuth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { onMounted } from 'vue'
 import { LogOut, Menu, User, X } from 'lucide-vue-next'
 import LanguageSelector from '../ui/LanguageSelector.vue'
 import RetroButton from '../ui/RetroButton.vue'
@@ -20,19 +16,16 @@ const emit = defineEmits<{
 
 const langPair = defineModel<string>('langPair', { default: 'en-zh' })
 const authStore = useAuthStore()
-const coreAuth = useCoreAuthStore()
 const router = useRouter()
+
 async function signOut() {
   try {
-    if (!contentCoreEnabled) { await logoutLibraryContent(); authStore.logout(); return }
-    await coreAuth.logout(); await router.push('/login')
+    await authStore.logout()
+    await router.push({ name: 'Login' })
+  } catch {
+    ElMessage.error('退出未完成，请重试。')
   }
-  catch { ElMessage.error('退出未完成，请重试。') }
 }
-
-onMounted(() => {
-  if (!contentCoreEnabled) void authStore.loadCurrentUser()
-})
 </script>
 
 <template>
@@ -52,9 +45,15 @@ onMounted(() => {
 
     <div class="flex items-center gap-4">
       <LanguageSelector v-model="langPair" />
+      <RouterLink
+        to="/dialogue/history"
+        class="hidden text-sm text-slate-500 hover:text-brand-accent sm:inline"
+      >
+        对话历史
+      </RouterLink>
       <div class="hidden sm:flex items-center gap-2 text-sm font-bold text-slate-700">
         <User class="h-4 w-4 text-brand-accent" />
-        <span>{{ (contentCoreEnabled ? (coreAuth.user?.username || coreAuth.user?.email) : authStore.user?.username) || '已登录' }}</span>
+        <span>{{ authStore.user?.username || authStore.user?.email || '已登录' }}</span>
       </div>
       <RetroButton
         variant="secondary"

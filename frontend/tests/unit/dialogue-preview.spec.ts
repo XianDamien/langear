@@ -4,7 +4,6 @@ import DialoguePreviewView from '@/views/DialoguePreviewView.vue'
 import { dialogueApi } from '@/services/dialogue'
 import { reviewHttp } from '@/services/review'
 import { createRecordingSession } from '@/adapters/browser/recording'
-import { useCoreAuthStore } from '@/stores/coreAuth'
 import router from '@/router'
 
 vi.mock('@/services/dialogue', () => ({
@@ -13,7 +12,6 @@ vi.mock('@/services/dialogue', () => ({
 }))
 vi.mock('@/services/review', () => ({ reviewHttp: { get: vi.fn() } }))
 vi.mock('@/adapters/browser/recording', () => ({ createRecordingSession: vi.fn() }))
-vi.mock('@/stores/coreAuth', () => ({ useCoreAuthStore: vi.fn() }))
 
 beforeEach(() => {
   vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function () { this.open = true })
@@ -99,5 +97,4 @@ it('opens the development preview without looking up an account', async () => {
   await router.push('/preview/dialogue')
   await flushPromises()
   expect(router.currentRoute.value.name).toBe('DialoguePreview')
-  expect(useCoreAuthStore).not.toHaveBeenCalled()
 })

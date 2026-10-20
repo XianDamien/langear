@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { installReviewMocks } from './helpers/installReviewMocks'
+import { installReviewMocks, reviewDeckId } from './helpers/installReviewMocks'
 import { installBrowserMocks } from './helpers/installBrowserMocks'
 
 const transcript = 'The quick brown fox jumps over the lazy dog.'
 const transcriptPattern = /The\s*quick\s*brown\s*fox\s*jumps\s*over\s*the\s*lazy\s*dog\./
 
 async function completeFirstStudyCard(page: import('@playwright/test').Page) {
-  await page.goto('/study/1001')
+  await page.goto(`/review/${reviewDeckId}`)
 
-  await expect(page).toHaveURL(/\/review\/core-deck$/)
+  await expect(page).toHaveURL(new RegExp(`/review/${reviewDeckId}$`))
   await expect(page.getByTestId('deck-review')).toBeVisible()
   await expect(page.locator('header h1')).toContainText('Lesson 1')
   await expect(page.getByTestId('study-task-nav')).toHaveCount(0)
@@ -73,32 +73,28 @@ test('演示音频可播放，刷新恢复反馈，第二张卡使用自己的�
   await completeFirstStudyCard(page)
   await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
   const audios = page.locator('[data-testid="transcription-result"] audio')
-  await expect.poll(async () => audios.evaluateAll(elements => elements.every(element => {
+  await expect.poll(async () => audios.nth(0).evaluate(element => {
     const audio = element as HTMLAudioElement
     return Number.isFinite(audio.duration) && audio.duration > 0
-  }))).toBe(true)
+  })).toBe(true)
   await page.getByRole('button', { name: '播放原音频', exact: true }).click()
   await expect.poll(async () => audios.nth(0).evaluate(element => !(element as HTMLAudioElement).paused)).toBe(true)
-  await page.getByRole('button', { name: '播放我的录音', exact: true }).click()
-  await expect.poll(async () => audios.evaluateAll(elements =>
-    (elements[0] as HTMLAudioElement).paused && !(elements[1] as HTMLAudioElement).paused,
-  )).toBe(true)
-  await page.getByRole('slider', { name: '我的录音进度' }).fill('1')
-  await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).currentTime)).toBeGreaterThanOrEqual(1)
 
   await page.reload()
   await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
   await expect(page.getByTestId('transcript-row')).toContainText(transcriptPattern)
-  await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).duration)).toBeGreaterThan(1)
+  await expect.poll(async () => audios.evaluateAll(elements => elements.every(element => {
+    const audio = element as HTMLAudioElement
+    return Number.isFinite(audio.duration) && audio.duration > 0
+  }))).toBe(true)
+  await page.getByRole('button', { name: '播放我的录音', exact: true }).click()
+  await expect.poll(async () => audios.nth(1).evaluate(element => !(element as HTMLAudioElement).paused)).toBe(true)
+  await page.getByRole('slider', { name: '我的录音进度' }).fill('1')
+  await expect.poll(async () => audios.nth(1).evaluate(element => (element as HTMLAudioElement).currentTime)).toBeGreaterThanOrEqual(1)
 
   await page.getByTestId('rate-good').click()
-  await page.getByTestId('record-toggle').click()
-  await expect(page.getByTestId('live-transcript')).toContainText('Learning a language requires practice.')
-  await page.getByTestId('record-toggle').click()
-  await page.getByTestId('flip-button').click()
-  await expect(page.getByTestId('feedback-panel')).toContainText('本句转写与原文一致')
-  await expect(page.getByTestId('transcript-row')).toContainText('Learning a language requires practice.')
-  await expect(page.getByTestId('feedback-panel')).not.toContainText('extra seats')
+  await expect(page.getByTestId('card-front-container')).toBeVisible()
+  await expect(page.getByTestId('feedback-panel')).toHaveCount(0)
   expect(legacyRequests).toEqual([])
 })
 

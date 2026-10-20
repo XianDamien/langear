@@ -6,7 +6,7 @@ import TranscriptComparisonPanel from '@/components/study/TranscriptComparisonPa
 import RetroButton from '@/components/ui/RetroButton.vue'
 import ReviewRatingButtons from './ReviewRatingButtons.vue'
 import type { PracticeInput, ReviewAttempt } from '@/services/review'
-import type { ResourceCard } from '@/services/contentCore'
+import type { ResourceCard } from '@/services/content'
 
 const props = defineProps<{
   card: ResourceCard

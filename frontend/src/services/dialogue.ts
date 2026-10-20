@@ -19,8 +19,20 @@ export interface DialogueSession {
   user_turns: number; time_limit_seconds: number; turns: DialogueTurn[]; review: DialogueReview | null
 }
 export interface DialogueEntry { deck_id: string; review_queue_id: string; entry_key: string; attempt_ids: string[] }
+export interface DialogueHistoryItem {
+  id: string
+  deck_id: string
+  deck_name: string
+  title: string | null
+  status: string
+  user_turns: number
+  created_at: string
+  has_review: boolean
+}
 export const dialogueApi = {
   available: async () => (await reviewHttp.get<{ enabled: boolean }>('/dialogue/availability')).data.enabled,
+  list: async () => (await reviewHttp.get<{ sessions: DialogueHistoryItem[] }>('/dialogue/sessions')).data.sessions,
+  remove: async (id: string) => { await reviewHttp.delete(`/dialogue/sessions/${id}`) },
   create: async (entry: DialogueEntry) => (await reviewHttp.post<DialogueSession>('/dialogue/sessions', entry, { timeout: 65000 })).data,
   get: async (id: string) => (await reviewHttp.get<DialogueSession>(`/dialogue/sessions/${id}`)).data,
   finish: async (id: string) => (await reviewHttp.post<DialogueSession>(`/dialogue/sessions/${id}/finish`)).data,

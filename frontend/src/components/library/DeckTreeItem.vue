@@ -1,50 +1,28 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, ChevronRight, Check, Play, Plus, Settings } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Check, Play, Plus, Settings, ListChecks } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
-import type { Deck } from '@/types/domain'
-import {
-  collectLessonIds,
-  getNodeSelectionStatus,
-  getSelectedLessonCount,
-} from '@/utils/deckSelection'
+import type { DeckView } from '@/stores/decks'
 
 const props = defineProps<{
-  deck: Deck
+  deck: DeckView
   mode: 'library' | 'my-courses'
-  selectedLessonIdSet: Set<number>
-  depth?: number
-  selectedCoreDeckIds?: Set<string>
   selectionDisabled?: boolean
+  depth?: number
 }>()
 
 const emit = defineEmits<{
-  selectLesson: [lessonId: string]
-  toggleDeckSelection: [deckId: string]
+  toggleMembership: [deckId: string]
   playDeck: [deckId: string]
   editDeckSettings: [deckId: string]
+  selectCards: [deckId: string]
 }>()
 
-const expanded = ref(props.depth === 0)
-
-const isCore = computed(() => props.deck.origin === 'core')
-const lessonIds = computed(() => isCore.value ? [] : collectLessonIds(props.deck))
-const totalLessonCount = computed(() => lessonIds.value.length)
-const selectedLessonCount = computed(() =>
-  getSelectedLessonCount(props.deck, props.selectedLessonIdSet),
-)
-const selectionStatus = computed(() =>
-  isCore.value ? (props.selectedCoreDeckIds?.has(props.deck.id) ? 'full' : 'none') : getNodeSelectionStatus(props.deck, props.selectedLessonIdSet),
-)
+const expanded = ref((props.depth ?? 0) === 0)
+const hasChildren = computed(() => props.deck.children.length > 0)
 
 function toggle() {
-  if (props.deck.children?.length) {
-    expanded.value = !expanded.value
-  }
-}
-
-function handleChevronClick() {
-  toggle()
+  if (hasChildren.value) expanded.value = !expanded.value
 }
 
 function handleRowClick() {
@@ -52,26 +30,6 @@ function handleRowClick() {
     toggle()
     return
   }
-
-  if (props.deck.type === 'lesson') {
-    emit('selectLesson', props.deck.id)
-    return
-  }
-
-  if (props.mode === 'my-courses') {
-    emit('playDeck', props.deck.id)
-    return
-  }
-
-  toggle()
-}
-
-function handlePlayClick() {
-  if (props.deck.type === 'lesson') {
-    emit('selectLesson', props.deck.id)
-    return
-  }
-
   emit('playDeck', props.deck.id)
 }
 </script>
@@ -81,26 +39,24 @@ function handlePlayClick() {
     <div
       :class="[
         'mb-2 flex min-h-[70px] items-center justify-between border border-slate-200 p-3 transition-colors',
-        mode === 'library' && !deck.children?.length ? 'cursor-default' : 'cursor-pointer',
-        deck.type === 'lesson'
-          ? 'bg-white hover:border-brand-accent'
-          : 'bg-slate-50 hover:bg-slate-100',
+        mode === 'library' && !hasChildren ? 'cursor-default' : 'cursor-pointer',
+        hasChildren ? 'bg-slate-50 hover:bg-slate-100' : 'bg-white hover:border-brand-accent',
       ]"
       @click="handleRowClick"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <template v-if="deck.children?.length">
+        <template v-if="hasChildren">
           <ChevronDown
             v-if="expanded"
             :size="16"
             class="text-slate-400"
-            @click.stop="handleChevronClick"
+            @click.stop="toggle"
           />
           <ChevronRight
             v-else
             :size="16"
             class="text-slate-400"
-            @click.stop="handleChevronClick"
+            @click.stop="toggle"
           />
         </template>
         <div
@@ -111,9 +67,8 @@ function handlePlayClick() {
         <div class="min-w-0">
           <button
             type="button"
-            :disabled="mode === 'library' && !deck.children?.length"
             class="block max-w-full truncate text-left font-bold"
-            :class="deck.type === 'lesson' ? 'text-base leading-6' : 'text-lg leading-7'"
+            :class="hasChildren ? 'text-lg leading-7' : 'text-base leading-6'"
             @click.stop="handleRowClick"
           >
             {{ deck.name }}
@@ -121,76 +76,72 @@ function handlePlayClick() {
 
           <div
             class="min-h-4 text-slate-500"
-            :class="deck.type === 'lesson' ? 'text-sm leading-5' : 'text-xs leading-4'"
+            :class="hasChildren ? 'text-xs leading-4' : 'text-sm leading-5'"
           >
-            <template v-if="isCore">
-              {{ deck.totalCards }} 张卡片
-              <span v-if="mode === 'my-courses' && deck.reviewCountsAvailable" class="ml-2">新 {{ deck.newCards }} · 待学 {{ deck.reviewCards }}</span>
-            </template>
-            <template v-else-if="deck.type === 'lesson'">
-              <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·
-              <span class="font-pixel text-brand-accent">复习 {{ deck.reviewCards }}</span> ·
-              <span class="text-green-600">完成 {{ deck.completedCards }}</span>
-            </template>
-            <template v-else-if="mode === 'library' && selectionStatus !== 'none'">
-              {{ selectionStatus === 'full' ? '已选' : '' }}{{ selectedLessonCount }}/{{ totalLessonCount }}
-            </template>
-            <template v-else-if="mode === 'my-courses'">
-              {{ totalLessonCount }} 节
-            </template>
+            {{ deck.totalCards }} 张卡片
+            <span class="ml-2">新 {{ deck.newCards }}</span>
+            <span class="ml-2">待学 {{ deck.reviewCards }}</span>
+            <span class="ml-2">完成 {{ deck.completedCards }}</span>
           </div>
         </div>
       </div>
 
       <div class="ml-3 flex shrink-0 items-center gap-2">
-        <button
-          v-if="mode === 'my-courses'"
-          type="button"
-          class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent"
-          :title="`${deck.name} 设置`"
-          :aria-label="`${deck.name} 设置`"
-          @click.stop="emit('editDeckSettings', deck.id)"
-        >
-          <Settings :size="16" />
-        </button>
-        <template v-if="mode === 'library'">
-          <RetroButton
-            :variant="selectionStatus === 'full' ? 'primary' : 'secondary'"
-            :disabled="selectionDisabled"
-            size="sm"
-            :icon="selectionStatus === 'full' ? Check : Plus"
-            @click.stop="emit('toggleDeckSelection', deck.id)"
+        <template v-if="mode === 'my-courses'">
+          <button
+            type="button"
+            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent"
+            :title="`${deck.name} 设置`"
+            :aria-label="`${deck.name} 设置`"
+            @click.stop="emit('editDeckSettings', deck.id)"
           >
-            {{ selectionStatus === 'full' ? '已加入' : '加入' }}
-          </RetroButton>
-        </template>
-        <template v-else>
+            <Settings :size="16" />
+          </button>
           <RetroButton
             variant="primary"
             size="sm"
             :icon="Play"
-            @click.stop="handlePlayClick"
+            @click.stop="emit('playDeck', deck.id)"
           >
             开始
+          </RetroButton>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent disabled:opacity-40"
+            :disabled="selectionDisabled"
+            :title="`${deck.name} 选择卡片`"
+            :aria-label="`${deck.name} 选择卡片`"
+            @click.stop="emit('selectCards', deck.id)"
+          >
+            <ListChecks :size="16" />
+          </button>
+          <RetroButton
+            :variant="deck.inMyCourses ? 'primary' : 'secondary'"
+            :disabled="selectionDisabled"
+            size="sm"
+            :icon="deck.inMyCourses ? Check : Plus"
+            @click.stop="emit('toggleMembership', deck.id)"
+          >
+            {{ deck.inMyCourses ? '已加入' : '加入' }}
           </RetroButton>
         </template>
       </div>
     </div>
 
-    <template v-if="expanded && deck.children?.length">
+    <template v-if="expanded && hasChildren">
       <DeckTreeItem
         v-for="child in deck.children"
         :key="child.id"
         :deck="child"
         :mode="mode"
-        :selected-lesson-id-set="selectedLessonIdSet"
-        :selected-core-deck-ids="selectedCoreDeckIds"
         :selection-disabled="selectionDisabled"
         :depth="(depth ?? 0) + 1"
-        @select-lesson="emit('selectLesson', $event)"
-        @toggle-deck-selection="emit('toggleDeckSelection', $event)"
+        @toggle-membership="emit('toggleMembership', $event)"
         @play-deck="emit('playDeck', $event)"
         @edit-deck-settings="emit('editDeckSettings', $event)"
+        @select-cards="emit('selectCards', $event)"
       />
     </template>
   </div>

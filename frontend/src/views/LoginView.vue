@@ -1,22 +1,19 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Lock, LogIn, UserPlus } from 'lucide-vue-next'
-import { contentCoreEnabled, resourceError } from '@/services/contentCore'
-import { useCoreAuthStore } from '@/stores/coreAuth'
+import { authError } from '@/services/auth'
 import { useAuthStore } from '@/stores/auth'
 import RetroButton from '@/components/ui/RetroButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const coreAuth = useCoreAuthStore()
 const formError = ref('')
-const busy = computed(() => contentCoreEnabled ? coreAuth.loading : authStore.loading)
 
 const mode = ref<'login' | 'register'>('login')
 const form = reactive({
+  identifier: '',
   username: '',
   email: '',
   invitationCode: '',
@@ -26,32 +23,32 @@ const form = reactive({
 const title = computed(() => (mode.value === 'login' ? '登录 LanGear' : '创建账号'))
 const submitIcon = computed(() => (mode.value === 'login' ? LogIn : UserPlus))
 
+function switchMode() {
+  formError.value = ''
+  mode.value = mode.value === 'login' ? 'register' : 'login'
+}
+
 async function submit() {
   formError.value = ''
   try {
-    if (contentCoreEnabled) {
-      await coreAuth.signIn(mode.value, form.email, form.password)
-      await router.push('/library')
-      return
-    }
     if (mode.value === 'login') {
-      await authStore.loginWithPassword({
-        username: form.username,
-        password: form.password,
-      })
+      await authStore.login(form.identifier, form.password)
     } else {
-      await authStore.registerWithPassword({
-        username: form.username,
-        password: form.password,
+      if (!form.username.trim() && !form.email.trim()) {
+        formError.value = '请填写用户名或邮箱。'
+        return
+      }
+      await authStore.register({
+        username: form.username || undefined,
         email: form.email || undefined,
-        invitation_code: form.invitationCode,
+        password: form.password,
+        invitationCode: form.invitationCode || undefined,
       })
     }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     await router.push(redirect)
   } catch (error) {
-    if (contentCoreEnabled) { formError.value = resourceError(error); return }
-    ElMessage.error(mode.value === 'login' ? '用户名或密码不正确' : '账号创建失败')
+    formError.value = authError(error)
   }
 }
 </script>
@@ -117,10 +114,7 @@ async function submit() {
           </h2>
         </div>
 
-        <p
-          v-if="contentCoreEnabled"
-          class="mb-5 text-sm text-slate-500"
-        >
+        <p class="mb-5 text-sm text-slate-500">
           支持使用原有用户名或邮箱登录。
         </p>
         <p
@@ -135,47 +129,52 @@ async function submit() {
           @submit.prevent="submit"
         >
           <label
-            v-if="!contentCoreEnabled"
+            v-if="mode === 'login'"
             class="block"
           >
-            <span class="text-sm font-bold text-slate-700">用户名</span>
+            <span class="text-sm font-bold text-slate-700">用户名或邮箱</span>
             <input
-              v-model.trim="form.username"
+              v-model.trim="form.identifier"
               class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
               autocomplete="username"
               required
-              minlength="3"
-              maxlength="50"
+              maxlength="254"
             >
           </label>
 
-          <label
-            v-if="mode === 'register' || contentCoreEnabled"
-            class="block"
-          >
-            <span class="text-sm font-bold text-slate-700">{{ contentCoreEnabled && mode === 'login' ? '用户名或邮箱' : '邮箱' }}</span>
-            <input
-              v-model.trim="form.email"
-              class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
-              :autocomplete="mode === 'login' ? 'username' : 'email'"
-              :required="contentCoreEnabled"
-              :type="contentCoreEnabled && mode === 'login' ? 'text' : 'email'"
-            >
-          </label>
-
-          <label
-            v-if="mode === 'register' && !contentCoreEnabled"
-            class="block"
-          >
-            <span class="text-sm font-bold text-slate-700">邀请码</span>
-            <input
-              v-model.trim="form.invitationCode"
-              class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
-              autocomplete="off"
-              required
-              maxlength="64"
-            >
-          </label>
+          <template v-else>
+            <label class="block">
+              <span class="text-sm font-bold text-slate-700">用户名</span>
+              <input
+                v-model.trim="form.username"
+                class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
+                autocomplete="username"
+                minlength="3"
+                maxlength="50"
+                pattern="[A-Za-z0-9._-]+"
+              >
+            </label>
+            <label class="block">
+              <span class="text-sm font-bold text-slate-700">邮箱（可选）</span>
+              <input
+                v-model.trim="form.email"
+                class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
+                autocomplete="email"
+                type="email"
+                maxlength="254"
+              >
+            </label>
+            <label class="block">
+              <span class="text-sm font-bold text-slate-700">邀请码</span>
+              <input
+                v-model.trim="form.invitationCode"
+                class="mt-2 w-full border-2 border-slate-300 bg-white px-4 py-3 outline-none focus:border-brand-accent"
+                autocomplete="off"
+                maxlength="64"
+              >
+              <span class="mt-1 block text-xs text-slate-500">如果账号服务开启邀请制，请填写有效邀请码。</span>
+            </label>
+          </template>
 
           <label class="block">
             <span class="text-sm font-bold text-slate-700">密码</span>
@@ -185,8 +184,12 @@ async function submit() {
               autocomplete="current-password"
               type="password"
               required
-              :minlength="mode === 'register' ? (contentCoreEnabled ? 12 : 8) : undefined"
+              :minlength="mode === 'register' ? 12 : undefined"
             >
+            <span
+              v-if="mode === 'register'"
+              class="mt-1 block text-xs text-slate-500"
+            >密码至少 12 位。</span>
           </label>
 
           <RetroButton
@@ -194,7 +197,7 @@ async function submit() {
             variant="primary"
             type="submit"
             :icon="submitIcon"
-            :disabled="busy"
+            :disabled="authStore.loading"
           >
             {{ mode === 'login' ? '登录' : '创建并登录' }}
           </RetroButton>
@@ -203,7 +206,7 @@ async function submit() {
         <button
           class="mt-6 text-sm text-slate-600 hover:text-brand-accent"
           type="button"
-          @click="mode = mode === 'login' ? 'register' : 'login'"
+          @click="switchMode"
         >
           {{ mode === 'login' ? '没有账号？创建账号' : '已有账号？返回登录' }}
         </button>
