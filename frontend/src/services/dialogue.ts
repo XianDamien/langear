@@ -6,7 +6,7 @@ export interface DialogueScenario {
   goals: { id: string; description_en?: string; description_zh: string }[]
   target_expressions: { english: string; meaning_zh: string; source: DialogueSource }[]
 }
-export interface DialogueTurn { id: string; role: 'user' | 'assistant'; text: string }
+export interface DialogueTurn { id: string; role: 'user' | 'assistant'; text: string; translation_zh?: string | null }
 export interface DialogueReview {
   summary_en?: string
   summary_zh: string
@@ -16,7 +16,7 @@ export interface DialogueReview {
 }
 export interface DialogueSession {
   id: string; deck_id: string; scenario: DialogueScenario; status: string; finish_reason: string | null
-  user_turns: number; max_user_turns: number; turns: DialogueTurn[]; review: DialogueReview | null
+  user_turns: number; time_limit_seconds: number; turns: DialogueTurn[]; review: DialogueReview | null
 }
 export interface DialogueEntry { deck_id: string; review_queue_id: string; entry_key: string; attempt_ids: string[] }
 export const dialogueApi = {

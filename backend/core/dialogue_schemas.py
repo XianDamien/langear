@@ -40,12 +40,12 @@ class Scenario(Body):
 class GoalResult(Body):
     goal_id: str
     completed: bool
-    evidence_turn_ids: list[UUID] = Field(max_length=8)
+    evidence_turn_ids: list[UUID] = Field(max_length=200)
 
 
 class UsedExpression(Body):
     english: str = Field(min_length=1, max_length=2000)
-    evidence_turn_ids: list[UUID] = Field(min_length=1, max_length=8)
+    evidence_turn_ids: list[UUID] = Field(min_length=1, max_length=200)
 
 
 class PracticePoint(Body):

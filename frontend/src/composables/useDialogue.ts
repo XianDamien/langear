@@ -10,6 +10,8 @@ export function useDialogue(entry: DialogueEntry) {
   const status = ref<Status>('preparing')
   const error = ref('')
   const partial = ref('')
+  // Remaining seconds in this voice connection; the server closes the dialogue at zero.
+  const remaining = ref(0)
   let socket: WebSocket | null = null
   let recorder: RecordingSession | null = null
   let playback: AudioContext | null = null
@@ -18,6 +20,7 @@ export function useDialogue(entry: DialogueEntry) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let recordingTimer: ReturnType<typeof setTimeout> | undefined
   let connectionTimer: ReturnType<typeof setTimeout> | undefined
+  let clock: ReturnType<typeof setInterval> | undefined
   let disposed = false
   let generation = 0
   let finishing = false
@@ -31,10 +34,18 @@ export function useDialogue(entry: DialogueEntry) {
     for (const source of sources) { try { source.stop() } catch { /* already ended */ } }
     sources.clear(); playUntil = 0
   }
+  function stopClock() {
+    clearInterval(clock); clock = undefined
+  }
+  function startClock(seconds: number) {
+    stopClock()
+    remaining.value = Math.max(0, Math.round(seconds))
+    clock = setInterval(() => { if (remaining.value > 0) remaining.value -= 1 }, 1000)
+  }
   function disconnect() {
     generation++
     clearTimeout(connectionTimer)
-    stopRecording(); clearPlayback()
+    stopClock(); stopRecording(); clearPlayback()
     if (socket) { socket.onclose = null; socket.onmessage = null; socket.close(); socket = null }
   }
   function fail(message: string) {
@@ -97,6 +108,7 @@ export function useDialogue(entry: DialogueEntry) {
           if (event.type === 'connected') {
             clearTimeout(connectionTimer)
             session.value = event.session
+            startClock(event.session.time_limit_seconds ?? 600)
             status.value = 'thinking'
           } else if (event.type === 'audio') { status.value = 'speaking'; audio(event.data) }
           else if (event.type === 'message_delta') partial.value += event.text
@@ -104,6 +116,7 @@ export function useDialogue(entry: DialogueEntry) {
           else if (event.type === 'ready') afterPlayback(() => { if (!disposed) status.value = 'ready' })
           else if (event.type === 'ended') {
             clearTimeout(connectionTimer)
+            stopClock()
             stopRecording()
             status.value = 'speaking'
             // The server has durably ended the session; normal socket close is expected.
@@ -170,6 +183,6 @@ export function useDialogue(entry: DialogueEntry) {
       connectionTimer = setTimeout(() => fail('结束请求未完成，请重新连接后重试。'), 135000)
     } else { void finishAndReview(false) }
   }
-  onBeforeUnmount(() => { disposed = true; disconnect(); void playback?.close() })
-  return { session, status, error, partial, prepare, connect, record, sendRecording, sendText, end, finishAndReview }
+  onBeforeUnmount(() => { disposed = true; stopClock(); disconnect(); void playback?.close() })
+  return { session, status, error, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview }
 }

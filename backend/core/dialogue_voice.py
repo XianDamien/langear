@@ -15,8 +15,10 @@ from websockets.asyncio.client import connect
 from core import auth
 from core.config import get_settings
 from core.db import get_engine
-from core.dialogue import enabled, session_data
+from core import dialogue as dialogue_api
+from core.dialogue import SESSION_SECONDS, enabled, session_data
 from core.dialogue_prompt import instructions, voice_practice
+from core.dialogue_schemas import Translation
 from core.errors import DomainError
 from core.models import DialogueSession, DialogueTurn, utcnow
 from core.repository import ContentRepository
@@ -71,13 +73,26 @@ def save_turn(collection_id, session_id, token, item_id, role, text):
         if old:
             return {'id': str(old.id), 'role': old.role, 'text': old.text}, session.user_turns
         if role == 'user':
-            if session.user_turns >= 8:
-                raise DomainError(409, 'DIALOGUE_TURN_LIMIT', 'The dialogue turn limit has been reached.')
             session.user_turns += 1
         turn = DialogueTurn(collection_id=collection_id, session_id=session_id,
             provider_item_id=item_id, role=role, text=text.strip())
         db.add(turn); db.flush()
         return {'id': str(turn.id), 'role': role, 'text': turn.text}, session.user_turns
+
+
+def prefetch_translation(collection_id, session_id, turn_id, text):
+    """Generate Chinese right after a teacher turn so a later click never waits.
+
+    Failures are ignored on purpose: the translation endpoint still generates on demand.
+    """
+    try:
+        chinese = Translation.model_validate(dialogue_api.planner('translation', {'text': text})).chinese
+        with Session(get_engine()) as db, db.begin():
+            db.execute(update(DialogueTurn).where(DialogueTurn.id == UUID(str(turn_id)),
+                DialogueTurn.collection_id == collection_id, DialogueTurn.session_id == session_id,
+                DialogueTurn.translation_zh.is_(None)).values(translation_zh=chinese))
+    except Exception:
+        return
 
 
 def release(collection_id, session_id, token, reason=None):
@@ -93,7 +108,7 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
     audio_bytes = 0
     assistant_text = ''
     user_turns = data['user_turns']
-    ending = 'turn_limit' if user_turns >= 8 else None
+    ending = None
     turn_deadline = time.monotonic() + 45
     ready = False
     completed = False
@@ -135,7 +150,7 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 if not pending_input:
                     await request_closing()
             elif kind in ('audio_begin', 'text'):
-                if not ready or responding or pending_input or recording or ending or user_turns >= 8:
+                if not ready or responding or pending_input or recording or ending:
                     raise DomainError(409, 'DIALOGUE_NOT_READY', 'Wait for the agent to finish.')
                 if kind == 'text':
                     text = message.get('text')
@@ -146,8 +161,6 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                     await send({'type': 'conversation.item.create', 'item': {'id': item_id, 'type': 'message',
                         'role': 'user', 'content': [{'type': 'input_text', 'text': text.strip()}]}})
                     await browser.send_json({'type': 'turn', 'turn': turn, 'user_turns': user_turns})
-                    if user_turns >= 8:
-                        ending = 'turn_limit'
                     await respond('This is the last turn. Give a brief, honest teacher closing without another question.' if ending else None)
                 else:
                     recording, audio_bytes = True, 0
@@ -215,9 +228,7 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 turn, user_turns = save_turn(collection_id, session_id, token, event.get('item_id'), 'user', event.get('transcript', ''))
                 pending_input = False
                 await browser.send_json({'type': 'turn', 'turn': turn, 'user_turns': user_turns})
-                if user_turns >= 8:
-                    ending = 'turn_limit'
-                if ending == 'user_ended':
+                if ending in ('user_ended', 'time_limit'):
                     await request_closing()
                 else:
                     await respond('This is the final turn. Give a brief, honest teacher closing in English without another question.' if ending else None)
@@ -246,8 +257,11 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                     item_id = response.get('id')
                     turn, _ = save_turn(collection_id, session_id, token, item_id, 'assistant', assistant_text)
                     await browser.send_json({'type': 'turn', 'turn': turn, 'user_turns': user_turns})
+                    # Warm the Chinese translation off the critical path so a click is instant.
+                    asyncio.create_task(asyncio.to_thread(
+                        prefetch_translation, collection_id, session_id, turn['id'], turn['text']))
                     assistant_text = ''
-                if ending == 'user_ended' and not closing_requested:
+                if ending in ('user_ended', 'time_limit') and not closing_requested:
                     await request_closing()
                 elif any(i.get('type') == 'function_call' for i in response.get('output', [])) and not (ending and has_spoken_reply):
                     await respond('Close briefly as the teacher in English without another question. Do not call finish_scenario again.' if ending else 'Continue the conversation naturally; the communicative task is not yet finished.')
@@ -272,7 +286,20 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 raise DomainError(504, 'DIALOGUE_RESPONSE_TIMEOUT', 'The voice response timed out. Please reconnect.')
             update_lease(collection_id, session_id, token)
 
-    tasks = [asyncio.create_task(fn()) for fn in (from_browser, from_provider, heartbeat)]
+    async def stop_at_time_limit():
+        """Close the conversation gracefully once the session budget is spent."""
+        nonlocal ending
+        await asyncio.sleep(SESSION_SECONDS)
+        if ending or completed:
+            return
+        ending = 'time_limit'
+        await send({'type': 'input_audio_buffer.clear'})
+        if not (responding or pending_input):
+            await request_closing()
+        # Stay alive until the bridge ends so the closing response can complete.
+        await asyncio.Event().wait()
+
+    tasks = [asyncio.create_task(fn()) for fn in (from_browser, from_provider, heartbeat, stop_at_time_limit)]
     try:
         done, _ = await asyncio.wait(tasks, timeout=900, return_when=asyncio.FIRST_COMPLETED)
         if not done:

@@ -11,7 +11,7 @@ import type { DialogueEntry } from '@/services/dialogue'
 const props = withDefaults(defineProps<{ entry: DialogueEntry; confirmOnClose?: boolean; closeLabel?: string }>(), { confirmOnClose: true, closeLabel: 'Close' })
 const emit = defineEmits<{ close: [] }>()
 const createController = inject(dialogueControllerKey, useDialogue)
-const { session, status, error, partial, prepare, connect, record, sendRecording, sendText, end, finishAndReview } = createController(props.entry)
+const { session, status, error, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview } = createController(props.entry)
 const dialog = ref<HTMLDialogElement>()
 const evidence = ref<DialogueSource>()
 const reply = ref('')
@@ -29,6 +29,10 @@ watch(session, () => { evidence.value = undefined })
 const busy = computed(() => ['preparing', 'connecting', 'thinking', 'reviewing'].includes(status.value))
 const talking = computed(() => ['ready', 'recording', 'speaking', 'thinking', 'connecting'].includes(status.value))
 const labels: Record<string, string> = { preparing: 'Getting ready…', connecting: 'Connecting…', speaking: 'Your teacher is speaking…', ready: 'Your turn', recording: 'Recording. Tap again to send.', thinking: 'Thinking…', reviewing: 'Finishing up…' }
+const clock = computed(() => {
+  const total = Math.max(0, remaining.value)
+  return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0')
+})
 const previousFocus = document.activeElement as HTMLElement | null
 function close() {
   if (props.confirmOnClose && talking.value && !window.confirm('离开会暂停本次对话，确定离开吗？')) return
@@ -100,7 +104,8 @@ onUnmounted(() => previousFocus?.focus())
               <span class="mb-1 block text-xs text-slate-500">{{ turn.role === 'user' ? 'You' : 'Teacher' }}</span>
               <DialogueText
                 :english="turn.text"
-                :translate="() => dialogueApi.translate(session!.id, turn.id)"
+                :chinese="turn.translation_zh || undefined"
+                :translate="turn.translation_zh ? undefined : () => dialogueApi.translate(session!.id, turn.id)"
               />
             </li>
           </ol>
@@ -177,7 +182,7 @@ onUnmounted(() => previousFocus?.focus())
           >
             {{ status === 'recording' ? 'Send recording' : 'Tap to speak' }}
           </RetroButton><div class="flex justify-between text-xs text-slate-500">
-            <span>{{ session?.user_turns || 0 }} / {{ session?.max_user_turns || 8 }} turns</span><button
+            <span>{{ remaining > 0 ? clock + ' left' : '' }}</span><button
               :disabled="status === 'connecting'"
               class="underline disabled:opacity-40"
               @click="end"

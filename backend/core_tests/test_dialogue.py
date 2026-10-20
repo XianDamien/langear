@@ -180,27 +180,46 @@ def speech(ws):
     ws.send_json({'type': 'commit'})
 
 
-@pytest.mark.parametrize('goal_done', [False, True])
-def test_manual_voice_persists_turns_and_finishes_on_goal_or_eight_turns(client, account, dialogue, monkeypatch, goal_done):
+def test_manual_voice_persists_turns_and_finishes_when_goal_is_met(client, account, dialogue, monkeypatch):
     from core import dialogue_voice
-    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni(finish=goal_done))
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni(finish=True))
     session = create(client, dialogue)
     path = '/api/v1/dialogue/sessions/' + session['id']
     with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
         assert receive(ws, 'connected')['session']['id'] == session['id']
         receive(ws, 'ready')
-        for index in range(1 if goal_done else 8):
-            speech(ws)
-            assert receive(ws, 'turn')['turn']['role'] == 'user'
-            if index < (0 if goal_done else 7): receive(ws, 'ready')
-        assert receive(ws, 'ended')['reason'] == ('task_completed' if goal_done else 'turn_limit')
+        speech(ws)
+        assert receive(ws, 'turn')['turn']['role'] == 'user'
+        assert receive(ws, 'ended')['reason'] == 'task_completed'
     saved = client.get(path).json()
     assert saved['status'] == 'finished'
-    assert saved['user_turns'] == (1 if goal_done else 8)
+    assert saved['user_turns'] == 1
+    assert saved['time_limit_seconds'] == 600
     assert len([t for t in saved['turns'] if t['role'] == 'user']) == saved['user_turns']
     reviewed = client.post(path + '/review')
     assert reviewed.status_code == 200, reviewed.text
     assert reviewed.json()['review']['used_expressions'][0]['english'] == 'an apple'
+
+
+def test_dialogue_has_no_turn_limit_and_ends_when_the_learner_stops(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni(finish=False))
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        assert receive(ws, 'connected')['session']['id'] == session['id']
+        receive(ws, 'ready')
+        # Ten turns used to be impossible; the cap is gone and only an explicit end stops it.
+        for _ in range(10):
+            speech(ws)
+            assert receive(ws, 'turn')['turn']['role'] == 'user'
+            assert receive(ws, 'turn')['turn']['role'] == 'assistant'
+            receive(ws, 'ready')
+        ws.send_json({'type': 'end'})
+        assert receive(ws, 'ended')['reason'] == 'user_ended'
+    saved = client.get(path).json()
+    assert saved['user_turns'] == 10
+    assert saved['status'] == 'finished'
 
 
 def test_interrupted_agent_output_is_not_saved_and_can_reconnect(client, account, dialogue, monkeypatch):
@@ -396,6 +415,22 @@ def test_realtime_receives_lesson_context_and_start_click_is_not_a_learner_answe
     assert any(e['type'] == 'conversation.item.create' and 'Start my English' in str(e) for e in provider.sent)
 
 
+def test_dialogue_closes_gracefully_when_the_time_budget_is_spent(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni(finish=False))
+    monkeypatch.setattr(dialogue_voice, 'SESSION_SECONDS', 0.4)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        assert receive(ws, 'connected')['session']['id'] == session['id']
+        receive(ws, 'ready')
+        # The teacher says one brief closing instead of the connection dying mid-conversation.
+        assert receive(ws, 'ended')['reason'] == 'time_limit'
+    saved = client.get(path).json()
+    assert saved['status'] == 'finished'
+    assert saved['finish_reason'] == 'time_limit'
+
+
 def test_translation_only_reads_an_owned_saved_turn(client, account, dialogue, monkeypatch, engine):
     from core.main import app
     from uuid import UUID
@@ -407,14 +442,37 @@ def test_translation_only_reads_an_owned_saved_turn(client, account, dialogue, m
         owner = db.get(DialogueSession, UUID(session['id'])).collection_id
     token, _, _ = dialogue_voice.claim(owner, UUID(session['id']))
     turn, _ = dialogue_voice.save_turn(owner, UUID(session['id']), token, 'teacher-translate', 'assistant', 'Could you speak quietly, please?')
+    calls = []
     def translate(kind, context):
+        calls.append(kind)
         assert kind == 'translation' and context == {'text': turn['text']}
         return {'chinese': '能请你小声一点吗？'}
     monkeypatch.setattr(module, 'planner', translate)
     path = '/api/v1/dialogue/sessions/' + session['id'] + '/turns/' + turn['id'] + '/translation'
     assert client.post(path).json() == {'chinese': '能请你小声一点吗？'}
+    # The generated Chinese is stored, so a second click never calls the planner again.
+    assert client.post(path).json() == {'chinese': '能请你小声一点吗？'}
+    assert calls == ['translation']
     assert client.post(path.replace(turn['id'], str(uuid4()))).status_code == 404
     with TestClient(app, base_url='https://testserver', headers={'Origin': 'http://localhost:3002'}) as other:
         identity = other.post('/api/v1/auth/register', json={'email': 'translator@example.com', 'password': 'another strong password'}).json()
         other.headers['X-CSRF-Token'] = identity['csrf_token']
         assert other.post(path).status_code == 404
+
+
+def test_translation_is_prefetched_for_a_teacher_turn(client, account, dialogue, monkeypatch, engine):
+    from uuid import UUID
+    from core import dialogue as module, dialogue_voice
+    from sqlalchemy.orm import Session
+    from core.models import DialogueSession
+    session = create(client, dialogue)
+    with Session(engine) as db:
+        owner = db.get(DialogueSession, UUID(session['id'])).collection_id
+    token, _, _ = dialogue_voice.claim(owner, UUID(session['id']))
+    turn, _ = dialogue_voice.save_turn(owner, UUID(session['id']), token, 'teacher-prefetch', 'assistant', 'Could you speak quietly, please?')
+    monkeypatch.setattr(module, 'planner', lambda kind, context: {'chinese': '能请你小声一点吗？'})
+
+    dialogue_voice.prefetch_translation(owner, UUID(session['id']), turn['id'], turn['text'])
+
+    saved = client.get('/api/v1/dialogue/sessions/' + session['id']).json()
+    assert saved['turns'][0]['translation_zh'] == '能请你小声一点吗？'

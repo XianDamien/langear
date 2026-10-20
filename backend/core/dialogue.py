@@ -19,6 +19,9 @@ from core.review import QUEUES, RUNTIME_LOCK, ReviewService
 
 router = APIRouter(prefix='/api/v1/dialogue')
 
+# One voice connection may run this long before the teacher closes the conversation.
+SESSION_SECONDS = 600
+
 
 def enabled():
     config = get_settings()
@@ -125,7 +128,8 @@ def session_data(db, session):
         DialogueReview.collection_id == session.collection_id))
     return {'id': str(session.id), 'deck_id': str(session.deck_id), 'scenario': session.scenario,
         'status': session.status, 'finish_reason': session.finish_reason, 'user_turns': session.user_turns,
-        'max_user_turns': 8, 'turns': [{'id': str(t.id), 'role': t.role, 'text': t.text} for t in turns],
+        'time_limit_seconds': SESSION_SECONDS,
+        'turns': [{'id': str(t.id), 'role': t.role, 'text': t.text, 'translation_zh': t.translation_zh} for t in turns],
         'review': review.result if review else None}
 
 
@@ -225,8 +229,13 @@ def translate_turn(session_id: UUID, turn_id: UUID, context=Depends(service)):
     turn = repo.get(DialogueTurn, turn_id)
     if turn.session_id != session_id:
         missing()
+    # Pre-generated Chinese makes this a cache read; the planner only runs once per turn.
+    if turn.translation_zh:
+        return {'chinese': turn.translation_zh}
     try:
         # The client selects an owned saved turn, never arbitrary model input or another user's text.
-        return Translation.model_validate(planner('translation', {'text': turn.text})).model_dump()
+        translation = Translation.model_validate(planner('translation', {'text': turn.text}))
     except ValidationError:
         raise DomainError(502, 'DIALOGUE_AGENT_FAILED', 'Translation is unavailable. Please retry.') from None
+    turn.translation_zh = translation.chinese
+    return translation.model_dump()

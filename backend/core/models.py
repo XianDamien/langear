@@ -473,7 +473,6 @@ class DialogueSession(Entity, Scoped, Base):
             ["decks.collection_id", "decks.id"],
         ),
         CheckConstraint("status IN ('ready','active','interrupted','finished')", name="ck_dialogue_status"),
-        CheckConstraint("user_turns >= 0 AND user_turns <= 8", name="ck_dialogue_turn_limit"),
     )
 
 
@@ -483,6 +482,8 @@ class DialogueTurn(Entity, Scoped, Base):
     provider_item_id: Mapped[str] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(16))
     text: Mapped[str] = mapped_column(Text)
+    # Pre-generated Chinese so opening a translation never waits on the planner.
+    translation_zh: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
         ForeignKeyConstraint(["collection_id", "session_id"], ["dialogue_sessions.collection_id", "dialogue_sessions.id"], ondelete="CASCADE"),
         UniqueConstraint("session_id", "provider_item_id", "role"),

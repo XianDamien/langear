@@ -7,7 +7,7 @@ vi.mock('@/services/dialogue', () => ({ dialogueApi: { create: vi.fn(), get: vi.
 const recording = { start: vi.fn(), dispose: vi.fn(), stop: vi.fn(), getState: () => 'recording' }
 vi.mock('@/adapters/browser/recording', () => ({ createRecordingSession: vi.fn(async () => recording) }))
 let api: ReturnType<typeof useDialogue>
-const session = { id: 's', status: 'ready', turns: [], user_turns: 0, max_user_turns: 8, scenario: {}, review: null }
+const session = { id: 's', status: 'ready', turns: [], user_turns: 0, time_limit_seconds: 600, scenario: {}, review: null }
 class Socket {
   static OPEN = 1
   static current: Socket

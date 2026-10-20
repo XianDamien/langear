@@ -36,12 +36,13 @@ export function createDialoguePreview() {
   let nextId = 0
   const session = ref<DialogueSession>({
     id: 'preview-session', deck_id: previewEntry.deck_id, status: 'ready', finish_reason: null,
-    user_turns: 0, max_user_turns: 8, turns: [], review: null,
+    user_turns: 0, time_limit_seconds: 600, turns: [], review: null,
     scenario: { title: 'Let’s talk about it.', setup_zh: '', learner_role: 'Audience member', agent_role: 'Theatre staff', goals: [], target_expressions: [] },
   })
   const status = ref<ReturnType<typeof useDialogue>['status']['value']>('preview')
   const error = ref('')
   const partial = ref('')
+  const remaining = ref(0)
   const canReply = computed(() => ['recap', 'roleplay'].includes(page.value))
   const sample = computed(() => page.value === 'recap' ? sampleSummary : roleplayTurns.value ? sampleSeats : sampleRequest)
 
@@ -126,7 +127,7 @@ export function createDialoguePreview() {
   }
   async function connect() { error.value = ''; page.value = 'roleplay'; status.value = 'ready' }
   const controller: ReturnType<typeof useDialogue> = {
-    session, status, error, partial, prepare: async () => {}, connect,
+    session, status, error, partial, remaining, prepare: async () => {}, connect,
     record: async () => { record() }, sendRecording, sendText: text => { input.value = text; submit() },
     end: finish, finishAndReview: async () => { finish() },
   }
