@@ -16,7 +16,14 @@ from app.exceptions import AIFeedbackError
 FEEDBACK = {
     "transcription_text": "I went to the theatre.",
     "pronunciation": "发音清晰", "completeness": "内容完整", "fluency": "表达连贯",
-    "suggestions": [{"text": "练习重音", "target_word": "theatre", "timestamp": 1.2}],
+    "suggestions": [
+        {
+            "text": "练习重音",
+            "target_word": "theatre",
+            "timestamp": 1.2,
+            "dimension": "pronunciation",
+        }
+    ],
     "issues": [],
 }
 

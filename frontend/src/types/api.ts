@@ -57,10 +57,13 @@ export interface TranscriptionResult {
   timestamps: WordTimestamp[]
 }
 
+export type FeedbackDimension = 'pronunciation' | 'completeness' | 'fluency'
+
 export interface FeedbackSuggestion {
   text: string
   target_word?: string | null
   timestamp?: number | null
+  dimension?: FeedbackDimension | null
 }
 
 export interface FeedbackIssue {

@@ -2,21 +2,45 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import AIFeedbackPanel from '@/components/study/modules/AIFeedbackPanel.vue'
 
-describe('AIFeedbackPanel improvement-only feedback', () => {
-  it('shows a concise suggestion without a duplicate issue list or summary cards', () => {
+describe('AIFeedbackPanel dimension feedback', () => {
+  it('shows the three dimension evaluations with their matching suggestions', () => {
     const wrapper = mount(AIFeedbackPanel, { props: {
       feedback: { feedback: {
-        pronunciation: '发音整体清晰。', completeness: '内容完整。', fluency: '语流自然。',
-        suggestions: [{ text: '练习时把重音自然放在第二音节。', target_word: 'behind', timestamp: 1.2 }],
-        issues: [{ problem: '重音不正确。', timestamp: 1.2 }],
+        pronunciation: '发音整体清晰，只有个别元音偏短。',
+        completeness: '内容完整。',
+        fluency: '语流自然。',
+        suggestions: [
+          { text: '练习 /eə/ 时把口型从 /e/ 滑到 /ə/。', target_word: 'hair', timestamp: 1.2, dimension: 'pronunciation' },
+        ],
+        issues: [],
       } }, loading: false,
     } })
 
-    expect(wrapper.text()).toContain('可以试试')
-    expect(wrapper.text()).toContain('练习时把重音自然放在第二音节。')
+    const sections = wrapper.findAll('[data-testid="feedback-dimension"]')
+    expect(sections).toHaveLength(3)
+    expect(wrapper.text()).toContain('发音')
+    expect(wrapper.text()).toContain('完整度')
+    expect(wrapper.text()).toContain('流利度')
+    expect(wrapper.text()).toContain('发音整体清晰，只有个别元音偏短。')
+    expect(wrapper.text()).toContain('练习 /eə/ 时把口型从 /e/ 滑到 /ə/。')
     expect(wrapper.text()).not.toContain('问题点')
-    expect(wrapper.text()).not.toContain('重音不正确')
-    expect(wrapper.text()).not.toContain('发音整体清晰')
+    // 建议挂在对应维度下，而不是另外堆一个建议列表
+    expect(sections[0].text()).toContain('改进建议：练习 /eə/ 时把口型从 /e/ 滑到 /ə/。')
+    expect(sections[1].text()).not.toContain('练习 /eə/')
+    wrapper.unmount()
+  })
+
+  it('keeps suggestions without a dimension in a shared block', () => {
+    const wrapper = mount(AIFeedbackPanel, { props: {
+      feedback: { feedback: {
+        pronunciation: '发音清晰。',
+        suggestions: [{ text: '注意句尾不要吞音。', target_word: null, timestamp: null }],
+        issues: [],
+      } }, loading: false,
+    } })
+
+    expect(wrapper.text()).toContain('改进建议')
+    expect(wrapper.text()).toContain('注意句尾不要吞音。')
     wrapper.unmount()
   })
 

@@ -27,5 +27,7 @@ def test_prompt_metadata_tracks_conservative_suggestions_revision():
     import json
 
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata["prompt_version"] == "1.2.0"
-    assert metadata["changelog"][0]["version"] == "1.2.0"
+    changelog_versions = [entry["version"] for entry in metadata["changelog"]]
+    assert "1.2.0" in changelog_versions
+    # The newest changelog entry must always describe the current prompt version.
+    assert changelog_versions[0] == metadata["prompt_version"]

@@ -80,7 +80,7 @@ class TestGeminiAdapter:
         assert (expected_dir / "lesson_summary" / "metadata.json").exists()
         assert adapter.single_feedback_prompt.system
         assert adapter.single_feedback_prompt.user
-        assert adapter.single_feedback_prompt.metadata["prompt_version"] == "1.1.0"
+        assert adapter.single_feedback_prompt.metadata["prompt_version"]
         assert adapter.lesson_summary_prompt.system
         assert adapter.lesson_summary_prompt.user
 

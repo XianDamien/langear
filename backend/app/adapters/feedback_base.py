@@ -139,6 +139,24 @@ class FeedbackAdapterBase:
     ) -> str:
         raise NotImplementedError
 
+    _DIMENSION_ALIASES = {
+        "pronunciation": "pronunciation",
+        "发音": "pronunciation",
+        "completeness": "completeness",
+        "完整度": "completeness",
+        "完整性": "completeness",
+        "fluency": "fluency",
+        "流利度": "fluency",
+        "流畅度": "fluency",
+    }
+
+    @staticmethod
+    def _normalize_dimension(raw: Any) -> str | None:
+        """Map a suggestion dimension to a known key, degrading to None."""
+        if not isinstance(raw, str):
+            return None
+        return FeedbackAdapterBase._DIMENSION_ALIASES.get(raw.strip().lower())
+
     @staticmethod
     def _normalize_suggestions(raw: Any) -> list[dict[str, Any]]:
         """Normalize suggestions to a stable list-of-objects schema."""
@@ -149,7 +167,12 @@ class FeedbackAdapterBase:
         for item in raw:
             if isinstance(item, str):
                 normalized.append(
-                    {"text": item, "target_word": None, "timestamp": None}
+                    {
+                        "text": item,
+                        "target_word": None,
+                        "timestamp": None,
+                        "dimension": None,
+                    }
                 )
                 continue
 
@@ -168,11 +191,13 @@ class FeedbackAdapterBase:
             if timestamp is not None and not isinstance(timestamp, (int, float)):
                 raise AIFeedbackError("suggestion.timestamp must be a number or null")
 
+            dimension = item.get("dimension")
             normalized.append(
                 {
                     "text": text.strip(),
                     "target_word": target_word,
                     "timestamp": float(timestamp) if timestamp is not None else None,
+                    "dimension": FeedbackAdapterBase._normalize_dimension(dimension),
                 }
             )
 
