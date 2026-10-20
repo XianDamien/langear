@@ -4,15 +4,12 @@ from copy import deepcopy
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Path as ApiPath
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from core import auth
 from core.db import get_engine
-from core.models import Collection, Deck
-from core.config import get_settings
-from core.errors import DomainError
-from sqlalchemy import select
+from core.models import Collection
 from core.review import QUEUES, RUNTIME_LOCK, ReviewService
 from core.review_schemas import Flip, QueueCreate, Rate, ScheduleAction, SchedulingPatch
 
@@ -110,19 +107,3 @@ def deck_counts(collection: Identity):
 @router.get("/review/paused-cards")
 def paused_cards(deck_id: UUID, collection: Identity):
     return transact(collection, "paused_cards", deck_id)
-
-
-@router.get("/review/legacy-lessons/{lesson_id}")
-def legacy_lesson(collection: Identity, lesson_id: int = ApiPath(gt=0)):
-    # Imported decks have per-Collection UUIDs. Never derive or copy progress.
-    source = get_settings().legacy_import_source
-    with Session(get_engine()) as db:
-        deck = db.scalar(select(Deck).where(
-            Deck.collection_id == collection.id,
-            Deck.imported.is_(True),
-            Deck.source_metadata["source"].astext == source,
-            Deck.source_metadata["legacy_id"].astext == str(lesson_id),
-        )) if source else None
-        if deck is None:
-            raise DomainError(404, "LEGACY_LESSON_NOT_IMPORTED", "This lesson has not been migrated.")
-        return {"deck_id": deck.id}

@@ -1,7 +1,7 @@
 """Registration invites, identifier login, global settings and Dashboard."""
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select, text
@@ -14,6 +14,7 @@ from core.models import (
     DailyActivity,
     Deck,
     InvitationCode,
+    Note,
     User,
     utcnow,
 )
@@ -351,12 +352,15 @@ def test_dashboard_counts_attempts_streak_and_imported_history(client, account, 
 
 def test_dashboard_counts_imported_cards_as_pending_reviews(client, account, engine):
     """Migrated content is real study work and must appear in the queue counts."""
-    from core_tests.test_review_migration import imported_lesson, imported_note
-
     card = make_note(client, account)["cards"][0]
     assert client.get("/api/v1/dashboard").json()["stats"]["reviewsPending"] == 1
-    imported_lesson(engine, account)
-    imported_note(engine, card["note_id"], 101)
+    with Session(engine) as db, db.begin():
+        deck = db.get(Deck, UUID(account["deck_id"]))
+        deck.imported = True
+        deck.source_metadata = {"kind": "deck", "source": "fixture", "legacy_id": "42"}
+        note = db.get(Note, UUID(card["note_id"]))
+        note.imported = True
+        note.source_metadata = {"kind": "card", "source": "fixture", "legacy_id": "101"}
     assert client.get("/api/v1/dashboard").json()["stats"]["reviewsPending"] == 1
 
 

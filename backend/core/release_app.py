@@ -1,5 +1,5 @@
-"""Compose the legacy and Collection APIs behind the existing /api proxy."""
-from contextlib import AsyncExitStack, asynccontextmanager
+"""Serve the Collection API at /api/v1 plus the temporary /api/content alias."""
+from contextlib import asynccontextmanager
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -25,7 +25,7 @@ class CorePrefix:
 
 
 def make_core_app(core):
-    """Core-only runtime: the same /api/content/v1 transition path as paired releases."""
+    """Core runtime: /api/v1 plus the /api/content transition alias."""
     @asynccontextmanager
     async def lifespan(app):
         async with core.router.lifespan_context(core):
@@ -35,19 +35,4 @@ def make_core_app(core):
         Mount("/api/content", app=CorePrefix(core, "/api/content")),
         Mount("/content-api", app=CorePrefix(core, "/content-api")),
         Mount("/", app=core),
-    ])
-
-
-def make_release_app(legacy, core):
-    @asynccontextmanager
-    async def lifespan(app):
-        async with AsyncExitStack() as stack:
-            await stack.enter_async_context(legacy.router.lifespan_context(legacy))
-            await stack.enter_async_context(core.router.lifespan_context(core))
-            yield
-
-    return Starlette(lifespan=lifespan, routes=[
-        Mount("/api/content", app=CorePrefix(core, "/api/content")),
-        Mount("/content-api", app=CorePrefix(core, "/content-api")),
-        Mount("/", app=legacy),
     ])

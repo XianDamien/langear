@@ -21,7 +21,7 @@ describe('content proxy options', () => {
     const proxy = contentProxyOptions('http://127.0.0.1:18005', 'http://127.0.0.1:18004')
 
     expect(proxy.target).toBe('http://127.0.0.1:18005')
-    expect(proxy.rewrite?.('/api/content/v1/auth/legacy')).toBe('/api/v1/auth/legacy')
+    expect(proxy.rewrite?.('/api/content/v1/auth/me')).toBe('/api/v1/auth/me')
     expect(proxy.cookiePathRewrite).toEqual({ '/api/v1': '/api/content/v1' })
   })
 })

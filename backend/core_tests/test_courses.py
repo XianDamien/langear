@@ -136,6 +136,42 @@ def test_imported_flag_is_not_set_by_client_supplied_guids(client, account, engi
         assert deck is not None
 
 
+def test_incremental_content_filter_and_collection_isolation(client, account, engine):
+    created = []
+    for guid in ["legacy:fixture:1", "user-authored"]:
+        response = client.post(
+            "/api/v1/notes",
+            json={
+                "deck_id": account["deck_id"],
+                "note_type_key": "vocabulary",
+                "guid": guid,
+                "fields": {"word": "hello", "meaning": "你好"},
+            },
+        )
+        assert response.status_code == 201, response.text
+        created.append(response.json()["id"])
+    # Import provenance is an explicit flag; a client-supplied GUID must not
+    # hide user content from the editor.
+    assert len(client.get("/api/v1/cards", params={"exclude_imported": True}).json()["cards"]) == 4
+    with Session(engine) as db, db.begin():
+        db.get(Note, UUID(created[0])).imported = True
+    assert len(client.get("/api/v1/cards").json()["cards"]) == 4
+    result = client.get(
+        "/api/v1/cards",
+        params={"exclude_imported": True, "deck_id": account["deck_id"]},
+    )
+    assert len(result.json()["cards"]) == 2
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "other@example.com", "password": "another long password"},
+    )
+    assert client.get("/api/v1/cards", params={"exclude_imported": True}).json()["cards"] == []
+    assert client.get(
+        "/api/v1/cards",
+        params={"exclude_imported": True, "deck_id": account["deck_id"]},
+    ).status_code == 404
+
+
 def test_migration_backfills_source_metadata_for_pre_existing_legacy_rows(engine):
     """Rows imported before lan33_0011 must stay findable through provenance."""
     from pathlib import Path
@@ -143,9 +179,6 @@ def test_migration_backfills_source_metadata_for_pre_existing_legacy_rows(engine
     from alembic import command
     from alembic.config import Config
     from sqlalchemy import text
-
-    from core.content import ContentService
-    from core.legacy_selection import lesson
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic-core.ini"))
     command.downgrade(config, "lan21_0010")
@@ -191,5 +224,9 @@ def test_migration_backfills_source_metadata_for_pre_existing_legacy_rows(engine
             "source": "fixture",
             "legacy_id": "9",
         }
-        # The runtime lookup the legacy bridge uses must resolve the row.
-        assert lesson(ContentService(db, collection), 7).id == deck.id
+        # Provenance lookup remains available without a legacy ID bridge.
+        assert db.scalar(select(Deck).where(
+            Deck.collection_id == collection.id,
+            Deck.imported.is_(True),
+            Deck.source_metadata["legacy_id"].astext == "7",
+        )).id == deck.id

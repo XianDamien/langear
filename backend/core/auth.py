@@ -2,9 +2,6 @@
 
 import base64
 import binascii
-import json
-import urllib.request
-import urllib.error
 import hashlib
 import hmac
 import secrets
@@ -23,7 +20,6 @@ from core.models import (
     Collection,
     Deck,
     InvitationCode,
-    LegacyImport,
     LoginSession,
     User,
     utcnow,
@@ -282,47 +278,3 @@ def identity(request: Request, db=Depends(get_db, scope="function")):
     request.state.session_id = row.id
     request.state.user_id = user.id
     return collection
-
-
-def legacy_login(db, request, response):
-    """Exchange a verified legacy identity, mapped only by the import ledger."""
-    require_origin(request)
-    settings = get_settings()
-    authorization = request.headers.get("authorization", "")
-    if not settings.legacy_identity_url or not settings.legacy_import_source:
-        raise DomainError(
-            404, "LEGACY_LOGIN_DISABLED", "Legacy sign-in is not enabled."
-        )
-    if not authorization.startswith("Bearer ") or len(authorization) > 4096:
-        raise DomainError(401, "UNAUTHENTICATED", "Sign in to continue.")
-    rate_limit(request, "legacy_exchange", digest(authorization))
-    try:
-        upstream = urllib.request.Request(
-            settings.legacy_identity_url, headers={"Authorization": authorization}
-        )
-        with urllib.request.urlopen(upstream, timeout=5) as result:
-            payload = json.load(result)["data"]
-    except urllib.error.HTTPError as exc:
-        if exc.code == 401:
-            raise DomainError(401, "UNAUTHENTICATED", "Sign in to continue.") from None
-        raise DomainError(
-            503, "LEGACY_UNAVAILABLE", "Account service is unavailable."
-        ) from None
-    except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
-        raise DomainError(
-            503, "LEGACY_UNAVAILABLE", "Account service is unavailable."
-        ) from None
-    ledger = db.get(LegacyImport, settings.legacy_import_source)
-    mapped = (
-        ledger.report.get("user_mapping", {}).get(str(payload.get("id")))
-        if ledger
-        else None
-    )
-    from uuid import UUID
-
-    user = db.get(User, UUID(mapped)) if mapped else None
-    if user is None or user.disabled:
-        raise DomainError(
-            403, "ACCOUNT_NOT_IMPORTED", "This account has not been migrated."
-        )
-    return open_session(db, user, request, response)

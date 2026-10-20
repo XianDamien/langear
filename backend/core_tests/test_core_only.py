@@ -1,7 +1,7 @@
-"""Core must run with `backend/app` absent from the import path.
+"""Core must run with the legacy `app` package physically absent.
 
-A blocking import hook stands in for the future physical deletion of the legacy
-package: any attempt to import `app` or a submodule raises immediately.
+A blocking import hook guards against a regression that reintroduces the
+dependency: any attempt to import `app` or a submodule raises immediately.
 """
 
 import builtins

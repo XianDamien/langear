@@ -324,12 +324,11 @@ def test_spoken_natural_closing_with_finish_tool_is_not_repeated(client, account
 
 def test_release_prefix_routes_dialogue_http_and_voice_with_scoped_cookie(client, account, dialogue, monkeypatch):
     from core.main import app
-    from starlette.applications import Starlette
     from core import auth, dialogue_voice
-    from core.release_app import make_release_app
+    from core.release_app import make_core_app
 
     monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: FakeOmni())
-    with TestClient(make_release_app(Starlette(), app), base_url='https://testserver',
+    with TestClient(make_core_app(app), base_url='https://testserver',
             headers={'Origin': 'http://localhost:3002', 'X-CSRF-Token': client.headers['X-CSRF-Token']}) as release:
         release.cookies.set(auth.COOKIE, client.cookies.get(auth.COOKIE), path='/api/content/v1')
         response = release.post('/api/content/v1/dialogue/sessions', json=dialogue)
@@ -341,8 +340,8 @@ def test_release_prefix_routes_dialogue_http_and_voice_with_scoped_cookie(client
             ws.send_json({'type': 'end'})
             assert receive(ws, 'ended')['reason'] == 'user_ended'
         assert release.get(path).json()['status'] == 'finished'
-        # The Collection cookie is deliberately absent from the legacy API path.
-        assert release.get('/api/v1/auth/me').status_code == 404
+        # The Collection cookie is deliberately absent from the /api/v1 path.
+        assert release.get('/api/v1/auth/me').status_code == 401
 
 
 def test_review_rejects_agent_only_evidence_and_concurrent_voice_is_exclusive(client, account, dialogue, monkeypatch):

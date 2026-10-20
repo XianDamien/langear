@@ -12,25 +12,10 @@ import tempfile
 import time
 import urllib.request
 
-# core-runtime runs the core API and worker against the core database.
-# core-only releases have no legacy runtime or legacy database.
-# alias runtimes still serve the /api/content transition prefix.
-RUNTIMES = ('legacy', 'review', 'core', 'core-v1')
-CORE_RUNTIMES = ('review', 'core', 'core-v1')
-CORE_ONLY_RUNTIMES = ('core', 'core-v1')
-ALIAS_RUNTIMES = ('review', 'core', 'core-v1')
-
-
-def is_core_runtime(runtime):
-    return runtime in CORE_RUNTIMES
-
-
-def is_core_only(runtime):
-    return runtime in CORE_ONLY_RUNTIMES
-
-
-def serves_alias(runtime):
-    return runtime in ALIAS_RUNTIMES
+# Both contracts run the same core API and worker. They differ only in the
+# frontend API base: core uses /api/content/v1 (Release A), core-v1 uses /api/v1
+# (Release B). Both still serve the /api/content alias.
+RUNTIMES = ('core', 'core-v1')
 
 
 ROOTS = {'staging': Path('/home/kemove/langear/dev'), 'prod': Path('/srv/langear/prod')}
@@ -59,7 +44,7 @@ def write_json(path, data):
 def verify_bundle(bundle):
     manifest = json.loads((bundle / 'manifest.json').read_text())
     sha = manifest['sha']
-    if manifest.get('schema') not in (1, 2) or not re.fullmatch(r'[0-9a-f]{40}', sha):
+    if manifest.get('schema') != 2 or not re.fullmatch(r'[0-9a-f]{40}', sha):
         raise ValueError('Invalid manifest schema or Git SHA')
     if manifest['image'] != f'langear-release:{sha}':
         raise ValueError('Image tag must match Git SHA')
@@ -67,13 +52,13 @@ def verify_bundle(bundle):
         raise ValueError('Invalid image ID')
     if set(manifest['files']) != {'frontend.tar.gz', 'backend-image.tar.gz'}:
         raise ValueError('Unexpected bundle files')
-    required = {'backend-pytest', 'frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests'}
-    runtime = manifest.get('runtime', 'legacy')
+    required = {
+        'frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests',
+        'collection-core-pytest',
+    }
+    runtime = manifest.get('runtime')
     if runtime not in RUNTIMES:
         raise ValueError('Unknown runtime contract')
-    if manifest['schema'] == 2:
-        if is_core_runtime(runtime):
-            required.add('collection-core-pytest')
     if set(manifest.get('checks', [])) != required:
         raise ValueError('Missing CI checks')
     for name, expected in manifest['files'].items():
@@ -105,35 +90,31 @@ def verify_approval(bundle, manifest):
     return approval
 
 
-def overlay(image, root, immutable, runtime='review'):
-    core_runtime = is_core_runtime(runtime)
-    # core and core-v1 keep the /api/content alias; only core-v1 cuts the frontend over
-    # to /api/v1. The alias and this entry point are removed after the Phase 3 waiting period.
-    app = ('core.core_only:app' if is_core_only(runtime)
-           else ('app.release:app' if runtime == 'review' else 'app.main:app'))
+def overlay(image, root, immutable):
+    # Both runtime contracts use the same core-only entry point while the
+    # /api/content alias is still required. Only the frontend base differs.
+    app = 'core.core_only:app'
     directory = '/app' if immutable else '/workspace/backend'
     result = 'services:\n  backend:\n    image: ' + json.dumps(image) + '\n'
-    if immutable or core_runtime:
-        result += (f'    working_dir: {directory}\n    environment:\n      PYTHONPATH: {directory}\n'
-                   f'    command: [uvicorn, {app}, --host, 0.0.0.0, --port, "8000"' +
-                   (']\n' if immutable else ', --reload]\n'))
+    result += (f'    working_dir: {directory}\n    environment:\n      PYTHONPATH: {directory}\n'
+               f'    command: [uvicorn, {app}, --host, 0.0.0.0, --port, "8000"' +
+               (']\n' if immutable else ', --reload]\n'))
     if immutable:
         result += '    volumes: !override\n      - ' + json.dumps(str(root / 'data/backend') + ':/app/data') + '\n'
-    if core_runtime:
-        env = '    env_file: !override\n      - ' + json.dumps(str(root / 'env/backend.env')) + '\n      - ' + json.dumps(str(root / 'env/review.env')) + '\n'
-        result += env + '    networks:\n      default: {}\n      review-storage: {}\n'
-        result += ('  review-worker:\n    image: ' + json.dumps(image) + '\n'
-                   f'    working_dir: {directory}\n    environment:\n      PYTHONPATH: {directory}\n'
-                   '    command: [python, -m, core.processing]\n' + env +
-                   '    networks:\n      default: {}\n      review-storage: {}\n'
-                   '    restart: unless-stopped\n    mem_limit: 1g\n'
-                   '    depends_on:\n      backend:\n        condition: service_healthy\n'
-                   '    healthcheck:\n      test: [CMD, python, -m, core.processing, --healthcheck]\n'
-                   '      interval: 10s\n      timeout: 5s\n      start_period: 20s\n      retries: 3\n')
-        if not immutable:
-            result += '    volumes: !override\n      - ' + json.dumps(str(root / 'repo/backend') + ':/workspace/backend') + '\n'
-        result += ('networks:\n  review-storage:\n    external: true\n    name: ' +
-                   json.dumps('langear-prod-review' if root.name == 'prod' else 'langear-staging-review') + '\n')
+    env = '    env_file: !override\n      - ' + json.dumps(str(root / 'env/backend.env')) + '\n      - ' + json.dumps(str(root / 'env/review.env')) + '\n'
+    result += env + '    networks:\n      default: {}\n      review-storage: {}\n'
+    result += ('  review-worker:\n    image: ' + json.dumps(image) + '\n'
+               f'    working_dir: {directory}\n    environment:\n      PYTHONPATH: {directory}\n'
+               '    command: [python, -m, core.processing]\n' + env +
+               '    networks:\n      default: {}\n      review-storage: {}\n'
+               '    restart: unless-stopped\n    mem_limit: 1g\n'
+               '    depends_on:\n      backend:\n        condition: service_healthy\n'
+               '    healthcheck:\n      test: [CMD, python, -m, core.processing, --healthcheck]\n'
+               '      interval: 10s\n      timeout: 5s\n      start_period: 20s\n      retries: 3\n')
+    if not immutable:
+        result += '    volumes: !override\n      - ' + json.dumps(str(root / 'repo/backend') + ':/workspace/backend') + '\n'
+    result += ('networks:\n  review-storage:\n    external: true\n    name: ' +
+               json.dumps('langear-prod-review' if root.name == 'prod' else 'langear-staging-review') + '\n')
     return result
 
 
@@ -177,20 +158,11 @@ class Deployment:
         self.override.write_text(content)
         self.compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', *self.services())
 
-    def db_revision(self):
-        # Report only schema revisions, never connection strings or data.
-        postgres = self.container.replace('-backend', '-postgres')
-        output = run('docker', 'exec', postgres, 'sh', '-c',
-                     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -v ON_ERROR_STOP=1 '
-                     '-c "SELECT version_num FROM alembic_version ORDER BY version_num"', capture=True)
-        return output.splitlines()
-
     def snapshot(self):
         value = {
             'image_id': run('docker', 'inspect', '--format', '{{.Image}}', self.container, capture=True),
             'web': str((self.root / 'web/current').resolve(strict=True)),
             'override': self.override.read_text() if self.override.exists() else None,
-            'db_revision': self.db_revision(),
             'state': json.loads(self.state_path.read_text()) if self.state_path.exists() else None,
         }
         if self.environment == 'staging':
@@ -242,12 +214,15 @@ class Deployment:
         raise RuntimeError('Backend health check failed')
 
     def restore(self, previous):
-        runtime = (previous.get('state') or {}).get('runtime', 'legacy')
-        if not is_core_only(runtime) and self.db_revision() != previous['db_revision']:
-            raise RuntimeError('Database revision changed; automatic rollback refused')
+        state = previous.get('state') or {}
+        # A managed release must name its core runtime; only a dev snapshot may
+        # omit it. This refuses pre-core release records instead of defaulting them.
+        runtime = state.get('runtime') if previous.get('override') else 'core'
+        if runtime not in RUNTIMES:
+            raise RuntimeError('Rollback target predates the core-only release contract')
         if previous.get('core_db_revision') is not None and self.core_revision(previous['core_probe_image']) != previous['core_db_revision']:
-            raise RuntimeError('Review database revision changed; automatic rollback refused')
-        content = previous['override'] or overlay(previous['image_id'], self.root, False, runtime)
+            raise RuntimeError('Core database revision changed; automatic rollback refused')
+        content = previous['override'] or overlay(previous['image_id'], self.root, False)
         # Always restore the exact image, even if a mutable historical tag changed.
         content = re.sub(r'(?m)^    image: .+$', '    image: ' + json.dumps(previous['image_id']), content)
         self.start(content)
@@ -255,41 +230,28 @@ class Deployment:
         if self.environment == 'staging' and previous.get('preview_proxy') is not None:
             (self.root / 'compose/nginx.preview.conf').write_text(previous['preview_proxy'])
         self.switch_web(previous['web'])
-        write_json(self.state_path, previous['state'] or {'mode': 'dev' if self.environment == 'staging' else 'legacy'})
+        write_json(self.state_path, previous['state'] or {'mode': 'dev' if self.environment == 'staging' else 'core'})
 
     def deploy(self, bundle):
         manifest = verify_bundle(bundle)
-        runtime = manifest.get('runtime', 'legacy')
-        core_runtime = is_core_runtime(runtime)
+        runtime = manifest['runtime']
         approval = verify_approval(bundle, manifest) if self.environment == 'prod' else None
         previous = self.snapshot()
-        if approval and not is_core_only(runtime) and approval['db_revision'] != previous['db_revision']:
-            raise RuntimeError('Production schema differs from validated staging schema; prepare migration separately')
         run('docker', 'load', '-i', bundle / 'backend-image.tar.gz')
         info = json.loads(run('docker', 'image', 'inspect', manifest['image'], capture=True))[0]
         if info['Id'] != manifest['image_id'] or info['Config']['Labels'].get('org.opencontainers.image.revision') != manifest['sha']:
             raise RuntimeError('Loaded backend does not match manifest')
-        heads = None
-        if not is_core_only(runtime):
-            heads_code = ('import json; from alembic.config import Config; from alembic.script import ScriptDirectory; '
-                          'print(json.dumps(sorted(ScriptDirectory.from_config(Config("alembic.ini")).get_heads())))')
-            heads = json.loads(run('docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python',
-                                   manifest['image_id'], '-c', heads_code, capture=True))
-            if heads != previous['db_revision']:
-                raise RuntimeError('Candidate migrations differ from database; prepare and apply migration explicitly first')
-        core_heads = None
-        if core_runtime:
-            core_heads_code = ('import json; from alembic.config import Config; from alembic.script import ScriptDirectory; '
-                               'print(json.dumps(sorted(ScriptDirectory.from_config(Config("alembic-core.ini")).get_heads())))')
-            core_heads = json.loads(run('docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python',
-                                        manifest['image_id'], '-c', core_heads_code, capture=True))
-            core_revision = self.core_revision(manifest['image_id'])
-            if core_heads != core_revision:
-                raise RuntimeError('Review migrations differ from database; back up and migrate explicitly before release')
-            if approval and approval.get('core_db_revision') != core_revision:
-                raise RuntimeError('Review production schema differs from validated staging schema')
-            previous['core_db_revision'] = core_revision
-            previous['core_probe_image'] = manifest['image_id']
+        core_heads_code = ('import json; from alembic.config import Config; from alembic.script import ScriptDirectory; '
+                           'print(json.dumps(sorted(ScriptDirectory.from_config(Config("alembic-core.ini")).get_heads())))')
+        core_heads = json.loads(run('docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python',
+                                    manifest['image_id'], '-c', core_heads_code, capture=True))
+        core_revision = self.core_revision(manifest['image_id'])
+        if core_heads != core_revision:
+            raise RuntimeError('Core migrations differ from database; back up and migrate explicitly before release')
+        if approval and approval.get('core_db_revision') != core_revision:
+            raise RuntimeError('Core production schema differs from validated staging schema')
+        previous['core_db_revision'] = core_revision
+        previous['core_probe_image'] = manifest['image_id']
         web = self.root / 'web/releases' / manifest['sha']
         if web.exists():
             raise RuntimeError('Release already installed; use rollback or a new commit, never overwrite artifacts')
@@ -300,37 +262,32 @@ class Deployment:
             Path(tmp).rename(web)
         write_json(bundle / 'previous.json', previous)
         try:
-            self.start(overlay(manifest['image_id'], self.root, True, runtime))
+            self.start(overlay(manifest['image_id'], self.root, True))
             self.healthy()
-            if core_runtime:
-                self.release_proxy()
+            self.release_proxy()
             self.switch_web(web)
-            self.check_frontend(manifest['sha'], runtime)
+            self.check_frontend(manifest['sha'])
             write_json(self.state_path, {'mode': 'release', 'sha': manifest['sha'],
                        'image_id': manifest['image_id'], 'bundle': str(bundle),
-                       'manifest_sha256': digest(bundle / 'manifest.json'), 'db_revision': heads,
+                       'manifest_sha256': digest(bundle / 'manifest.json'),
                        'core_db_revision': core_heads, 'runtime': runtime})
         except Exception:
             self.restore(previous)
             raise
         print(json.dumps({'environment': self.environment, 'sha': manifest['sha'], 'status': 'deployed'}))
 
-    def check_frontend(self, sha, runtime='legacy'):
+    def check_frontend(self, sha):
         # curl -k is limited to the known local staging self-signed endpoint.
         url = 'https://127.0.0.1:8445' if self.environment == 'staging' else 'http://127.0.0.1:8082'
         flags = ['-k'] if self.environment == 'staging' else []
         value = run('curl', '-fsS', '--retry', '5', '--retry-connrefused', '--retry-delay', '1', *flags, url + '/release.json', capture=True)
         if json.loads(value) != {'sha': sha}:
             raise RuntimeError('Served frontend revision is wrong')
-        # /api/v1 is the legacy API for legacy/review and the core API for core/core-v1.
-        code = run('curl', '-sS', '-o', '/dev/null', '-w', '%{http_code}', *flags, url + '/api/v1/auth/me', capture=True)
-        if code != '401':
-            raise RuntimeError('API authentication smoke check failed')
-        if serves_alias(runtime):
+        for prefix in ('/api/v1', '/api/content/v1'):
             code = run('curl', '-sS', '-o', '/dev/null', '-w', '%{http_code}', *flags,
-                       url + '/api/content/v1/auth/me', capture=True)
+                       url + prefix + '/auth/me', capture=True)
             if code != '401':
-                raise RuntimeError('Content alias API routing/authentication smoke check failed')
+                raise RuntimeError(f'API authentication smoke check failed for {prefix}')
 
     def approve(self, checks):
         state = json.loads(self.state_path.read_text())
@@ -338,22 +295,19 @@ class Deployment:
             raise RuntimeError('Only a deployed immutable staging release can be approved')
         bundle = Path(state['bundle'])
         manifest = verify_bundle(bundle)
-        runtime = manifest.get('runtime', state.get('runtime', 'legacy'))
-        core_runtime = is_core_runtime(runtime)
+        runtime = manifest['runtime']
         snapshot = self.snapshot()
         if (digest(bundle / 'manifest.json') != state['manifest_sha256']
                 or snapshot['image_id'] != manifest['image_id']
-                or (core_runtime and snapshot.get('worker_image_id') != manifest['image_id'])):
+                or snapshot.get('worker_image_id') != manifest['image_id']):
             raise RuntimeError('Running release or stored bundle changed')
         self.healthy()
-        self.check_frontend(manifest['sha'], runtime)
-        if not is_core_only(runtime) and self.db_revision() != state['db_revision']:
-            raise RuntimeError('Database changed since release deployment')
-        if core_runtime and snapshot.get('core_db_revision') != state.get('core_db_revision'):
-            raise RuntimeError('Review database changed since release deployment')
+        self.check_frontend(manifest['sha'])
+        if snapshot.get('core_db_revision') != state.get('core_db_revision'):
+            raise RuntimeError('Core database changed since release deployment')
         write_json(bundle / 'staging-approval.json', {
             'sha': manifest['sha'], 'image_id': manifest['image_id'],
-            'manifest_sha256': state['manifest_sha256'], 'db_revision': state['db_revision'],
+            'manifest_sha256': state['manifest_sha256'],
             'core_db_revision': state.get('core_db_revision'),
             'runtime': runtime,
             'checks': checks, 'approved_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
@@ -373,7 +327,7 @@ class Deployment:
         previous = self.snapshot()
         try:
             if previous.get('worker_image_id'):
-                self.start(overlay(previous['image_id'], self.root, False, 'review'))
+                self.start(overlay(previous['image_id'], self.root, False))
             else:
                 self.override.unlink(missing_ok=True)
                 self.compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', 'backend')

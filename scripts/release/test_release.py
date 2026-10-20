@@ -8,8 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from host import (
-    Deployment, digest, extract_frontend, is_core_only, is_core_runtime, overlay,
-    verify_approval, verify_bundle,
+    Deployment, digest, extract_frontend, overlay, verify_approval, verify_bundle,
 )
 from manage import stage
 
@@ -20,9 +19,11 @@ class BundleTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.manifest = {
-            'schema': 1, 'sha': 'a' * 40, 'image': 'langear-release:' + 'a' * 40,
+            'schema': 2, 'runtime': 'core', 'sha': 'a' * 40,
+            'image': 'langear-release:' + 'a' * 40,
             'image_id': 'sha256:' + 'b' * 64,
-            'checks': ['backend-pytest', 'frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests'],
+            'checks': ['frontend-vitest', 'frontend-typecheck-build',
+                       'release-tool-tests', 'collection-core-pytest'],
             'files': {},
         }
         for name in ('frontend.tar.gz', 'backend-image.tar.gz'):
@@ -35,6 +36,27 @@ class BundleTests(unittest.TestCase):
 
     def test_accepts_matching_artifacts(self):
         self.assertEqual(verify_bundle(self.root), self.manifest)
+
+    def test_accepts_both_core_runtime_contracts(self):
+        for runtime in ('core', 'core-v1'):
+            with self.subTest(runtime=runtime):
+                self.manifest['runtime'] = runtime
+                self.save()
+                self.assertEqual(verify_bundle(self.root)['runtime'], runtime)
+
+    def test_rejects_legacy_runtime_contracts(self):
+        for runtime in ('legacy', 'review'):
+            with self.subTest(runtime=runtime):
+                self.manifest['runtime'] = runtime
+                self.save()
+                with self.assertRaisesRegex(ValueError, 'runtime'):
+                    verify_bundle(self.root)
+
+    def test_rejects_manifest_without_runtime(self):
+        self.manifest.pop('runtime')
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'runtime'):
+            verify_bundle(self.root)
 
     def test_rejects_changed_artifact(self):
         (self.root / 'frontend.tar.gz').write_bytes(b'different build')
@@ -102,96 +124,45 @@ class BundleTests(unittest.TestCase):
         self.assertIn('working_dir: /app', config)
         self.assertNotIn('--reload', config)
 
-    def test_review_overlay_runs_both_apis_and_worker_from_one_image(self):
-        for immutable in (True, False):
-            config = overlay(self.manifest['image_id'], self.root, immutable, runtime='review')
-            self.assertIn('app.release:app', config)
-            self.assertIn('review-worker:', config)
-            self.assertEqual(config.count(self.manifest['image_id']), 2)
-            self.assertIn('core.processing, --healthcheck', config)
-            self.assertIn('env/review.env', config)
-            self.assertEqual('--reload' in config, not immutable)
-
-    def test_core_only_overlays_drop_legacy_entry_point_and_keep_worker(self):
+    def test_core_overlay_runs_api_and_worker_from_one_image(self):
         for runtime in ('core', 'core-v1'):
             for immutable in (True, False):
                 with self.subTest(runtime=runtime, immutable=immutable):
-                    config = overlay(self.manifest['image_id'], self.root, immutable, runtime=runtime)
+                    config = overlay(self.manifest['image_id'], self.root, immutable)
                     self.assertIn('core.core_only:app', config)
                     self.assertNotIn('app.release:app', config)
+                    self.assertNotIn('app.main:app', config)
                     self.assertIn('review-worker:', config)
+                    self.assertEqual(config.count(self.manifest['image_id']), 2)
                     self.assertIn('core.processing, --healthcheck', config)
                     self.assertIn('env/review.env', config)
+                    self.assertEqual('--reload' in config, not immutable)
 
-    def test_core_runtime_manifests_require_postgres_core_tests(self):
-        for runtime in ('review', 'core', 'core-v1'):
-            with self.subTest(runtime=runtime):
-                self.manifest.update(schema=2, runtime=runtime,
-                                     checks=['backend-pytest', 'frontend-vitest',
-                                             'frontend-typecheck-build', 'release-tool-tests'])
-                self.save()
-                with self.assertRaisesRegex(ValueError, 'Missing CI'):
-                    verify_bundle(self.root)
-                self.manifest['checks'].append('collection-core-pytest')
-                self.save()
-                self.assertEqual(verify_bundle(self.root)['runtime'], runtime)
-
-    def test_legacy_runtime_keeps_the_legacy_entry_point(self):
-        config = overlay(self.manifest['image_id'], self.root, True, runtime='legacy')
-        self.assertIn('app.main:app', config)
-        self.assertNotIn('core.core_only:app', config)
-        self.assertNotIn('review-worker:', config)
-
-    def test_review_is_not_core_only_and_keeps_legacy_schema_gates(self):
-        self.assertFalse(is_core_only('review'))
-        self.assertTrue(is_core_only('core'))
-        self.assertTrue(is_core_only('core-v1'))
-        self.assertTrue(is_core_runtime('review'))
+    def test_manifest_requires_core_postgres_tests(self):
+        self.manifest['checks'] = ['frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests']
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'Missing CI'):
+            verify_bundle(self.root)
+        self.manifest['checks'].append('collection-core-pytest')
+        self.save()
+        self.assertEqual(verify_bundle(self.root)['runtime'], 'core')
 
     def test_frontend_smoke_check_covers_official_and_alias_prefixes(self):
-        def urls_for(runtime):
-            deployment = object.__new__(Deployment)
-            deployment.environment = 'staging'
-            urls = []
-
-            def fake(*args, capture=False):
-                url = args[-1]
-                urls.append(url)
-                return json.dumps({'sha': 'a' * 40}) if url.endswith('/release.json') else '401'
-
-            with patch('host.run', side_effect=fake):
-                deployment.check_frontend('a' * 40, runtime)
-            return urls
-
-        for runtime in ('core', 'core-v1'):
-            urls = urls_for(runtime)
-            self.assertTrue(any(url.endswith('/api/v1/auth/me') for url in urls))
-            self.assertTrue(any(url.endswith('/api/content/v1/auth/me') for url in urls))
-        legacy_urls = urls_for('legacy')
-        self.assertTrue(any(url.endswith('/api/v1/auth/me') for url in legacy_urls))
-        self.assertFalse(any('/api/content/v1/auth/me' in url for url in legacy_urls))
-
-    def test_core_v1_rollback_skips_the_legacy_schema_gate(self):
         deployment = object.__new__(Deployment)
         deployment.environment = 'staging'
-        deployment.root = self.root
-        deployment.state_path = self.root / 'current.json'
-        previous = {
-            'image_id': 'sha256:' + 'b' * 64,
-            'web': str(self.root / 'web'),
-            'override': 'services:\n  backend:\n    image: "candidate"\n',
-            'db_revision': ['legacy'],
-            'state': {'runtime': 'core-v1'},
-        }
-        with patch.object(deployment, 'db_revision') as db_revision, \
-                patch.object(deployment, 'start'), \
-                patch.object(deployment, 'healthy'), \
-                patch.object(deployment, 'switch_web'), \
-                patch('host.write_json'):
-            deployment.restore(previous)
-        db_revision.assert_not_called()
+        urls = []
 
-    def test_review_release_requires_explicit_database_configuration(self):
+        def fake(*args, capture=False):
+            url = args[-1]
+            urls.append(url)
+            return json.dumps({'sha': 'a' * 40}) if url.endswith('/release.json') else '401'
+
+        with patch('host.run', side_effect=fake):
+            deployment.check_frontend('a' * 40)
+        self.assertTrue(any(url.endswith('/api/v1/auth/me') for url in urls))
+        self.assertTrue(any(url.endswith('/api/content/v1/auth/me') for url in urls))
+
+    def test_core_release_requires_explicit_database_configuration(self):
         deployment = object.__new__(Deployment)
         deployment.root = self.root
         with patch('host.run') as run:
@@ -199,18 +170,33 @@ class BundleTests(unittest.TestCase):
                 deployment.core_revision('candidate')
             run.assert_not_called()
 
-    def test_rollback_refuses_review_schema_drift_before_mutation(self):
+    def test_rollback_refuses_core_schema_drift_before_mutation(self):
         deployment = object.__new__(Deployment)
-        with patch.object(deployment, 'db_revision', return_value=['legacy']), patch.object(deployment, 'core_revision', return_value=['new']), patch.object(deployment, 'compose') as compose:
-            with self.assertRaisesRegex(RuntimeError, 'Review database revision changed'):
-                deployment.restore({'db_revision': ['legacy'], 'core_db_revision': ['old'], 'core_probe_image': 'candidate'})
+        with patch.object(deployment, 'core_revision', return_value=['new']), patch.object(deployment, 'compose') as compose:
+            with self.assertRaisesRegex(RuntimeError, 'Core database revision changed'):
+                deployment.restore({
+                    'state': {'mode': 'release', 'runtime': 'core'},
+                    'override': 'services:\n',
+                    'core_db_revision': ['old'], 'core_probe_image': 'candidate',
+                })
             compose.assert_not_called()
 
-    def test_rollback_refuses_schema_change_before_mutation(self):
+    def test_rollback_refuses_a_pre_core_target(self):
         deployment = object.__new__(Deployment)
-        with patch.object(deployment, 'db_revision', return_value=['new']), patch.object(deployment, 'compose') as compose:
-            with self.assertRaisesRegex(RuntimeError, 'revision changed'):
-                deployment.restore({'db_revision': ['old']})
+        with patch.object(deployment, 'compose') as compose:
+            with self.assertRaisesRegex(RuntimeError, 'predates the core-only release'):
+                deployment.restore({
+                    'state': {'mode': 'release', 'runtime': 'review'},
+                    'override': 'services:\n',
+                    'core_db_revision': ['old'], 'core_probe_image': 'candidate',
+                })
+            compose.assert_not_called()
+
+    def test_rollback_refuses_a_release_record_without_runtime(self):
+        deployment = object.__new__(Deployment)
+        with patch.object(deployment, 'compose') as compose:
+            with self.assertRaisesRegex(RuntimeError, 'predates the core-only release'):
+                deployment.restore({'state': {'mode': 'release'}, 'override': 'services:\n'})
             compose.assert_not_called()
 
     def test_stage_uses_workflow_path_despite_old_github_display_name(self):

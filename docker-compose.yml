@@ -23,7 +23,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["alembic", "upgrade", "head"]
+    command: ["alembic", "-c", "alembic-core.ini", "upgrade", "head"]
     volumes:
       - langear_backend_data:/app/data
     restart: "no"

@@ -22,7 +22,6 @@ from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
 from core.review_routes import router as review_router
-from core.legacy_selection import router as legacy_selection_router
 from core.product_routes import router as product_router
 from core.uploads import router as upload_router
 from core.realtime import router as realtime_router
@@ -181,13 +180,6 @@ def register(
     db=Depends(get_db, scope="function"),
 ):
     return auth.register(db, body, request, response)
-
-
-@app.post("/api/v1/auth/legacy")
-def legacy_login(
-    request: Request, response: Response, db=Depends(get_db, scope="function")
-):
-    return auth.legacy_login(db, request, response)
 
 
 @app.post("/api/v1/auth/login")
@@ -582,4 +574,3 @@ app.include_router(product_router)
 app.include_router(dialogue_router)
 app.include_router(dialogue_voice_router)
 app.include_router(telemetry_router)
-app.include_router(legacy_selection_router)

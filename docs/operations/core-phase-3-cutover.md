@@ -1,6 +1,6 @@
 # Core 迁移第三阶段切换手册
 
-状态：**生产执行未开始**（前置条件未满足，且未获得生产执行授权）
+状态：**本地代码收口已完成**；生产执行未开始（前置条件未满足，且未获得生产执行授权）
 审计时间：2026-10-21
 关联任务：仓库根目录的 `CORE_MIGRATION_PHASE_3_TODO.md`
 
@@ -16,7 +16,14 @@
 4. 第二阶段 TODO 的 staging 备份、冻结、演练和业务验收仍未勾选；§6 的“打包后过渡路径测试”也未完成。
 5. 用户尚未授予生产备份、冻结、迁移和部署执行权限。
 
-因此本轮只完成并提交了**第三阶段可复用的发布工具准备**；没有删除任何 legacy 运行时代码，没有操作生产数据，也没有发布 staging 或 production。
+因此生产切换仍不能开始。作为可离线完成的部分，本轮已在本分支完成仓库侧第三阶段清理：
+
+- 删除 `backend/app/`、`backend/migrations/`、旧 Alembic 配置、legacy 测试和只依赖 `app` 的脚本。
+- 删除 `/api/v1/auth/legacy`、`legacy_identity_url`、`legacy_selection` 和 `/review/legacy-lessons` 数字 ID 兼容接口。
+- 发布工具只保留 `core` / `core-v1` 两种运行合同；`review` 和 `legacy` 运行时不再可构建。
+- 使用本地隔离 PostgreSQL 跑通 core 全量测试，并用浏览器完成注册、四个主页面、建卡、Review 和评分确认。
+
+仍按 TODO 保留的过渡能力：`/api/content` alias、旧 `/study/:lessonId` 与 `/summary/:lessonId` SPA 路由。它们必须等 production 稳定和 7 天零命中后再删除。
 
 ## 1. 当前状态审计
 
@@ -25,6 +32,7 @@
 | 项目 | 现状 | 证据 |
 |---|---|---|
 | 本地 `dev/staging` | `e5b9372`（第二阶段代码已合入） | `git log -1` |
+| 本地 Phase 3 清理分支 | `codex/core-phase-3-cutover`；legacy 运行时、迁移和旧测试已删除 | `git log -1` |
 | staging 固定版本 | `b3bfe5d`，`runtime=review` | `manage.py status staging` |
 | staging 前端 API 前缀 | `/api/content/v1` | `frontend/Dockerfile` 默认值、manifest |
 | staging legacy DB | `langear_dev`，revision `a8f2d4c6e9b1` | `alembic_version` |
@@ -40,14 +48,14 @@
 
 | runtime | 前端 API base | 后端入口 | 后端前缀 | 用途 |
 |---|---|---|---|---|
-| `legacy` | `/api/v1` | `app.main:app` | `/api/v1` = legacy | 历史版本 |
-| `review` | `/api/content/v1` | `app.release:app` | `/api/v1` = legacy，`/api/content` = core | 第二阶段过渡 |
 | `core`（Release A） | `/api/content/v1` | `core.core_only:app` | `/api/v1` = core，`/api/content` = core alias | 首个 core-only 生产版本 |
 | `core-v1`（Release B） | `/api/v1` | `core.core_only:app` | `/api/v1` = core，保留 `/api/content` alias | 正式前缀切换 |
 
+`legacy` 和 `review` 合同已在仓库侧删除，不能再用 CI 或 `package.py` 构建。staging 上正在运行的 `b3bfe5d`（`runtime=review`）只是历史发布记录，不是可回滚目标。
+
 说明：Release B 的后端入口仍是 `core.core_only:app`，因为该入口同时提供 `/api/v1` 和待删除的 `/api/content` alias。第三阶段第 5 节删除 alias 时，再把入口收敛为 `core.main:app`，避免在切换窗口内同时改动入口和路径。
 
-`core` 与 `core-v1` 都要求 `collection-core-pytest`，且发布工具会同时检查 `/api/v1/auth/me` 与 `/api/content/v1/auth/me` 返回 401。
+`core` 与 `core-v1` 都要求 `collection-core-pytest`；manifest 不再接受 `backend-pytest`，且发布工具会同时检查 `/api/v1/auth/me` 与 `/api/content/v1/auth/me` 返回 401。
 
 ## 3. 硬件与授权门槛
 
@@ -97,9 +105,12 @@ production 需要独立 PostgreSQL 实例或独立数据库，且满足发布工
 
 ```text
 CORE_DATABASE_URL CORE_CONFIRMATION_SECRET CORE_ALLOWED_ORIGINS CORE_COOKIE_SECURE
-CORE_DIALOGUE_* AI_FEEDBACK_* GEMINI_API_KEY GEMINI_MODEL_ID GOOGLE_GEMINI_BASE_URL
-DASHSCOPE_API_KEY QWEN_OMNI_* OSS_* CORE_OSS_* CORE_UPLOAD_PREFIX REALTIME_ASR_*
+CORE_DIALOGUE_* CORE_AI_FEEDBACK_* CORE_GEMINI_API_KEY CORE_GEMINI_MODEL_ID
+GOOGLE_GEMINI_BASE_URL CORE_QWEN_OMNI_* CORE_OSS_* CORE_UPLOAD_PREFIX
+CORE_ASR_API_KEY CORE_REALTIME_ASR_*
 ```
+
+所有运行配置以 `CORE_` 前缀为准；`GOOGLE_GEMINI_BASE_URL` 是唯一保留的无前缀别名。
 
 在候选镜像上显式执行 core migration（不得由 Web 启动代跑）：
 
@@ -343,8 +354,8 @@ location /api/content/ {
 
 验证：
 
-- [ ] 旧前端 + Release A 后端
-- [ ] 新（core-only）前端 + Release A 后端
+- [ ] Release A 前端（`/api/content/v1`）+ Release A 后端
+- [ ] Release A 前端 + Release B 后端（alias 仍可用）
 - [ ] 不存在前端先发、后端后发的窗口
 - [ ] `/api/v1/auth/me`、`/api/content/v1/auth/me` 均返回 401
 - [ ] cookie `Path` 分别为 `/api/v1` 与 `/api/content/v1`
@@ -411,17 +422,21 @@ rg -n "api/content|content-api" /var/log/nginx/access.log*
 
 命中数为零后，删除 Nginx `/api/content/` location、后端 alias 和 cookie path rewrite。此步骤属于第 5 节，未授权不得执行。
 
-## 7. 阶段 5/6/7：清理（当前禁止执行）
+## 7. 阶段 5/6/7：清理状态
 
-以下项目必须等 Release B 稳定且 7 天等待期结束后执行，本轮**未执行**：
+已在本地仓库完成（不涉及 production）：
 
-- 删除 `backend/app/`、`backend/migrations/`、旧 Alembic 配置
-- 删除 `backend/core/release_app.py`、`backend/core/core_only.py`、`backend/app/release.py`
-- 删除 `/auth/legacy`、`legacy_identity_url`、legacy token 验证
-- 删除 `legacy_selection.py`、`legacyReviewLocation`、数字 ID 兼容接口
-- 删除 `/api/content`、`/content-api` 代理和 cookie path rewrite
-- 删除旧 `/study/:lessonId`、`/summary/:lessonId` 路由（各自连续 7 天命中为零后）
-- 删除 legacy 专属测试、fixture、mock 和发布配置
+- [x] 删除 `backend/app/`、`backend/migrations/`、旧 Alembic 配置和 `app/release.py`
+- [x] 删除 `/auth/legacy`、`legacy_identity_url`、legacy token 验证
+- [x] 删除 `legacy_selection.py`、`/review/legacy-lessons` 和数字 ID 兼容接口
+- [x] 删除 legacy 专属测试、fixture、mock、`test-backend.sh`
+- [x] 删除 `legacy` / `review` 运行时合同和 manifest 的 `backend-pytest` 检查
+
+仍需 Release B 稳定且 7 天等待期结束后执行：
+
+- [ ] 删除 `backend/core/release_app.py`、`backend/core/core_only.py`，入口收敛为 `core.main:app`
+- [ ] 删除 `/api/content`、`/content-api` 代理和 cookie path rewrite
+- [ ] 删除旧 `/study/:lessonId`、`/summary/:lessonId` 路由（各自连续 7 天命中为零后）
 
 完成清理后的回归命令：
 
@@ -429,16 +444,16 @@ rg -n "api/content|content-api" /var/log/nginx/access.log*
 rg 'VITE_CONTENT_CORE|VITE_LIBRARY_CONTENT_EDITOR|libraryContent|auth/legacy|legacy-lessons|/api/content|content-api|app\.release' frontend backend scripts
 ```
 
-当前该命令仍会命中过渡代码，属预期；第 5 节完成后必须无结果。
+当前该命令仍会命中 `/api/content` alias 和旧 SPA 路由的过渡代码，属预期；第 5 节剩余项完成后必须无结果。
 
 收口检查：
 
-- [ ] 运行配置只有一个数据库 URL
-- [ ] 只有一套迁移 head（`lan33_0011`）
-- [ ] 只有一个后端启动入口
-- [ ] core 后端全量测试、迁移测试通过
-- [ ] 前端单测、类型检查、构建、lint、E2E 通过
-- [ ] release tooling 测试与镜像健康检查通过
+- [x] 运行配置只有一个数据库 URL（`CORE_DATABASE_URL`）
+- [x] 只有一套迁移 head（`lan33_0011`）
+- [ ] 只有一个后端启动入口（目前仍是 `core.core_only:app`，alias 删除后收敛）
+- [x] core 后端全量测试、迁移测试通过（本地 236 passed）
+- [x] 前端单测、类型检查、构建、lint 通过
+- [x] release tooling 测试通过
 - [ ] 实际执行一次 artifact 回滚和前滚，证明不回退旧库、不丢 core 写入
 
 ## 8. 回滚
@@ -451,7 +466,7 @@ python3 scripts/release/manage.py rollback prod --execute   # 授权后
 ```
 
 - Release B 的回滚目标固定为 `<SHA_A>`。
-- Release A 的回滚目标只能是“仍然只写 core”的版本；不得回到 `runtime=review` 或 `legacy`。
+- Release A 的回滚目标只能是更早的 core-only 版本。`legacy` / `review` 运行时已删除，发布工具会拒绝回滚到 pre-core artifact。
 - 数据库备份恢复仅用于数据库灾难，需要单独授权。
 - 回滚后 legacy 数据库保持只读。
 
@@ -480,13 +495,19 @@ rpo_actual:
 incidents:
 ```
 
-## 10. 本轮代码准备
+## 10. 本轮代码变更
 
-为避免 Release A/B 无法通过不可变发布流程产生，本提交补齐了以下工具能力：
-
-- `scripts/release/package.py`、`scripts/release/host.py` 新增 `core-v1` runtime；runtime 集合和谓词集中在 `host.py`，`package.py` 复用同一来源。
-- `review` 仍保留 legacy schema 校验；只有 `core` / `core-v1` 跳过 legacy 数据库 revision 检查。
-- `core` 与 `core-v1` 都要求 core PostgreSQL 测试，并同时校验 `/api/v1` 与 alias 前缀。
-- CI 工作流支持 `workflow_dispatch` 的 `runtime` / `api_base_url` 输入，并校验二者组合；push/PR 仍保持 `review` + `/api/content/v1`。
+- 删除 `backend/app/`、`backend/migrations/`、旧 Alembic 配置、legacy 测试和只依赖 `app` 的脚本。
+- 删除 `/api/v1/auth/legacy`、`legacy_identity_url`、`legacy_selection`、`/review/legacy-lessons` 和 `make_release_app`。
+- 保留 `core.core_only:app` 与 `/api/content` alias，等 7 天等待期后删除。
+- `scripts/release/host.py`、`package.py` 只接受 `core` / `core-v1`；manifest 不再要求 `backend-pytest`，只要求 `collection-core-pytest`。
+- CI 工作流支持 `workflow_dispatch` 的 `runtime` / `api_base_url` 输入，并校验二者组合；push/PR 默认 `core` + `/api/content/v1`。
 - `backend/scripts/export_legacy_core.py` 支持 `--environment staging|prod`，并拒绝跨环境容器名。
-- 新增发布工具与导出脚本单元测试。
+- `test-core.sh` 固定 `PGTZ=UTC`，避免本地非 UTC PostgreSQL 造成学习日期断言漂移。
+
+本地验证结果：
+
+- core PostgreSQL 全量测试：236 passed。
+- release tooling：18 passed。
+- 前端 Vitest：116 passed；`vue-tsc` 与 `vite build` 通过；lint 0 error。
+- 浏览器功能确认：注册、Dashboard、题库资源、我的课程、设置、建卡、Review 显示答案与评分全部通过，无未捕获页面错误。

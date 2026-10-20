@@ -8,7 +8,7 @@ import sys
 import tarfile
 from pathlib import Path
 
-from host import RUNTIMES, is_core_runtime
+from host import RUNTIMES
 
 def digest(path):
     h = hashlib.sha256()
@@ -20,7 +20,7 @@ def digest(path):
 
 def main():
     sha, dist, output = sys.argv[1:]
-    runtime = os.environ.get("RELEASE_RUNTIME", "review")
+    runtime = os.environ.get("RELEASE_RUNTIME", "core")
     if runtime not in RUNTIMES:
         raise SystemExit("RELEASE_RUNTIME must be one of " + ", ".join(RUNTIMES))
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
@@ -34,9 +34,7 @@ def main():
     with tarfile.open(output / "frontend.tar.gz", "w:gz") as archive:
         for path in sorted(dist.iterdir()):
             archive.add(path, arcname=path.name)
-    checks = ["backend-pytest", "frontend-vitest", "frontend-typecheck-build", "release-tool-tests"]
-    if is_core_runtime(runtime):
-        checks.append("collection-core-pytest")
+    checks = ["frontend-vitest", "frontend-typecheck-build", "release-tool-tests", "collection-core-pytest"]
     manifest = {
         "schema": 2, "runtime": runtime, "sha": sha, "image": image, "image_id": info["Id"],
         "checks": checks,

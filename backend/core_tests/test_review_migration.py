@@ -6,32 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
 
-from core.config import get_settings
-from core.models import Attempt, Card, CardTemplate, Deck, MediaAsset, Note, ProcessingOutbox, utcnow
+from core.models import Card, CardTemplate, MediaAsset, ProcessingOutbox, utcnow
 from core import processing
 from core_tests.test_review import make_note, queue, next_card, flip, rate
-
-
-def imported_lesson(engine, account, legacy_id="42"):
-    with Session(engine) as db, db.begin():
-        deck = db.get(Deck, UUID(account["deck_id"]))
-        deck.imported = True
-        deck.source_metadata = {
-            "kind": "deck",
-            "source": "fixture",
-            "legacy_id": str(legacy_id),
-        }
-
-
-def imported_note(engine, note_id, legacy_id):
-    with Session(engine) as db, db.begin():
-        note = db.get(Note, UUID(note_id))
-        note.imported = True
-        note.source_metadata = {
-            "kind": "card",
-            "source": "fixture",
-            "legacy_id": str(legacy_id),
-        }
 
 
 def recording(engine, account, ready=False):
@@ -40,19 +17,6 @@ def recording(engine, account, ready=False):
         db.add(asset)
         db.flush()
         return str(asset.id)
-
-
-def test_legacy_entry_uses_current_collection_and_configured_source(client, account, engine, monkeypatch):
-    monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
-    imported_lesson(engine, account)
-    assert client.get("/api/v1/review/legacy-lessons/42").json() == {"deck_id": account["deck_id"]}
-    assert client.get("/api/v1/review/legacy-lessons/43").status_code == 404
-    assert client.get("/api/v1/review/legacy-lessons/0").status_code == 422
-    monkeypatch.setattr(get_settings(), "legacy_import_source", "other-source")
-    assert client.get("/api/v1/review/legacy-lessons/42").status_code == 404
-    monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
-    client.post("/api/v1/auth/register", json={"email": "second@example.com", "password": "a strong second password"})
-    assert client.get("/api/v1/review/legacy-lessons/42").status_code == 404
 
 
 def test_processing_retains_input_and_transcript_through_rating_and_undo(client, account, engine, monkeypatch):
@@ -254,32 +218,6 @@ def test_pending_other_template_requires_explicit_resume_and_preserves_answer(cl
     assert rate(client, resumed.json()["queue_id"], recovered, "easy").status_code == 200
     assert client.post("/api/v1/review/queues", json={"scope": {"deck_id": account["deck_id"], "card_template_keys": ["sentence_retelling"]}}).status_code == 200
 
-def test_legacy_selection_maps_notes_to_all_templates_and_restricts_review(client, account, engine, monkeypatch):
-    from core.models import Note
-    monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
-    first = make_note(client, account, {"english": "One", "chinese": "一"}, "sentence_translation")
-    second = make_note(client, account, {"english": "Two", "chinese": "二"}, "sentence_translation")
-    imported_lesson(engine, account)
-    imported_note(engine, first["id"], 101)
-    imported_note(engine, second["id"], 102)
-    path = "/api/v1/review/legacy-lessons/42/study-selection"
-    assert client.get(path).json() == {"card_ids": None}
-    saved = client.put(path, json={"card_ids": [101]})
-    assert saved.status_code == 200, saved.text
-    assert saved.json()["card_ids"] == [101]
-    assert saved.json()["lesson_ids"] == [42]
-    current = next_card(client, queue(client, account))
-    assert current["new_remaining"] == len(first["cards"])
-    assert current["card"]["note_id"] == first["id"]
-    assert client.put(path, json={"card_ids": [999]}).status_code == 422
-    assert client.get(path).json()["card_ids"] == [101]
-    assert client.put(path, json={"card_ids": []}).json()["lesson_ids"] == []
-    assert next_card(client, queue(client, account))["empty_reason"] == "no_cards"
-    assert client.put(path, json={"card_ids": None}).status_code == 200
-    assert next_card(client, queue(client, account))["new_remaining"] == len(first["cards"]) + len(second["cards"])
-    client.headers.pop("X-CSRF-Token")
-    assert client.put(path, json={"card_ids": []}).status_code == 403
-
 def test_worker_retries_with_backoff_then_exposes_manual_retry(client, account, engine, monkeypatch):
     from datetime import UTC, datetime, timedelta
     make_note(client, account, {"english": "Hello", "chinese": "你好"}, "sentence_translation")
@@ -345,22 +283,3 @@ def test_asr_backoff_blocks_ai_until_transcript_resolves(client, account, engine
     saved = client.get(f"/api/v1/attempts/{original['attempt']['id']}").json()
     assert saved["asr_status"] == saved["ai_status"] == "succeeded"
     assert saved["asr_result"]["text"] == "Qwen transcript"
-
-
-def test_legacy_lesson_membership_is_owned_and_persisted_in_core(client, account, engine, monkeypatch):
-    monkeypatch.setattr(get_settings(), "legacy_import_source", "fixture")
-    make_note(client, account)
-    imported_lesson(engine, account)
-    path = "/api/v1/review/legacy-lessons"
-    assert client.put(path, json={"lesson_ids": []}).json() == {"lesson_ids": []}
-    assert client.put(path, json={"lesson_ids": [42]}).json() == {"lesson_ids": [42]}
-    assert client.get(path).json() == {"lesson_ids": [42]}
-    assert client.get(f"/api/v1/decks/{account['deck_id']}").json()["in_my_courses"] is True
-    assert client.put(path, json={"lesson_ids": [43]}).status_code == 422
-    assert client.get(path).json() == {"lesson_ids": [42]}
-    client.headers.pop("X-CSRF-Token")
-    assert client.put(path, json={"lesson_ids": []}).status_code == 403
-    other = client.post("/api/v1/auth/register", json={"email": "other-member@example.com", "password": "a strong other password"})
-    client.headers["X-CSRF-Token"] = other.json()["csrf_token"]
-    assert client.get(path).json() == {"lesson_ids": []}
-    assert client.put(path, json={"lesson_ids": [42]}).status_code == 422

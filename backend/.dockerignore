@@ -12,8 +12,7 @@ __pycache__
 htmlcov
 data
 datasets
-tests
-test_startup.py
+core_tests
 IMPLEMENTATION_STATUS.md
 TESTING_REPORT.md
 archive

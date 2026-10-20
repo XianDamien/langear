@@ -41,7 +41,7 @@ docker compose -f compose/docker-compose.yml ps
 ./compose/test-backend.sh -q
 ```
 
-测试入口会清空继承的应用环境变量，使用 SQLite 内存库和模拟外部凭据。新仓库中的通用入口为 `scripts/release/test-backend.sh`，需在 backend 目录、已安装测试依赖的环境执行。不要直接在带真实数据库配置的运行容器中执行 pytest。
+核心测试使用隔离 PostgreSQL。仓库入口为 `scripts/release/test-core.sh`：设置 `CORE_TEST_DATABASE_URL` 指向一次性 `lan30_test_*` 数据库，在 backend 目录执行。脚本会固定 `PGTZ=UTC` 并清空继承的应用凭据。不要直接用真实数据库运行 pytest。
 
 app 源码修改会热重载；依赖变更需重建开发镜像。每任务 worktree/容器/端口/数据库隔离仍是待办，当前共享 dev 一次只允许一个任务独占运行，创建 worktree 本身不会切换 Compose 挂载。
 

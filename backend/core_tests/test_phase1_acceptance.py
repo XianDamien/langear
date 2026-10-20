@@ -241,7 +241,7 @@ def test_runtime_never_imports_legacy_modules():
         )
     ]
     assert offenders == []
-    # The legacy package still exists during the migration; the constraint is
-    # that no runtime entry point in core depends on it.
+    # The legacy package has been deleted; core must not depend on it.
+    assert not (backend / "app").exists()
     with Session(__import__("core.db", fromlist=["get_engine"]).get_engine()) as db:
         db.execute(text("SELECT 1"))

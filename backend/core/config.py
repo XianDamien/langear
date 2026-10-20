@@ -25,8 +25,6 @@ class Settings(BaseSettings):
     oss_endpoint: str | None = None
     oss_bucket_name: str | None = None
     upload_prefix: str = "dev/staging/review"
-    legacy_identity_url: str | None = None
-    legacy_import_source: str | None = None
     cookie_secure: bool = True
     session_absolute_seconds: int = 604800
     session_idle_seconds: int = 86400
