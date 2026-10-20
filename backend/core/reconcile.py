@@ -918,8 +918,8 @@ def sync_content(db, data, source):
     """Reconcile imported Deck/Note content against the current snapshot.
 
     Deletion rules: a legacy row present in core but absent from the snapshot is
-    *withdrawn*, not hard-deleted — Cards go away so it stops appearing in study
-    queues, while schedules, Attempts and the import ledger stay for audit.
+    *withdrawn*, not hard-deleted. Its Cards leave study queues while schedules,
+    Attempts and the import ledger stay for audit.
     Conflict rules: a row whose core revision moved past the imported one was
     edited by the learner, so the source never overwrites it.
     """
@@ -974,18 +974,53 @@ def sync_content(db, data, source):
         if legacy_id not in snapshot_notes:
             if metadata.get("withdrawn"):
                 continue
+            previous_queues = {}
             for card in db.scalars(select(Card).where(Card.note_id == note.id)):
+                previous_queues[str(card.id)] = card.queue
                 if card.queue != "suspended":
                     card.queue = "suspended"
                     card.schedule_revision += 1
             note.fields = {}
             note.revision += 1
-            note.source_metadata = {**metadata, "withdrawn": True}
+            note.source_metadata = {
+                **metadata,
+                "withdrawn": True,
+                "withdrawn_card_queues": previous_queues,
+            }
             mark_content_synced(note)
             counts["notes_withdrawn"] += 1
             continue
         row = snapshot_notes[legacy_id]
         if edited_since_import(note, imported_at):
+            continue
+        if metadata.get("withdrawn"):
+            fields = {"english": row.get("front_text"), "chinese": row.get("back_text")}
+            if row.get("audio_path"):
+                asset = db.scalar(select(MediaAsset).where(
+                    MediaAsset.object_key == row["audio_path"],
+                    MediaAsset.scope == "library_shared",
+                    MediaAsset.lifecycle == "ready",
+                ))
+                if asset is None:
+                    raise DomainError(409, "MIGRATION_CONFLICT", "Source media asset is missing.")
+                fields["reference_audio"] = str(asset.id)
+            collection = db.get(Collection, note.collection_id)
+            service = ContentService(db, collection)
+            cleaned, references = service.validate_fields(note.note_type_id, fields)
+            note.fields = cleaned
+            service.sync_media(note, references)
+            for card in db.scalars(select(Card).where(Card.note_id == note.id)):
+                previous = metadata.get("withdrawn_card_queues", {}).get(str(card.id))
+                if previous is not None and card.queue == "suspended" and previous != "suspended":
+                    card.queue = previous
+                    card.schedule_revision += 1
+            note.source_metadata = {
+                key: value for key, value in metadata.items()
+                if key not in {"withdrawn", "withdrawn_card_queues"}
+            }
+            note.revision += 1
+            mark_content_synced(note)
+            counts["notes_updated"] += 1
             continue
         fields = {"english": row.get("front_text"), "chinese": row.get("back_text")}
         changed = {

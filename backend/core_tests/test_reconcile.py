@@ -344,6 +344,38 @@ def test_withdrawing_imported_note_preserves_study_attempt(engine, snapshot):
         assert db.get(Card, card_id).queue == "suspended"
 
 
+def test_restored_source_note_reactivates_existing_card(engine, snapshot):
+    from core.models import Card, MediaReference, Note
+
+    with Session(engine) as db, db.begin():
+        reconcile(db, snapshot, "final", apply=True)
+        note = db.scalar(select(Note).where(
+            Note.source_metadata["legacy_id"].astext == "2",
+            Note.collection_id != db.scalar(select(Collection.id).where(Collection.kind == "library")),
+        ))
+        note_id = note.id
+        card_id = db.scalar(select(Card.id).where(Card.note_id == note_id))
+        card_count = db.scalar(select(func.count()).select_from(Card).where(Card.note_id == note_id))
+
+    withdrawn = copy.deepcopy(snapshot)
+    withdrawn["cards"] = [row for row in withdrawn["cards"] if row["id"] != 2]
+    with Session(engine) as db, db.begin():
+        reconcile(db, withdrawn, "final", apply=True)
+    with Session(engine) as db, db.begin():
+        reconcile(db, snapshot, "final", apply=True)
+    with Session(engine) as db:
+        note = db.get(Note, note_id)
+        card = db.get(Card, card_id)
+        assert note.fields["english"] == "Hello again."
+        assert note.fields["reference_audio"]
+        assert not note.source_metadata.get("withdrawn")
+        assert card.queue != "suspended"
+        assert db.scalar(select(func.count()).select_from(MediaReference).where(
+            MediaReference.note_id == note_id,
+        )) == 1
+        assert db.scalar(select(func.count()).select_from(Card).where(Card.note_id == note_id)) == card_count
+
+
 def test_core_owned_content_edits_are_not_overwritten(engine, snapshot):
     from core.models import Deck, Note
 
