@@ -1,8 +1,8 @@
 {
-  "prompt_version": "1.1.0",
+  "prompt_version": "1.2.0",
   "description": "Gemini single feedback prompt for reference-audio vs user-audio speaking evaluation",
   "owner": "langear@lan",
-  "updated_at": "2026-10-15T08:00:00+08:00",
+  "updated_at": "2026-10-20T00:00:00+08:00",
   "tags": ["gemini", "single-feedback", "audio", "prompt-v2-structure"],
   "files": {
     "system": "system.md",
@@ -10,6 +10,11 @@
   },
   "notes": "Adopts the Quickfire-style structured prompt layout with separate system and user sections. This is the only single_feedback prompt copy: the legacy unversioned prompts/single_feedback/ duplicate was merged into v1 and removed on 2026-10-15, so GEMINI_PROMPT_VERSION=v1 now loads everything.",
   "changelog": [
+    {
+      "version": "1.2.0",
+      "date": "2026-10-20",
+      "changes": "Make pronunciation feedback conservative around word stress and accent variants; return only concise actionable suggestions and keep issues empty to avoid duplicated problem/advice lists."
+    },
     {
       "version": "1.1.0",
       "date": "2026-10-15",

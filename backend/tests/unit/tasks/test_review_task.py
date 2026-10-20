@@ -1,5 +1,7 @@
 """Unit tests for review background task."""
 
+import json
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -31,6 +33,7 @@ class TestReviewTask:
         test_db: Session,
         sample_deck_tree,
         monkeypatch,
+        caplog,
     ):
         lesson = sample_deck_tree["lesson"]
         card = sample_deck_tree["cards"][0]
@@ -44,6 +47,8 @@ class TestReviewTask:
         )
 
         mock_provider = Mock()
+        mock_provider.provider_id = "gemini"
+        mock_provider.model_id = "gemini-test"
         mock_provider.generate_single_feedback.return_value = {
             "transcription_text": "Last week I went to the movie theater",
             "pronunciation": "Clear pronunciation.",
@@ -71,6 +76,7 @@ class TestReviewTask:
             oss_audio_path="recordings/20260319/1_1700000000.webm",
             realtime_session_id="session-1",
             realtime_final_text="Last week I went to the theatre",
+            enqueued_at=time.time() - 2,
         )
 
         updated = test_db.query(ReviewLog).filter(ReviewLog.id == log.id).first()
@@ -81,6 +87,19 @@ class TestReviewTask:
         assert updated.ai_feedback_json["transcription"]["text"] == "Last week I went to the movie theater"
         assert updated.ai_feedback_json["transcription"]["timestamps"] == []
         assert updated.ai_feedback_json["realtime_session_id"] == "session-1"
+        trace_events = [
+            json.loads(record.message.removeprefix("submission_trace "))
+            for record in caplog.records
+            if record.message.startswith("submission_trace ")
+        ]
+        task_started = next(event for event in trace_events if event["stage"] == "task_started")
+        ai_completed = next(event for event in trace_events if event["stage"] == "ai_feedback_completed")
+        task_completed = next(event for event in trace_events if event["stage"] == "task_completed")
+        assert task_started["queue_wait_ms"] >= 1900
+        assert ai_completed["provider"] == "gemini"
+        assert ai_completed["model"] == "gemini-test"
+        assert ai_completed["duration_ms"] >= 0
+        assert task_completed["total_duration_ms"] >= ai_completed["duration_ms"]
 
     def test_process_review_task_reference_audio_missing(
         self,

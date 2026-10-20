@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -204,6 +205,7 @@ class ReviewService:
                 realtime_session_id,
                 realtime_session.final_text.strip(),
                 request_id,
+                time.time(),
             ),
             daemon=True,
         )

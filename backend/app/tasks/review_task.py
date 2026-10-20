@@ -1,6 +1,7 @@
 """Background task for processing review submissions asynchronously."""
 
 import logging
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -48,6 +49,7 @@ def process_review_task(
     realtime_session_id: str,
     realtime_final_text: str,
     request_id: str | None = None,
+    enqueued_at: float | None = None,
 ) -> None:
     """Process a single review submission asynchronously.
 
@@ -69,6 +71,8 @@ def process_review_task(
         None (updates database directly)
     """
     db: Session = SessionLocal()
+    task_started_at = time.perf_counter()
+    queue_wait_ms = max(0, round((time.time() - enqueued_at) * 1000)) if enqueued_at else None
 
     try:
         log_submission_trace(
@@ -81,6 +85,7 @@ def process_review_task(
             realtime_session_id=realtime_session_id,
             oss_audio_path=oss_audio_path,
             status="processing",
+            queue_wait_ms=queue_wait_ms,
         )
 
         # Initialize adapters and repositories
@@ -257,6 +262,8 @@ def process_review_task(
 
         # Step 4: AI feedback with dual-audio input
         logger.info(f"Generating AI feedback for submission {submission_id}")
+        ai_started_at = time.perf_counter()
+        ai_provider = None
         try:
             ai_provider = create_ai_feedback_provider()
             feedback = ai_provider.generate_single_feedback(
@@ -265,6 +272,20 @@ def process_review_task(
                 reference_audio_url=reference_audio_url,
             )
         except AIFeedbackError as e:
+            ai_duration_ms = round((time.perf_counter() - ai_started_at) * 1000)
+            log_submission_trace(
+                logger,
+                "ai_feedback_failed",
+                level="warning",
+                request_id=request_id,
+                submission_id=submission_id,
+                lesson_id=lesson_id,
+                card_id=card_id,
+                provider=getattr(ai_provider, "provider_id", None),
+                model=getattr(ai_provider, "model_id", None),
+                duration_ms=ai_duration_ms,
+                error_code="AI_FEEDBACK_FAILED",
+            )
             logger.error(f"AI feedback failed for submission {submission_id}: {str(e)}")
             review_log_repo.update_status(
                 log_id=submission_id,
@@ -286,8 +307,22 @@ def process_review_task(
                 status="failed",
                 error_code="AI_FEEDBACK_FAILED",
                 error_message=str(e),
+                total_duration_ms=round((time.perf_counter() - task_started_at) * 1000),
+                queue_wait_ms=queue_wait_ms,
             )
             return
+
+        log_submission_trace(
+            logger,
+            "ai_feedback_completed",
+            request_id=request_id,
+            submission_id=submission_id,
+            lesson_id=lesson_id,
+            card_id=card_id,
+            provider=getattr(ai_provider, "provider_id", None),
+            model=getattr(ai_provider, "model_id", None),
+            duration_ms=round((time.perf_counter() - ai_started_at) * 1000),
+        )
 
         transcription_text = feedback.pop("transcription_text")
 
@@ -331,6 +366,8 @@ def process_review_task(
             realtime_session_id=realtime_session_id,
             oss_audio_path=oss_audio_path,
             status="completed",
+            total_duration_ms=round((time.perf_counter() - task_started_at) * 1000),
+            queue_wait_ms=queue_wait_ms,
         )
 
     except Exception as e:
@@ -357,6 +394,8 @@ def process_review_task(
                 oss_audio_path=oss_audio_path,
                 status="failed",
                 error_code="UNEXPECTED_ERROR",
+                total_duration_ms=round((time.perf_counter() - task_started_at) * 1000),
+                queue_wait_ms=queue_wait_ms,
                 error_message=str(e),
             )
         except Exception as commit_error:
