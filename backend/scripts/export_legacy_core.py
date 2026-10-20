@@ -1,5 +1,5 @@
-"""Export an old staging DB in one read-only snapshot. Run on Docker host.
-Usage: python3 backend/scripts/export_legacy_core.py --output /protected/snapshot.json
+"""Export a legacy DB in one read-only snapshot. Run on the Docker host.
+Usage: python3 backend/scripts/export_legacy_core.py --environment staging|prod --output /protected/snapshot.json
 Never writes to the source DB; the output contains password hashes and private history.
 """
 
@@ -7,6 +7,12 @@ import argparse
 import json
 import os
 import subprocess
+
+DEFAULT_CONTAINERS = {
+    "staging": "langear-staging-dev-postgres",
+    "prod": "langear-prod-postgres",
+}
+OTHER_ENVIRONMENT = {"staging": "prod", "prod": "staging"}
 
 TABLES = [
     "users",
@@ -24,13 +30,27 @@ TABLES = [
 ]
 
 
+def container_name(environment, override=None):
+    """Resolve the source container without allowing an accidental cross-environment read."""
+    name = override or DEFAULT_CONTAINERS[environment]
+    other = OTHER_ENVIRONMENT[environment]
+    if environment not in name or other in name:
+        raise ValueError(
+            f"{environment} export requires a {environment} container, got {name!r}"
+        )
+    return name
+
+
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--container", default="langear-staging-dev-postgres")
+    parser.add_argument("--environment", choices=tuple(DEFAULT_CONTAINERS), default="staging")
+    parser.add_argument("--container")
     args = parser.parse_args()
-    if "staging" not in args.container:
-        parser.error("Only an explicitly named staging container is supported")
+    try:
+        container = container_name(args.environment, args.container)
+    except ValueError as error:
+        parser.error(str(error))
     pairs = ["'revision', (SELECT to_jsonb(version_num) FROM alembic_version)"]
     pairs += [
         f"'{table}', COALESCE((SELECT jsonb_agg(to_jsonb(t)) FROM {table} t), '[]'::jsonb)"
@@ -45,7 +65,7 @@ def main():
         [
             "docker",
             "exec",
-            args.container,
+            container,
             "sh",
             "-c",
             'exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"',

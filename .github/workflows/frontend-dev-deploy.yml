@@ -5,11 +5,26 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      runtime:
+        description: Release runtime contract
+        required: true
+        default: review
+        type: choice
+        options: [review, core, core-v1]
+      api_base_url:
+        description: Frontend VITE_API_BASE_URL
+        required: true
+        default: /api/content/v1
+        type: string
 
 permissions:
   contents: read
 
 env:
+  # Dispatched runs choose the contract; push/PR runs keep the paired Review default.
+  RELEASE_RUNTIME: ${{ github.event.inputs.runtime || 'review' }}
+  VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || '/api/content/v1' }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   UV_HTTP_TIMEOUT: '120'
   UV_HTTP_RETRIES: '3'
@@ -33,6 +48,17 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - name: Validate release contract
+        run: |
+          case "$RELEASE_RUNTIME" in
+            review|core) expected=/api/content/v1 ;;
+            core-v1) expected=/api/v1 ;;
+            *) echo "Unknown RELEASE_RUNTIME: $RELEASE_RUNTIME"; exit 1 ;;
+          esac
+          if [ "$VITE_API_BASE_URL" != "$expected" ]; then
+            echo "RELEASE_RUNTIME=$RELEASE_RUNTIME requires VITE_API_BASE_URL=$expected"
+            exit 1
+          fi
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -61,8 +87,6 @@ jobs:
         run: uv run bash ../scripts/release/test-core.sh -q
       - name: Frontend tests and build
         working-directory: frontend
-        env:
-          VITE_API_BASE_URL: /api/content/v1
         run: |
           pnpm install --frozen-lockfile
           pnpm test:unit
@@ -70,7 +94,6 @@ jobs:
       - name: Build immutable backend and package matching frontend
         env:
           RELEASE_SHA: ${{ github.sha }}
-          RELEASE_RUNTIME: review
         run: |
           docker build --label "org.opencontainers.image.revision=$RELEASE_SHA" \
             -t "langear-release:$RELEASE_SHA" backend

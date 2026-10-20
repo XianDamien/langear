@@ -31,6 +31,7 @@ docs/*
 !docs/operations/
 docs/operations/*
 !docs/operations/dev-prod-workflow.md
+!docs/operations/core-phase-3-cutover.md
 
 # Old output directories
 2_processed_output.old/

@@ -8,7 +8,7 @@ import sys
 import tarfile
 from pathlib import Path
 
-RUNTIMES = ("legacy", "review", "core")
+from host import RUNTIMES, is_core_runtime
 
 def digest(path):
     h = hashlib.sha256()
@@ -22,7 +22,7 @@ def main():
     sha, dist, output = sys.argv[1:]
     runtime = os.environ.get("RELEASE_RUNTIME", "review")
     if runtime not in RUNTIMES:
-        raise SystemExit("RELEASE_RUNTIME must be legacy, review or core")
+        raise SystemExit("RELEASE_RUNTIME must be one of " + ", ".join(RUNTIMES))
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise SystemExit("Expected a full Git SHA")
     dist, output = Path(dist), Path(output)
@@ -35,7 +35,7 @@ def main():
         for path in sorted(dist.iterdir()):
             archive.add(path, arcname=path.name)
     checks = ["backend-pytest", "frontend-vitest", "frontend-typecheck-build", "release-tool-tests"]
-    if runtime in ("review", "core"):
+    if is_core_runtime(runtime):
         checks.append("collection-core-pytest")
     manifest = {
         "schema": 2, "runtime": runtime, "sha": sha, "image": image, "image_id": info["Id"],
