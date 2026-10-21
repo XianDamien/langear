@@ -66,6 +66,26 @@ function toFlatView(row: DeckTreeRow): DeckView {
   }
 }
 
+function pruneToJoined(nodes: DeckTreeNode[], inherited = false): DeckView[] {
+  return nodes.flatMap(node => {
+    const joined = inherited || node.in_my_courses
+    const children = pruneToJoined(node.children, joined)
+    if (!joined && !children.length) return []
+
+    const view = toView(node)
+    view.inMyCourses = joined
+    view.children = children
+    if (!node.in_my_courses && children.length) {
+      view.totalCards = children.reduce((sum, child) => sum + child.totalCards, 0)
+      view.newCards = children.reduce((sum, child) => sum + child.newCards, 0)
+      view.reviewCards = children.reduce((sum, child) => sum + child.reviewCards, 0)
+      view.completedCards = children.reduce((sum, child) => sum + child.completedCards, 0)
+      view.dueCards = children.reduce((sum, child) => sum + child.dueCards, 0)
+    }
+    return [view]
+  })
+}
+
 export const useDecksStore = defineStore('decks', () => {
   const rows = ref<DeckTreeRow[]>([])
   const tree = ref<DeckTreeNode[]>([])
@@ -77,6 +97,7 @@ export const useDecksStore = defineStore('decks', () => {
   const libraryTree = computed(() => tree.value.map(toView))
   const joinedRows = computed(() => rows.value.filter(row => row.in_my_courses))
   const myCourses = computed(() => joinedRows.value.map(toFlatView))
+  const myCoursesTree = computed(() => pruneToJoined(tree.value))
   const joinedIds = computed(() => new Set(joinedRows.value.map(row => row.id)))
 
   function deckPath(deckId: string): string {
@@ -156,6 +177,7 @@ export const useDecksStore = defineStore('decks', () => {
     libraryTree,
     joinedRows,
     myCourses,
+    myCoursesTree,
     joinedIds,
     deckPath,
     load,

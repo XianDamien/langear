@@ -5,12 +5,13 @@ import { storeToRefs } from 'pinia'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import { useDecksStore } from '@/stores/decks'
+import type { DeckView } from '@/stores/decks'
 import { resourceError } from '@/services/content'
 
 const route = useRoute()
 const router = useRouter()
 const decksStore = useDecksStore()
-const { myCourses, loading } = storeToRefs(decksStore)
+const { myCoursesTree, loading } = storeToRefs(decksStore)
 const error = ref('')
 
 const notice = computed(() => {
@@ -37,8 +38,28 @@ async function load() {
 
 onMounted(load)
 
+function findDeck(nodes: DeckView[], deckId: string): DeckView | null {
+  for (const node of nodes) {
+    if (node.id === deckId) return node
+    const found = findDeck(node.children, deckId)
+    if (found) return found
+  }
+  return null
+}
+
+function firstJoinedLesson(deck: DeckView): string | null {
+  if (!deck.children.length) return deck.inMyCourses ? deck.id : null
+  for (const child of deck.children) {
+    const found = firstJoinedLesson(child)
+    if (found) return found
+  }
+  return null
+}
+
 function handlePlayDeck(deckId: string) {
-  void router.push({ name: 'DeckReview', params: { deckId } })
+  const deck = findDeck(myCoursesTree.value, deckId)
+  const target = deck && !deck.inMyCourses ? firstJoinedLesson(deck) : deckId
+  void router.push({ name: 'DeckReview', params: { deckId: target ?? deckId } })
 }
 
 function handleEditDeckSettings(deckId: string) {
@@ -81,7 +102,7 @@ function handleEditDeckSettings(deckId: string) {
     </div>
 
     <div
-      v-else-if="!myCourses.length && !error"
+      v-else-if="!myCoursesTree.length && !error"
       class="border-2 border-dashed border-slate-200 p-8 text-center"
     >
       <p class="mb-4 text-slate-500">
@@ -101,7 +122,7 @@ function handleEditDeckSettings(deckId: string) {
       class="space-y-2"
     >
       <DeckTreeItem
-        v-for="deck in myCourses"
+        v-for="deck in myCoursesTree"
         :key="deck.id"
         :deck="deck"
         mode="my-courses"
