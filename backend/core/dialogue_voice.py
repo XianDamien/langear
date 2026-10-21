@@ -182,7 +182,11 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 await send({'type': 'input_audio_buffer.append', 'audio': message['data']})
             elif kind == 'commit':
                 if not recording or audio_bytes < 3200:
-                    raise DomainError(422, 'DIALOGUE_AUDIO_EMPTY', 'Please record a spoken reply.')
+                    recording, pending_input = False, False
+                    turn_deadline = None
+                    await browser.send_json({'type': 'ready', 'user_turns': user_turns})
+                    await browser.send_json({'type': 'notice', 'text': '没有听清，请再说一次。'})
+                    continue
                 recording, pending_input = False, True
                 turn_deadline = time.monotonic() + 45
                 await send({'type': 'input_audio_buffer.commit'})
@@ -190,7 +194,7 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 raise DomainError(422, 'DIALOGUE_EVENT_INVALID', 'Unsupported dialogue event.')
 
     async def from_provider():
-        nonlocal ready, pending_input, responding, assistant_text, user_turns, ending, completed, turn_deadline
+        nonlocal ready, recording, pending_input, responding, assistant_text, user_turns, ending, completed, turn_deadline
         async for raw in provider:
             event = json.loads(raw)
             kind = event.get('type', '')
@@ -229,8 +233,13 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
             elif kind == 'conversation.item.input_audio_transcription.completed':
                 if not pending_input:
                     continue
-                turn, user_turns = save_turn(collection_id, session_id, token, event.get('item_id'), 'user', event.get('transcript', ''))
-                pending_input = False
+                transcript = str(event.get('transcript') or '').strip()
+                pending_input, turn_deadline = False, None
+                if not transcript:
+                    await browser.send_json({'type': 'ready', 'user_turns': user_turns})
+                    await browser.send_json({'type': 'notice', 'text': '没有听清，请再说一次。'})
+                    continue
+                turn, user_turns = save_turn(collection_id, session_id, token, event.get('item_id'), 'user', transcript)
                 await browser.send_json({'type': 'turn', 'turn': turn, 'user_turns': user_turns})
                 if ending in ('user_ended', 'time_limit'):
                     await request_closing()
@@ -279,6 +288,16 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                     turn_deadline = None
                     await browser.send_json({'type': 'ready', 'user_turns': user_turns})
             elif kind == 'error' or kind.endswith('transcription.failed'):
+                detail = event.get('error') if isinstance(event.get('error'), dict) else {}
+                message = str(detail.get('message') or event.get('message') or '')
+                lowered = message.lower()
+                if kind.endswith('transcription.failed') or 'buffer too small' in lowered or 'no audio' in lowered or 'no speech' in lowered:
+                    recording, pending_input, responding = False, False, False
+                    turn_deadline = None
+                    await browser.send_json({'type': 'ready', 'user_turns': user_turns})
+                    await browser.send_json({'type': 'notice', 'text': '没有听清，请再说一次。'})
+                    continue
+                logger.warning('Dialogue provider error type=%s message=%s', detail.get('type'), message[:300])
                 raise DomainError(502, 'DIALOGUE_PROVIDER_FAILED', 'Voice dialogue is unavailable. Please reconnect.')
         if not completed:
             raise DomainError(502, 'DIALOGUE_PROVIDER_FAILED', 'The voice connection closed. Please reconnect.')

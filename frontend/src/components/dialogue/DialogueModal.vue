@@ -11,7 +11,7 @@ import type { DialogueEntry } from '@/services/dialogue'
 const props = withDefaults(defineProps<{ entry: DialogueEntry; confirmOnClose?: boolean; closeLabel?: string }>(), { confirmOnClose: true, closeLabel: 'Close' })
 const emit = defineEmits<{ close: [] }>()
 const createController = inject(dialogueControllerKey, useDialogue)
-const { session, status, error, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview } = createController(props.entry)
+const { session, status, error, notice, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview } = createController(props.entry)
 const dialog = ref<HTMLDialogElement>()
 const evidence = ref<DialogueSource>()
 const reply = ref('')
@@ -88,6 +88,13 @@ onUnmounted(() => previousFocus?.focus())
           class="rounded-lg bg-amber-50 p-3 text-sm text-amber-900"
         >
           {{ error }}
+        </p>
+        <p
+          v-if="notice"
+          role="status"
+          class="rounded-lg bg-slate-100 p-3 text-sm text-slate-700"
+        >
+          {{ notice }}
         </p>
         <template v-if="session">
           <ol

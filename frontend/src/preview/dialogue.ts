@@ -41,6 +41,7 @@ export function createDialoguePreview() {
   })
   const status = ref<ReturnType<typeof useDialogue>['status']['value']>('preview')
   const error = ref('')
+  const notice = ref('')
   const partial = ref('')
   const remaining = ref(0)
   const canReply = computed(() => ['recap', 'roleplay'].includes(page.value))
@@ -127,7 +128,7 @@ export function createDialoguePreview() {
   }
   async function connect() { error.value = ''; page.value = 'roleplay'; status.value = 'ready'; remaining.value = session.value.time_limit_seconds }
   const controller: ReturnType<typeof useDialogue> = {
-    session, status, error, partial, remaining, prepare: async () => {}, connect,
+    session, status, error, notice, partial, remaining, prepare: async () => {}, connect,
     record: async () => { record() }, sendRecording, sendText: text => { input.value = text; submit() },
     end: finish, finishAndReview: async () => { finish() },
   }

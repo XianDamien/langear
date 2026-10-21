@@ -9,6 +9,7 @@ export function useDialogue(entry: DialogueEntry) {
   const session = ref<DialogueSession>()
   const status = ref<Status>('preparing')
   const error = ref('')
+  const notice = ref('')
   const partial = ref('')
   // Remaining seconds in this voice connection; the server closes the dialogue at zero.
   const remaining = ref(0)
@@ -49,7 +50,7 @@ export function useDialogue(entry: DialogueEntry) {
     if (socket) { socket.onclose = null; socket.onmessage = null; socket.close(); socket = null }
   }
   function fail(message: string) {
-    error.value = message; status.value = 'failed'; partial.value = ''
+    error.value = message; notice.value = ''; status.value = 'failed'; partial.value = ''
     disconnect()
   }
   async function prepare() {
@@ -82,6 +83,7 @@ export function useDialogue(entry: DialogueEntry) {
   }
   function addTurn(turn: DialogueTurn, count: number) {
     if (!session.value) return
+    notice.value = ''
     if (!session.value.turns.some(t => t.id === turn.id)) session.value.turns.push(turn)
     session.value.user_turns = count
     partial.value = ''
@@ -114,6 +116,7 @@ export function useDialogue(entry: DialogueEntry) {
           else if (event.type === 'message_delta') partial.value += event.text
           else if (event.type === 'turn') addTurn(event.turn, event.user_turns)
           else if (event.type === 'ready') afterPlayback(() => { if (!disposed) status.value = 'ready' })
+          else if (event.type === 'notice') notice.value = event.text || ''
           else if (event.type === 'ended') {
             clearTimeout(connectionTimer)
             stopClock()
@@ -132,6 +135,7 @@ export function useDialogue(entry: DialogueEntry) {
   async function record() {
     if (status.value !== 'ready' || !socket || socket.readyState !== WebSocket.OPEN) return
     const request = generation
+    notice.value = ''
     status.value = 'connecting'
     try {
       const recording = await createRecordingSession({ onRealtimePcmChunk: data => {
@@ -156,6 +160,7 @@ export function useDialogue(entry: DialogueEntry) {
   }
   function sendText(text: string) {
     if (status.value !== 'ready' || socket?.readyState !== WebSocket.OPEN || !text.trim()) return
+    notice.value = ''
     status.value = 'thinking'; error.value = ''
     socket.send(JSON.stringify({ type: 'text', text: text.trim() }))
   }
@@ -184,5 +189,5 @@ export function useDialogue(entry: DialogueEntry) {
     } else { void finishAndReview(false) }
   }
   onBeforeUnmount(() => { disposed = true; stopClock(); disconnect(); void playback?.close() })
-  return { session, status, error, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview }
+  return { session, status, error, notice, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview }
 }
