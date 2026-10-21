@@ -15,19 +15,21 @@ import ReviewCardFront from '@/components/review/ReviewCardFront.vue'
 import ReviewCardBack from '@/components/review/ReviewCardBack.vue'
 import SentencePracticeCard from '@/components/review/SentencePracticeCard.vue'
 import PracticeFields from '@/components/study/modules/PracticeFields.vue'
+import PracticeOptionsModal from '@/components/review/PracticeOptionsModal.vue'
 import { useReviewSession } from '@/composables/useReviewSession'
-import { templateLabels } from '@/services/content'
-import { sentenceTemplates, type ReviewTemplate } from '@/services/review'
+import { templateLabels, type ResourceDeck } from '@/services/content'
+import { reviewHttp, type ReviewTemplate } from '@/services/review'
 import { isUuid } from '@/services/api/settings'
 
 const showPaused = ref(false)
+const showPracticeOptions = ref(false)
+const practiceDeck = ref<{ id: string; name: string }>()
 const dialogueAvailable = ref(false)
 const dialogueEntry = ref<DialogueEntry>()
 void dialogueApi.available().then(value => { dialogueAvailable.value = value === true }).catch(() => {})
 const route = useRoute()
 const router = useRouter()
-const { completedRound, deck, state, card: current, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
-const isLegacyDeck = computed(() => deck.value?.deck_guid?.startsWith('legacy:'))
+const { completedRound, deck, state, card: current, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplates, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
   english: current.value?.back.word || '', chinese: current.value?.back.meaning,
@@ -35,21 +37,72 @@ const wordAnswer = computed(() => ({
 }))
 const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
 const dueLabel = computed(() => state.value?.next_due_at ? new Date(state.value.next_due_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
+
+function practiceSelection(): ReviewTemplate[] {
+  const raw = route.query.templates
+  const keys = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+    .flatMap(value => String(value).split(','))
+    .filter((key): key is ReviewTemplate => Object.hasOwn(templateLabels, key))
+  if (keys.length) return [...new Set(keys)]
+  const single = String(route.query.template || '')
+  return Object.hasOwn(templateLabels, single) ? [single as ReviewTemplate] : []
+}
+
+function hasPracticeSelection(): boolean {
+  return Boolean(route.query.practice || route.query.template || route.query.templates)
+}
+
 function loadEntry() {
   const deckId = String(route.params.deckId || '')
   if (!isUuid(deckId)) {
     void router.replace({ name: 'MyCourses' })
     return Promise.resolve()
   }
-  const key = String(route.query.template || '')
-  const template = Object.hasOwn(templateLabels, key) ? key as ReviewTemplate : undefined
-  return load(deckId, template)
+  const rawLimit = Number(route.query.limit)
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined
+  return load(deckId, { templates: practiceSelection(), limit })
 }
-function changeTemplate(event: Event) {
-  const template = (event.target as HTMLSelectElement).value
-  void router.replace({ path: route.path, query: template === 'sentence_retelling' ? {} : { template } })
+
+function confirmPracticeOptions(value: { templates: ReviewTemplate[]; limit?: number }) {
+  const query: Record<string, string> = { ...(route.query as Record<string, string>), practice: '1' }
+  delete query.template
+  if (value.templates.length) query.templates = value.templates.join(',')
+  else delete query.templates
+  if (value.limit) query.limit = String(value.limit)
+  else delete query.limit
+  void router.replace({ path: route.path, query })
 }
-watch(() => [route.params.deckId, route.query.template], () => { dialogueEntry.value = undefined; return loadEntry() }, { immediate: true })
+
+async function openPracticeOptions() {
+  showPracticeOptions.value = true
+  const deckId = String(route.params.deckId || '')
+  if (!isUuid(deckId) || practiceDeck.value?.id === deckId) return
+  try {
+    const { data } = await reviewHttp.get<ResourceDeck>(`/decks/${deckId}`)
+    practiceDeck.value = { id: deckId, name: data.name }
+  } catch {
+    // The modal can still show a generic title.
+  }
+}
+
+function closePracticeOptions() {
+  showPracticeOptions.value = false
+  if (!state.value) void router.push('/my-courses')
+}
+
+watch(
+  () => [route.params.deckId, route.query.template, route.query.templates, route.query.limit, route.query.practice],
+  () => {
+    dialogueEntry.value = undefined
+    if (!hasPracticeSelection()) {
+      void openPracticeOptions()
+      return
+    }
+    showPracticeOptions.value = false
+    return loadEntry()
+  },
+  { immediate: true },
+)
 watch([completedRound, dialogueAvailable, busy, error], ([round, available, working, failure]) => {
   if (round && available && !working && !failure) dialogueEntry.value = round
 })
@@ -78,22 +131,15 @@ watch([completedRound, dialogueAvailable, busy, error], ([round, available, work
         </h1>
       </div>
       <div class="flex shrink-0 items-center gap-3 sm:order-3">
-        <select
-          v-if="isLegacyDeck && !practiceTemplate?.startsWith('vocabulary_')"
-          aria-label="练习类型"
-          :value="practiceTemplate"
-          :disabled="busy || loading || flipped"
-          class="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600"
-          @change="changeTemplate"
+        <button
+          type="button"
+          class="text-xs text-slate-500 transition-colors hover:text-slate-800"
+          :disabled="busy || loading"
+          data-testid="practice-options-open"
+          @click="openPracticeOptions"
         >
-          <option
-            v-for="template in sentenceTemplates"
-            :key="template"
-            :value="template"
-          >
-            {{ templateLabels[template] }}
-          </option>
-        </select>
+          练习设置
+        </button>
         <button
           type="button"
           class="text-xs text-slate-500 transition-colors hover:text-slate-800"
@@ -295,6 +341,15 @@ watch([completedRound, dialogueAvailable, busy, error], ([round, available, work
       :deck-id="deck!.id"
       @close="showPaused = false"
       @changed="loadEntry"
+    />
+    <PracticeOptionsModal
+      :open="showPracticeOptions"
+      :deck-id="String(route.params.deckId || '')"
+      :deck-name="deck?.name || practiceDeck?.name"
+      :initial-templates="practiceTemplates"
+      :initial-limit="Number(route.query.limit) || undefined"
+      @close="closePracticeOptions"
+      @confirm="confirmPracticeOptions"
     />
   </div>
 </template>

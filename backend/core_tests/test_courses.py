@@ -230,3 +230,25 @@ def test_migration_backfills_source_metadata_for_pre_existing_legacy_rows(engine
             Deck.imported.is_(True),
             Deck.source_metadata["legacy_id"].astext == "7",
         )).id == deck.id
+
+
+def test_practice_options_lists_available_templates(client, account):
+    make_note(
+        client,
+        account,
+        {"english": "Hello", "chinese": "你好"},
+        "sentence_translation",
+    )
+    make_note(
+        client,
+        account,
+        {"word": "apple", "meaning": "苹果"},
+        "vocabulary_english_to_chinese",
+    )
+    response = client.get(f"/api/v1/decks/{account['deck_id']}/practice-options")
+    assert response.status_code == 200, response.text
+    counts = {row["key"]: row["count"] for row in response.json()["templates"]}
+    assert counts == {
+        "sentence_translation": 1,
+        "vocabulary_english_to_chinese": 1,
+    }

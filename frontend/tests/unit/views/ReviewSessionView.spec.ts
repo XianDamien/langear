@@ -21,7 +21,7 @@ const httpPut = vi.mocked(coreHttp.put)
 const deckA = '01900000-0000-7000-8000-00000000000a'
 const deckB = '01900000-0000-7000-8000-00000000000b'
 const deckC = '01900000-0000-7000-8000-00000000000c'
-async function start(path = `/review/${deckA}`) {
+async function start(path = `/review/${deckA}?practice=1`) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/review/:deckId', component: ReviewSessionView },
     { path: '/library', component: { template: '<div>Library</div>' } },
@@ -126,20 +126,33 @@ describe('server-backed review', () => {
   })
 
   it('defaults imported courses to retelling and keeps a separate template scope through skip and refresh', async () => {
-    httpGet.mockImplementation(async path => ({ data: path.startsWith('/decks/') ? { id: deckA, name: 'Lesson 1', deck_guid: 'legacy:fixture:deck:1' } : current }))
+    httpGet.mockImplementation(async path => {
+      if (path.endsWith('/practice-options')) {
+        return { data: { templates: [
+          { key: 'sentence_retelling', count: 2 },
+          { key: 'sentence_dictation', count: 2 },
+        ] } }
+      }
+      return { data: path.startsWith('/decks/') ? { id: deckA, name: 'Lesson 1', deck_guid: 'legacy:fixture:deck:1' } : current }
+    })
     const { wrapper, router, click } = await start()
-    const scope = (template: string) => ({ scope: { deck_id: deckA, include_descendants: true, exclude_imported: false, card_template_keys: [template] } })
+    const scope = (template: string, limit?: number) => ({ scope: { deck_id: deckA, include_descendants: true, exclude_imported: false, card_template_keys: [template], ...(limit ? { limit } : {}) } })
     expect(httpPost).toHaveBeenCalledWith('/review/queues', scope('sentence_retelling'))
-    await wrapper.get('select[aria-label="练习类型"]').setValue('sentence_dictation')
+
+    await click('练习设置')
+    await wrapper.get('[data-testid="practice-option-sentence_dictation"]').trigger('click')
+    await wrapper.get('[data-testid="practice-option-sentence_retelling"]').trigger('click')
+    await wrapper.get('[data-testid="practice-confirm"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query.template).toBe('sentence_dictation')
-    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
+
+    expect(router.currentRoute.value.query.templates).toBe('sentence_dictation')
+    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation', 10))
     await click('今日跳过')
-    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
+    expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation', 10))
     wrapper.unmount()
     const refreshed = await start(`/review/${deckA}?template=sentence_dictation`)
     expect(httpPost).toHaveBeenLastCalledWith('/review/queues', scope('sentence_dictation'))
-    expect((refreshed.wrapper.get('select').element as HTMLSelectElement).value).toBe('sentence_dictation')
+    expect(refreshed.wrapper.find('[data-testid="practice-options"]').exists()).toBe(false)
     refreshed.wrapper.unmount()
   })
   it('shows the saved answer course and type instead of rendering it under the requested course', async () => {
@@ -323,8 +336,8 @@ describe('server-backed review', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     let release!: (value: { data: ReviewNext }) => void
     httpGet.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
-    await router.push(`/review/${deckB}`)
-    await router.push(`/review/${deckC}`)
+    await router.push(`/review/${deckB}?practice=1`)
+    await router.push(`/review/${deckC}?practice=1`)
     await flushPromises()
     release({ data: { ...counts, queue_id: 'old', card: null, review_token: null, empty_reason: 'no_cards' } })
     await flushPromises()

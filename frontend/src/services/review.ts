@@ -7,6 +7,12 @@ export const reviewHttp = coreHttp
 export type SentenceTemplate = 'sentence_retelling' | 'sentence_translation' | 'sentence_dictation'
 export type ReviewTemplate = SentenceTemplate | 'vocabulary_english_to_chinese' | 'vocabulary_chinese_to_english'
 export const sentenceTemplates: SentenceTemplate[] = ['sentence_retelling', 'sentence_translation', 'sentence_dictation']
+export interface PracticeOption { key: ReviewTemplate; count: number }
+
+export async function fetchPracticeOptions(deckId: string): Promise<PracticeOption[]> {
+  const { data } = await reviewHttp.get<{ templates: PracticeOption[] }>(`/decks/${deckId}/practice-options`)
+  return data.templates.filter(option => option.count > 0)
+}
 export interface PendingReview { deck_id: string; deck_name: string; card_template_key: string }
 export type Rating = 'again' | 'hard' | 'good' | 'easy'
 export type ReviewInput = { type: 'none' } | { type: 'text'; text: string } | { type: 'audio'; temporary_media_asset_id: string; realtime_session_id?: string }

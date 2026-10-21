@@ -15,6 +15,7 @@ class Scope(Body):
         "sentence_retelling", "sentence_translation", "sentence_dictation",
         "vocabulary_english_to_chinese", "vocabulary_chinese_to_english",
     ]] | None = Field(default=None, min_length=1)
+    limit: int | None = Field(default=None, ge=1, le=500)
 
 
 class QueueCreate(Body):

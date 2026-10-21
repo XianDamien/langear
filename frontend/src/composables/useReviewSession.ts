@@ -8,6 +8,12 @@ type PendingWrite = { key: string; kind: 'flip'; body: { card_id: string; review
   { key: string; kind: 'rating'; attemptId: string; body: { rating: Rating; card_schedule_revision: number } }
 const recoverable = new Set(['QUEUE_EXPIRED', 'CARD_SCHEDULE_CONFLICT', 'RATING_ALREADY_SET', 'REVIEW_TOKEN_INVALID', 'REVIEW_TOKEN_REUSED', 'DAILY_LIMIT_REACHED'])
 
+export interface ReviewLoadOptions {
+  templates?: ReviewTemplate[]
+  /** Maximum cards in this round; omitted means the normal daily limits only. */
+  limit?: number
+}
+
 export function useReviewSession() {
   const completedRound = ref<DialogueEntry>()
   const roundAttemptIds = new Set<string>()
@@ -20,7 +26,7 @@ export function useReviewSession() {
   const error = ref('')
   const needsRecovery = ref(false)
   const pendingReview = ref<PendingReview>()
-  const practiceTemplate = ref<ReviewTemplate>()
+  const practiceTemplates = ref<ReviewTemplate[]>([])
   const uploadProgress = ref<number | null>(null)
   const flipped = computed(() => !!state.value?.attempt)
   const card = computed<ResourceCard | undefined>(() => state.value?.card ? {
@@ -29,7 +35,7 @@ export function useReviewSession() {
   } : undefined)
   let generation = 0
   let deckId = ''
-  let entry: { id: string; template?: ReviewTemplate } = { id: '' }
+  let entry: { id: string; options?: ReviewLoadOptions } = { id: '' }
   let pending: PendingWrite | null = null
   let retryAction: (() => Promise<void>) | null = null
   let pollTimer: ReturnType<typeof setTimeout> | undefined
@@ -96,16 +102,16 @@ export function useReviewSession() {
       await next(request)
     }
   }
-  async function load(id: string, template?: ReviewTemplate) {
+  async function load(id: string, options?: ReviewLoadOptions) {
     const request = ++generation
     completedRound.value = undefined
     roundAttemptIds.clear()
     roundKey = reviewKey()
     clearTimeout(pollTimer)
     deckId = id
-    entry = { id, template }
+    entry = { id, options }
     pendingReview.value = undefined
-    practiceTemplate.value = undefined
+    practiceTemplates.value = []
     state.value = undefined
     deck.value = undefined
     pending = savedWrite()
@@ -120,9 +126,12 @@ export function useReviewSession() {
       if (request !== generation) return
       deck.value = resource
       const imported = !!resource.deck_guid?.startsWith('legacy:')
-      practiceTemplate.value = template || (imported ? 'sentence_retelling' : undefined)
+      practiceTemplates.value = options?.templates?.length
+        ? options.templates
+        : imported ? ['sentence_retelling'] : []
       const { data } = await reviewHttp.post<ReviewQueue>('/review/queues', { scope: { deck_id: id, include_descendants: true, exclude_imported: !imported,
-        ...(practiceTemplate.value ? { card_template_keys: [practiceTemplate.value] } : {}),
+        ...(practiceTemplates.value.length ? { card_template_keys: practiceTemplates.value } : {}),
+        ...(options?.limit ? { limit: options.limit } : {}),
       } })
       if (request !== generation) return
       state.value = data.current || { ...data, review_token: null, card: null }
@@ -181,7 +190,7 @@ export function useReviewSession() {
     if (!current?.card || current.attempt) return
     await perform(async () => {
       await reviewHttp.post(`/cards/${current.card!.id}/schedule`, { action, card_schedule_revision: current.card!.card_schedule_revision })
-      await load(entry.id, entry.template)
+      await load(entry.id, entry.options)
     })
   }
   async function retryProcessing() {
@@ -196,9 +205,9 @@ export function useReviewSession() {
     })
   }
   async function retry() {
-    if (needsRecovery.value || !state.value) return load(entry.id, entry.template)
+    if (needsRecovery.value || !state.value) return load(entry.id, entry.options)
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { completedRound, deck, state, card, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
+  return { completedRound, deck, state, card, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplates, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
 }

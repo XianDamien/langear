@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import delete, or_, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from starlette.exceptions import HTTPException
 from core import auth, schemas
@@ -30,6 +30,7 @@ from core.dialogue_voice import router as dialogue_voice_router
 from core.telemetry import router as telemetry_router
 from core.models import (
     Card,
+    CardTemplate,
     Collection,
     Deck,
     LoginSession,
@@ -38,6 +39,7 @@ from core.models import (
     NoteType,
     User,
 )
+from core.scheduling import ancestry
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -357,6 +359,29 @@ def decks_tree(service=Depends(content)):
 @app.get("/api/v1/decks/{deck_id}")
 def get_deck(deck_id: UUID, service=Depends(content)):
     return service.deck_data(service.repo.get(Deck, deck_id))
+
+
+@app.get("/api/v1/decks/{deck_id}/practice-options")
+def deck_practice_options(deck_id: UUID, service=Depends(content)):
+    deck = service.repo.standard_deck(deck_id)
+    decks = {
+        row.id: row
+        for row in service.db.scalars(
+            select(Deck).where(Deck.collection_id == service.collection.id)
+        )
+    }
+    ids = [row.id for row in decks.values() if deck.id in ancestry(row.id, decks)]
+    rows = service.db.execute(
+        select(CardTemplate.key, func.count(Card.id))
+        .join(Card, Card.card_template_id == CardTemplate.id)
+        .where(
+            Card.collection_id == service.collection.id,
+            Card.deck_id.in_(ids),
+        )
+        .group_by(CardTemplate.key)
+        .order_by(CardTemplate.key)
+    ).all()
+    return {"templates": [{"key": key, "count": count} for key, count in rows]}
 
 
 @app.put("/api/v1/decks/{deck_id}")
