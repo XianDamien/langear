@@ -14,9 +14,9 @@ const emit = defineEmits<{
 }>()
 
 const DIMENSION_LABELS: { key: FeedbackDimension; label: string }[] = [
-  { key: 'pronunciation', label: '发音' },
-  { key: 'completeness', label: '完整度' },
+  { key: 'completeness', label: '准确性' },
   { key: 'fluency', label: '流利度' },
+  { key: 'pronunciation', label: '发音' },
 ]
 
 function handleSuggestionClick(suggestion: FeedbackSuggestion) {

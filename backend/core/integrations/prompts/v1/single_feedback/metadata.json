@@ -1,8 +1,8 @@
 {
-  "prompt_version": "1.3.0",
+  "prompt_version": "1.4.0",
   "description": "Gemini single feedback prompt for reference-audio vs user-audio speaking evaluation",
   "owner": "langear@lan",
-  "updated_at": "2026-10-20T15:10:00+08:00",
+  "updated_at": "2026-10-21T12:00:00+08:00",
   "tags": ["gemini", "single-feedback", "audio", "prompt-v2-structure"],
   "files": {
     "system": "system.md",
@@ -10,6 +10,11 @@
   },
   "notes": "Adopts the Quickfire-style structured prompt layout with separate system and user sections. This is the only single_feedback prompt copy: the legacy unversioned prompts/single_feedback/ duplicate was merged into v1 and removed on 2026-10-15, so GEMINI_PROMPT_VERSION=v1 now loads everything.",
   "changelog": [
+    {
+      "version": "1.4.0",
+      "date": "2026-10-21",
+      "changes": "Reorder the evaluation around the learner's priorities: accuracy/completeness is now first and highest priority, fluently covers pauses/filler words/thought-group segmentation, and pronunciation only lists specific words with IPA. Completeness may use 1-3 sentences and must locate each omission and explain what the missing part means; suggestions may now cover up to one item per dimension (max 3), prioritizing accuracy."
+    },
     {
       "version": "1.3.0",
       "date": "2026-10-20",

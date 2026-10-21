@@ -6,7 +6,7 @@ defineEmits<{ retry: [] }>()
 const statuses: Record<string, string> = { pending: '等待处理', processing: '处理中', succeeded: '已完成', completed: '已完成', failed: '处理失败' }
 const feedback = computed(() => Object.entries(props.attempt.ai_feedback || {}).filter(([key, value]) =>
   ['pronunciation', 'completeness', 'fluency', 'summary'].includes(key) && typeof value === 'string'))
-const labels: Record<string, string> = { pronunciation: '发音', completeness: '完整度', fluency: '流利度', summary: '反馈' }
+const labels: Record<string, string> = { pronunciation: '发音', completeness: '准确性', fluency: '流利度', summary: '反馈' }
 </script>
 <template>
   <section
