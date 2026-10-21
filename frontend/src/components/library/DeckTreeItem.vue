@@ -20,13 +20,6 @@ const emit = defineEmits<{
 
 const expanded = ref((props.depth ?? 0) === 0)
 const hasChildren = computed(() => props.deck.children.length > 0)
-const lessonCount = computed(() => countLessons(props.deck))
-
-function countLessons(deck: DeckView): number {
-  return deck.children.length
-    ? deck.children.reduce((sum, child) => sum + countLessons(child), 0)
-    : 1
-}
 
 function toggle() {
   if (hasChildren.value) expanded.value = !expanded.value
@@ -85,18 +78,7 @@ function handleRowClick() {
             class="min-h-4 text-slate-500"
             :class="hasChildren ? 'text-xs leading-4' : 'text-sm leading-5'"
           >
-            <template v-if="hasChildren">
-              {{ deck.totalCards }} 张卡片
-              <span
-                v-if="mode === 'my-courses'"
-                class="ml-2"
-              >{{ lessonCount }} 节</span>
-            </template>
-            <template v-else>
-              <span class="font-pixel text-brand-accent">新 {{ deck.newCards }}</span> ·
-              <span class="font-pixel text-brand-accent">复习 {{ deck.reviewCards }}</span> ·
-              <span class="text-green-600">完成 {{ deck.completedCards }}</span>
-            </template>
+            {{ deck.sentenceCount }} 句
           </div>
         </div>
       </div>

@@ -13,6 +13,7 @@ vi.mock('@/services/content', () => ({
 function stats(cards: number) {
   return {
     total_cards: cards,
+    note_count: cards,
     selected_cards: 0,
     new_cards: cards,
     learning_cards: 0,

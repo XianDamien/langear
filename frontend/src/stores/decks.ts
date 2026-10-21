@@ -19,6 +19,7 @@ export interface DeckView {
   type: DeckNodeType
   deckGuid?: string | null
   inMyCourses: boolean
+  sentenceCount: number
   totalCards: number
   newCards: number
   reviewCards: number
@@ -40,6 +41,7 @@ function toView(node: DeckTreeNode): DeckView {
     type: viewType(node.children),
     deckGuid: node.deck_guid,
     inMyCourses: node.in_my_courses,
+    sentenceCount: node.stats.note_count,
     totalCards: node.stats.total_cards,
     newCards: node.stats.new_cards,
     reviewCards: node.stats.review_cards + node.stats.learning_cards,
@@ -57,6 +59,7 @@ function toFlatView(row: DeckTreeRow): DeckView {
     type: 'lesson',
     deckGuid: row.deck_guid,
     inMyCourses: row.in_my_courses,
+    sentenceCount: row.stats.note_count,
     totalCards: row.stats.total_cards,
     newCards: row.stats.new_cards,
     reviewCards: row.stats.review_cards + row.stats.learning_cards,
@@ -76,6 +79,7 @@ function pruneToJoined(nodes: DeckTreeNode[], inherited = false): DeckView[] {
     view.inMyCourses = joined
     view.children = children
     if (!node.in_my_courses && children.length) {
+      view.sentenceCount = children.reduce((sum, child) => sum + child.sentenceCount, 0)
       view.totalCards = children.reduce((sum, child) => sum + child.totalCards, 0)
       view.newCards = children.reduce((sum, child) => sum + child.newCards, 0)
       view.reviewCards = children.reduce((sum, child) => sum + child.reviewCards, 0)

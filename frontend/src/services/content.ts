@@ -2,6 +2,7 @@ import { coreHttp, extractApiError } from './coreApi'
 
 export interface DeckStats {
   total_cards: number
+  note_count: number
   selected_cards: number
   new_cards: number
   learning_cards: number

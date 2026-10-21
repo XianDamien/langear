@@ -21,7 +21,9 @@ def test_deck_list_includes_hierarchy_membership_and_statistics(client, account)
     assert by_id[child]["depth"] == 1
     assert by_id[root]["depth"] == 0
     assert by_id[root]["stats"]["total_cards"] == 2
+    assert by_id[root]["stats"]["note_count"] == 2
     assert by_id[child]["stats"]["total_cards"] == 1
+    assert by_id[child]["stats"]["note_count"] == 1
     assert by_id[child]["in_my_courses"] is True
     assert by_id[root]["in_my_courses"] is False
     assert by_id[root]["path"] == [root]
@@ -54,10 +56,12 @@ def test_deck_tree_reports_subtree_statistics_and_membership(client, account):
     node = nodes[0]
     assert node["id"] == root
     assert node["stats"]["total_cards"] == 2
+    assert node["stats"]["note_count"] == 2
     assert node["stats"]["new_cards"] == 2
     assert node["stats"]["completed_cards"] == 0
     assert [item["id"] for item in node["children"]] == [child]
     assert node["children"][0]["stats"]["total_cards"] == 1
+    assert node["children"][0]["stats"]["note_count"] == 1
     assert node["children"][0]["parent_id"] == root
     flat = {row["id"]: row for row in tree.json()["decks"]}
     assert flat[root]["stats"]["total_cards"] == 2

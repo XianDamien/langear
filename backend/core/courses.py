@@ -49,6 +49,7 @@ def deck_statistics(db, collection, decks):
         )
         stats[deck.id] = {
             "total_cards": len(cards),
+            "note_count": len({card.note_id for card in cards}),
             "selected_cards": len(scoped),
             "new_cards": sum(card.queue == "new" for card in scoped),
             "learning_cards": sum(
