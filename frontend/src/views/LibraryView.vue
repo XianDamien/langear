@@ -1,47 +1,19 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { Plus } from 'lucide-vue-next'
-import RetroButton from '@/components/ui/RetroButton.vue'
-import LibraryContentEditor from '@/components/library/LibraryContentEditor.vue'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
-import CardPickerModal from '@/components/library/CardPickerModal.vue'
-import { useDecksStore } from '@/stores/decks'
-import { resourceError } from '@/services/content'
+import LibraryCardsDialog from '@/components/library/LibraryCardsDialog.vue'
+import { toView, useDecksStore } from '@/stores/decks'
+import { fetchLibraryDeckTree, importLibraryDeck, resourceError } from '@/services/content'
 import type { DeckView } from '@/stores/decks'
 
 const decksStore = useDecksStore()
-const { libraryTree, loading, saving, error } = storeToRefs(decksStore)
+const libraryTree = ref<DeckView[]>([])
+const loading = ref(false)
+const importing = ref(false)
+const error = ref<string | null>(null)
 const coreError = ref('')
-const editor = ref<InstanceType<typeof LibraryContentEditor>>()
-const cardPicker = ref<InstanceType<typeof CardPickerModal>>()
-
-async function load() {
-  coreError.value = ''
-  try {
-    await decksStore.load()
-  } catch (cause) {
-    coreError.value = resourceError(cause)
-  }
-}
-
-onMounted(load)
-
-async function handleToggleMembership(deckId: string) {
-  coreError.value = ''
-  try {
-    const joined = await decksStore.toggleMembership(deckId)
-    ElMessage.success(joined ? '已加入我的课程' : '已从我的课程移除')
-  } catch (cause) {
-    coreError.value = resourceError(cause)
-  }
-}
-
-function handleSelectCards(deckId: string) {
-  const deck = findDeck(libraryTree.value, deckId)
-  if (deck) cardPicker.value?.show(deck)
-}
+const cardsDialog = ref<InstanceType<typeof LibraryCardsDialog>>()
 
 function findDeck(nodes: DeckView[], deckId: string): DeckView | undefined {
   for (const node of nodes) {
@@ -52,14 +24,54 @@ function findDeck(nodes: DeckView[], deckId: string): DeckView | undefined {
   return undefined
 }
 
-async function handleCardsSaved() {
-  await load()
-  ElMessage.success('课程学习范围已更新')
+function handlePreview(deckId: string) {
+  const deck = findDeck(libraryTree.value, deckId)
+  if (deck) cardsDialog.value?.show(deck)
 }
 
-async function handleCreated() {
-  await load()
-  ElMessage.success('题库已更新')
+async function load() {
+  coreError.value = ''
+  loading.value = true
+  try {
+    const data = await fetchLibraryDeckTree()
+    libraryTree.value = data.tree.map(toView)
+    error.value = null
+  } catch (cause) {
+    coreError.value = resourceError(cause)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
+
+async function handleToggleMembership(deckId: string) {
+  if (importing.value) return
+  importing.value = true
+  coreError.value = ''
+  try {
+    const { data } = await importLibraryDeck(deckId)
+    await Promise.all([load(), decksStore.load()])
+    const added = data.created.cards
+    const kept = data.existing.cards
+    ElMessage.success(
+      added
+        ? `已加入我的课程：新增 ${added} 张卡片，保留 ${kept} 张已有卡片`
+        : '课程已在“我的课程”中，没有需要新增的内容',
+    )
+    const moved = data.skipped_cards.filter(card => card.reason === 'CARD_ALREADY_IN_ANOTHER_DECK').length
+    const changedType = data.skipped_cards.filter(card => card.reason === 'NOTE_TYPE_CHANGED').length
+    if (moved) {
+      ElMessage.warning(
+        `${moved} 张卡片已被你移到其他牌组，未重复导入`,
+      )
+    }
+    if (changedType) ElMessage.warning(`${changedType} 张卡片对应的笔记类型已更改，未重复导入`)
+  } catch (cause) {
+    coreError.value = resourceError(cause)
+  } finally {
+    importing.value = false
+  }
 }
 </script>
 
@@ -69,27 +81,10 @@ async function handleCreated() {
       <h2 class="text-3xl font-bold uppercase text-brand-accent">
         题库资源
       </h2>
-      <div class="flex flex-wrap gap-3">
-        <RetroButton
-          variant="secondary"
-          :icon="Plus"
-          @click="editor?.openDeck()"
-        >
-          添加牌组
-        </RetroButton>
-        <RetroButton
-          :icon="Plus"
-          @click="editor?.openCard()"
-        >
-          添加卡片
-        </RetroButton>
-      </div>
+      <p class="text-sm text-slate-500">
+        浏览共享课程内容；加入时会复制整套子课程，学习记录从零开始。
+      </p>
     </header>
-
-    <LibraryContentEditor
-      ref="editor"
-      @created="handleCreated"
-    />
 
     <div
       v-if="coreError || error"
@@ -116,7 +111,7 @@ async function handleCreated() {
       v-else-if="!libraryTree.length"
       class="border-2 border-dashed border-slate-200 p-8 text-center text-slate-500"
     >
-      还没有牌组，先添加一个吧。
+      共享题库暂时没有课程。
     </div>
 
     <div
@@ -128,16 +123,12 @@ async function handleCreated() {
         :key="deck.id"
         :deck="deck"
         mode="library"
-        :selection-disabled="saving"
+        :selection-disabled="importing"
         :depth="0"
         @toggle-membership="handleToggleMembership"
-        @select-cards="handleSelectCards"
+        @preview-deck="handlePreview"
       />
     </div>
-
-    <CardPickerModal
-      ref="cardPicker"
-      @saved="handleCardsSaved"
-    />
+    <LibraryCardsDialog ref="cardsDialog" />
   </div>
 </template>

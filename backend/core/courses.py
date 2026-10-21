@@ -9,7 +9,7 @@ import re
 
 from sqlalchemy import select
 
-from core.content import ContentService
+from core.content import LIBRARY_SOURCE, ContentService
 from core.models import Card, Deck, Note, utcnow
 from core.scheduling import study_day
 
@@ -85,6 +85,39 @@ def deck_statistics(db, collection, decks):
     return stats
 
 
+def deck_content_statistics(db, collection, decks):
+    """Count Library content without reading scheduling fields."""
+    own_cards = {deck.id: 0 for deck in decks}
+    own_notes = {deck.id: set() for deck in decks}
+    children = {}
+    for deck in decks:
+        children.setdefault(deck.parent_id, []).append(deck.id)
+    for deck_id, note_id in db.execute(
+        select(Card.deck_id, Card.note_id).where(Card.collection_id == collection.id)
+    ):
+        if deck_id in own_cards:
+            own_cards[deck_id] += 1
+            own_notes[deck_id].add(note_id)
+
+    totals = {}
+
+    def subtree(deck_id):
+        if deck_id not in totals:
+            count = own_cards[deck_id]
+            notes = set(own_notes[deck_id])
+            for child_id in children.get(deck_id, []):
+                child_count, child_notes = subtree(child_id)
+                count += child_count
+                notes.update(child_notes)
+            totals[deck_id] = count, notes
+        return totals[deck_id]
+
+    return {
+        deck.id: {"total_cards": subtree(deck.id)[0], "note_count": len(subtree(deck.id)[1])}
+        for deck in decks
+    }
+
+
 def _study_day(db, collection):
     return study_day(utcnow(), collection.timezone)
 
@@ -122,7 +155,7 @@ def deck_rows(service, decks, stats, all_decks=None):
     ]
 
 
-def deck_tree(db, collection):
+def _deck_tree(db, collection, statistics):
     """Nested Standard Deck tree plus a flat list; membership is per Deck."""
     service = ContentService(db, collection)
     decks = _sort_decks(
@@ -132,7 +165,7 @@ def deck_tree(db, collection):
             .order_by(Deck.name)
         )
     )
-    stats = deck_statistics(db, collection, decks)
+    stats = statistics(db, collection, decks)
     children = {}
     for deck in decks:
         children.setdefault(deck.parent_id, []).append(deck.id)
@@ -149,6 +182,35 @@ def deck_tree(db, collection):
 
     roots = [build(child_id) for child_id in children.get(None, [])]
     return {"decks": deck_rows(service, decks, stats), "tree": roots}
+
+
+def deck_tree(db, collection):
+    return _deck_tree(db, collection, deck_statistics)
+
+
+def library_deck_tree(db, collection, user_collection=None):
+    """Read-only content view for the shared library, without scheduling counts."""
+    result = _deck_tree(db, collection, deck_content_statistics)
+    joined_guids = set()
+    if user_collection is not None:
+        joined_guids = set(
+            db.scalars(
+                select(Deck.deck_guid).where(
+                    Deck.collection_id == user_collection.id,
+                    Deck.source_metadata["source"].astext == LIBRARY_SOURCE,
+                )
+            )
+        )
+
+    def content_only(node):
+        node["in_my_courses"] = node["deck_guid"] in joined_guids
+        node["children"] = [content_only(child) for child in node["children"]]
+        return node
+
+    result["tree"] = [content_only(node) for node in result["tree"]]
+    for row in result["decks"]:
+        row["in_my_courses"] = row["deck_guid"] in joined_guids
+    return result
 
 
 def my_courses(db, collection):

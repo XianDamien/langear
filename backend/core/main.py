@@ -17,7 +17,8 @@ from starlette.exceptions import HTTPException
 from core import auth, schemas
 from core.config import get_settings
 from core.content import ContentService
-from core.courses import deck_rows, deck_statistics, deck_tree
+from core.courses import deck_rows, deck_statistics, deck_tree, library_deck_tree
+from core.library import import_library_deck, library_cards, shared_collection
 from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_settings
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
@@ -354,6 +355,34 @@ def create_deck(body: schemas.DeckCreate, service=Depends(content)):
 @app.get("/api/v1/decks/tree")
 def decks_tree(service=Depends(content)):
     return deck_tree(service.db, service.collection)
+
+
+@app.get("/api/v1/library/decks/tree")
+def shared_library_tree(service=Depends(content)):
+    return library_deck_tree(service.db, shared_collection(service.db), service.collection)
+
+
+@app.get("/api/v1/library/decks/{deck_id}/cards")
+def shared_library_cards(
+    deck_id: UUID,
+    include_descendants: bool = False,
+    service=Depends(content),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    return library_cards(
+        service.db,
+        deck_id,
+        include_descendants=include_descendants,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.post("/api/v1/library/decks/{deck_id}/import")
+def import_shared_deck(deck_id: UUID, service=Depends(content)):
+    service.repo.lock()
+    return import_library_deck(service.db, service.collection, deck_id)
 
 
 @app.get("/api/v1/decks/{deck_id}")

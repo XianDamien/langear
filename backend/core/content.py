@@ -19,6 +19,13 @@ from core.models import (
 from core.repository import ContentRepository
 
 
+LIBRARY_SOURCE = "library"
+
+
+def is_library_copy(row):
+    return (row.source_metadata or {}).get("source") == LIBRARY_SOURCE
+
+
 def present(value):
     return value is not None and (not isinstance(value, str) or bool(value.strip()))
 
@@ -258,6 +265,15 @@ class ContentService:
             "cards": [self.render(card) for card in cards],
         }
 
+    def next_position(self):
+        """UPDATE ... RETURNING is atomic even across processes. Never MAX+1."""
+        return self.db.scalar(
+            update(Collection)
+            .where(Collection.id == self.collection.id)
+            .values(next_new_position=Collection.next_new_position + 1)
+            .returning(Collection.next_new_position)
+        )
+
     def generate(self, note, deck_id, card_template_key=None):
         deck = self.repo.standard_deck(deck_id)
         existing = set(
@@ -284,13 +300,7 @@ class ContentService:
                     }
                 )
             elif template.id not in existing:
-                # UPDATE ... RETURNING is atomic even across processes. Never MAX+1.
-                position = self.db.scalar(
-                    update(Collection)
-                    .where(Collection.id == self.collection.id)
-                    .values(next_new_position=Collection.next_new_position + 1)
-                    .returning(Collection.next_new_position)
-                )
+                position = self.next_position()
                 card = Card(
                     collection_id=self.collection.id,
                     note_id=note.id,
@@ -409,6 +419,28 @@ class ContentService:
             .with_for_update()
         ).all()
         card_ids = [card.id for card in cards]
+        if resource_type == "deck" and resource.kind == "standard" and cards:
+            # Only Library-sourced notes made unreachable by this deletion are
+            # removed; user-authored notes keep the historical behaviour.
+            candidate_note_ids = {card.note_id for card in cards}
+            surviving_note_ids = set(
+                self.db.scalars(
+                    select(Card.note_id).where(
+                        Card.collection_id == self.collection.id,
+                        Card.note_id.in_(candidate_note_ids),
+                        Card.id.not_in(card_ids),
+                    )
+                )
+            )
+            note_ids = list(
+                self.db.scalars(
+                    select(Note.id).where(
+                        Note.collection_id == self.collection.id,
+                        Note.id.in_(candidate_note_ids - surviving_note_ids),
+                        Note.source_metadata["source"].astext == LIBRARY_SOURCE,
+                    )
+                )
+            )
         attempts = self.db.scalars(
             select(Attempt)
             .where(
@@ -448,6 +480,15 @@ class ContentService:
             if deck_ids
             else []
         )
+        affected_notes = (
+            self.db.scalars(
+                select(Note)
+                .where(Note.collection_id == self.collection.id, Note.id.in_(note_ids))
+                .order_by(Note.id)
+            ).all()
+            if note_ids
+            else []
+        )
         self.media_cleanup_candidates.update(r.media_asset_id for r in refs)
         self.media_cleanup_candidates.update(
             a.media_asset_id for a in attempts if a.media_asset_id
@@ -456,6 +497,7 @@ class ContentService:
             "resource_updated": resource.updated_at,
             "revision": getattr(resource, "revision", None),
             "decks": [(d.id, d.updated_at) for d in decks],
+            "notes": [(n.id, n.revision, n.updated_at) for n in affected_notes],
             "cards": [
                 (c.id, c.deck_id, c.schedule_revision, c.updated_at) for c in cards
             ],
@@ -473,11 +515,11 @@ class ContentService:
             "media_references_deleted": len(refs),
             "cards_returned": len(borrowed),
         }
-        return resource, cards, deck_ids, facts, impact
+        return resource, cards, deck_ids, note_ids, facts, impact
 
     def deletion_preview(self, resource_type, resource_id):
         self.repo.lock()
-        _, _, _, facts, impact = self.affected(resource_type, resource_id)
+        _, _, _, _, facts, impact = self.affected(resource_type, resource_id)
         token = confirmation.issue(
             "delete:" + resource_type, self.collection.id, resource_id, facts
         )
@@ -485,7 +527,7 @@ class ContentService:
 
     def delete_resource(self, resource_type, resource_id, token):
         self.repo.lock()
-        resource, cards, deck_ids, facts, impact = self.affected(
+        resource, cards, deck_ids, note_ids, facts, impact = self.affected(
             resource_type, resource_id
         )
         confirmation.verify(
@@ -518,6 +560,27 @@ class ContentService:
         if resource_type == "note":
             self.db.delete(resource)
         elif resource_type == "deck":
+            # Only the Library-sourced notes detected by the preview are removed.
+            if note_ids:
+                orphaned = self.db.scalars(
+                    select(Note.id).where(
+                        Note.collection_id == self.collection.id,
+                        Note.id.in_(note_ids),
+                        ~exists(
+                            select(Card.id).where(
+                                Card.collection_id == self.collection.id,
+                                Card.note_id == Note.id,
+                            )
+                        ),
+                    )
+                ).all()
+                if orphaned:
+                    self.db.execute(
+                        delete(Note).where(
+                            Note.collection_id == self.collection.id,
+                            Note.id.in_(orphaned),
+                        )
+                    )
             self.db.execute(
                 delete(Deck).where(
                     Deck.collection_id == self.collection.id, Deck.id.in_(deck_ids)
@@ -552,7 +615,7 @@ class ContentService:
             else None
             for field in target_fields
         }
-        _, _, _, facts, impact = self.affected("note", note_id)
+        _, _, _, _, facts, impact = self.affected("note", note_id)
         impact["notes_deleted"] = 0
         templates = self.templates_for(target.id)
         suggested_values = {
@@ -590,7 +653,7 @@ class ContentService:
 
     def change_type(self, note_id, body):
         self.repo.lock()
-        note, cards, _, facts, _ = self.affected("note", note_id)
+        note, cards, _, _, facts, _ = self.affected("note", note_id)
         target = self.note_type(body.target_note_type_key)
         confirmation.verify(
             body.confirmation_token,
