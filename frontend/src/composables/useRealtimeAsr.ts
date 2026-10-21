@@ -193,7 +193,7 @@ export function useRealtimeAsr() {
               modalities: ['text'],
               input_audio_transcription: {
                 model: realtimeAsrModel,
-                language: 'zh',
+                language: 'en',
               },
               input_audio_format: 'pcm',
               sample_rate: 16000,

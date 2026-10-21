@@ -100,7 +100,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CORE_REALTIME_ASR_MODEL", "REALTIME_ASR_MODEL"),
     )
     realtime_asr_language: str = Field(
-        default="zh",
+        default="en",
         validation_alias=AliasChoices("CORE_REALTIME_ASR_LANGUAGE", "REALTIME_ASR_LANGUAGE"),
     )
     realtime_asr_ws_base_url: str | None = Field(
