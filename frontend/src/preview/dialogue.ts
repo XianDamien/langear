@@ -51,7 +51,7 @@ export function createDialoguePreview() {
   }
   function reset() {
     messages.value = []; input.value = ''; roleplayTurns.value = 0
-    status.value = 'preview'; error.value = ''; page.value = 'recap'
+    status.value = 'preview'; error.value = ''; page.value = 'recap'; remaining.value = 0
     add('coach', 'You’ve just practised “A private conversation.” What happened at the theatre? Tell me in two or three sentences.', '你刚练习了《一次私人谈话》。剧院里发生了什么？用两三句话告诉我。')
   }
   function refine(answer: string) {
@@ -84,7 +84,7 @@ export function createDialoguePreview() {
     const count = roleplayTurns.value
     const requests = messages.value.filter(message => message.speaker === 'user').slice(1)
     const polite = requests.some(message => /could|please|would/i.test(message.english))
-    page.value = 'complete'; status.value = 'complete'; input.value = ''
+    page.value = 'complete'; status.value = 'complete'; input.value = ''; remaining.value = 0
     if (!count) add('coach', 'We stopped before your first reply. Next time, try explaining the problem and making one polite request.', '我们在你第一次回复前结束了。下次试着先说明问题，再提出一个礼貌的请求。')
     else add('coach', polite
       ? 'You made a polite request. Next time, add one detail about the problem before asking for help.'
@@ -125,7 +125,7 @@ export function createDialoguePreview() {
       error.value = 'Connection lost. Your conversation is still here.'
     }
   }
-  async function connect() { error.value = ''; page.value = 'roleplay'; status.value = 'ready' }
+  async function connect() { error.value = ''; page.value = 'roleplay'; status.value = 'ready'; remaining.value = session.value.time_limit_seconds }
   const controller: ReturnType<typeof useDialogue> = {
     session, status, error, partial, remaining, prepare: async () => {}, connect,
     record: async () => { record() }, sendRecording, sendText: text => { input.value = text; submit() },
