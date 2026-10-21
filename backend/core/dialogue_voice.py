@@ -3,6 +3,7 @@ import asyncio
 import base64
 import binascii
 import json
+import logging
 import time
 from datetime import timedelta
 from urllib.parse import urlencode
@@ -24,6 +25,7 @@ from core.models import DialogueSession, DialogueTurn, utcnow
 from core.repository import ContentRepository
 
 router = APIRouter(prefix='/api/v1/dialogue')
+logger = logging.getLogger(__name__)
 MAX_AUDIO_BYTES = 16000 * 2 * 90
 
 
@@ -32,8 +34,10 @@ def provider_connection():
     if not config.dialogue_api_key:
         raise DomainError(503, 'DIALOGUE_UNAVAILABLE', 'Voice dialogue is not configured.')
     url = config.dialogue_ws_url + ('&' if '?' in config.dialogue_ws_url else '?') + urlencode({'model': config.dialogue_model})
+    # Unlike httpx, websockets also reads OS-level proxy settings. A system SOCKS
+    # proxy without python-socks installed would fail here instead of connecting.
     return connect(url, additional_headers={'Authorization': 'Bearer ' + config.dialogue_api_key.get_secret_value()},
-        open_timeout=15, max_size=4 * 1024 * 1024, ping_interval=20, ping_timeout=20)
+        open_timeout=15, max_size=4 * 1024 * 1024, ping_interval=20, ping_timeout=20, proxy=None)
 
 
 def claim(collection_id, session_id):
@@ -335,8 +339,12 @@ async def voice_session(browser: WebSocket, session_id: UUID):
         pass
     except Exception as exc:
         code = exc.code if isinstance(exc, DomainError) else 'DIALOGUE_CONNECTION_FAILED'
+        logger.exception('Dialogue voice session failed: session=%s code=%s', session_id, code)
+        message = ('语音服务暂时不可用，请稍后重新连接。' if code == 'DIALOGUE_PROVIDER_FAILED'
+            else '语音连接失败，请检查网络或代理后重新连接。' if code == 'DIALOGUE_CONNECTION_FAILED'
+            else '语音对话未完成，请重新连接。')
         try:
-            await browser.send_json({'type': 'error', 'code': code, 'message': '语音对话未完成，请重新连接。'})
+            await browser.send_json({'type': 'error', 'code': code, 'message': message})
         except (RuntimeError, WebSocketDisconnect):
             pass
     finally:
