@@ -1,8 +1,8 @@
 {
-  "prompt_version": "1.4.0",
+  "prompt_version": "1.4.1",
   "description": "Gemini single feedback prompt for reference-audio vs user-audio speaking evaluation",
   "owner": "langear@lan",
-  "updated_at": "2026-10-21T12:00:00+08:00",
+  "updated_at": "2026-10-21T20:10:00+08:00",
   "tags": ["gemini", "single-feedback", "audio", "prompt-v2-structure"],
   "files": {
     "system": "system.md",
@@ -10,6 +10,11 @@
   },
   "notes": "Adopts the Quickfire-style structured prompt layout with separate system and user sections. This is the only single_feedback prompt copy: the legacy unversioned prompts/single_feedback/ duplicate was merged into v1 and removed on 2026-10-15, so GEMINI_PROMPT_VERSION=v1 now loads everything.",
   "changelog": [
+    {
+      "version": "1.4.1",
+      "date": "2026-10-21",
+      "changes": "Require every omission or substitution to carry a Chinese gloss in the `English (中文意思)` form and to explain its role in the sentence, so completeness feedback cannot stop at a generic 'changed the vocabulary' summary."
+    },
     {
       "version": "1.4.0",
       "date": "2026-10-21",
