@@ -70,6 +70,22 @@ def test_deck_tree_reports_subtree_statistics_and_membership(client, account):
     _ = (root_card, child_card)
 
 
+def test_deck_tree_orders_lesson_names_naturally(client, account):
+    root = account["deck_id"]
+    for name in ["Lesson 10", "Lesson 2", "Lesson 11", "Lesson 1", "Lesson 9"]:
+        response = client.post("/api/v1/decks", json={"name": name, "parent_id": root})
+        assert response.status_code == 201, response.text
+    tree = client.get("/api/v1/decks/tree").json()["tree"]
+    node = next(item for item in tree if item["id"] == root)
+    assert [child["name"] for child in node["children"]] == [
+        "Lesson 1",
+        "Lesson 2",
+        "Lesson 9",
+        "Lesson 10",
+        "Lesson 11",
+    ]
+
+
 def test_deck_statistics_count_due_and_completed_cards(client, account):
     make_note(client, account)
     make_note(client, account, {"word": "pear", "meaning": "梨"})

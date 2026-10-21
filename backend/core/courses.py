@@ -5,11 +5,27 @@ quota-limited, so a parent Deck's numbers are the sum of its own subtree and
 never change with the order a learner opens subdecks.
 """
 
+import re
+
 from sqlalchemy import select
 
 from core.content import ContentService
 from core.models import Card, Deck, Note, utcnow
 from core.scheduling import study_day
+
+_NUMERIC_PART = re.compile(r"(\d+)")
+
+
+def deck_sort_key(name):
+    """Natural order so Lesson 2 precedes Lesson 10."""
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part.casefold())
+        for part in _NUMERIC_PART.split(name)
+    )
+
+
+def _sort_decks(decks):
+    return sorted(decks, key=lambda deck: (deck_sort_key(deck.name), deck.name))
 
 
 def card_rows(db, collection):
@@ -109,7 +125,7 @@ def deck_rows(service, decks, stats, all_decks=None):
 def deck_tree(db, collection):
     """Nested Standard Deck tree plus a flat list; membership is per Deck."""
     service = ContentService(db, collection)
-    decks = list(
+    decks = _sort_decks(
         db.scalars(
             select(Deck)
             .where(Deck.collection_id == collection.id, Deck.kind == "standard")
@@ -136,7 +152,7 @@ def deck_tree(db, collection):
 
 
 def my_courses(db, collection):
-    decks = list(
+    decks = _sort_decks(
         db.scalars(
             select(Deck)
             .where(
