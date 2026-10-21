@@ -529,6 +529,24 @@ def test_dialogue_closes_gracefully_when_the_time_budget_is_spent(client, accoun
     assert saved['finish_reason'] == 'time_limit'
 
 
+def test_time_limit_while_recording_stops_input_and_closes_gracefully(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    provider = FakeOmni(finish=False)
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    monkeypatch.setattr(dialogue_voice, 'SESSION_SECONDS', 0.4)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        ws.send_json({'type': 'audio_begin'})
+        ws.send_json({'type': 'audio', 'data': base64.b64encode(b'\x00\x01' * 1600).decode()})
+        assert receive(ws, 'time_limit')['type'] == 'time_limit'
+        assert receive(ws, 'ended')['reason'] == 'time_limit'
+    saved = client.get(path).json()
+    assert saved['status'] == 'finished' and saved['finish_reason'] == 'time_limit'
+    assert any(e['type'] == 'input_audio_buffer.clear' for e in provider.sent)
+
+
 def test_translation_only_reads_an_owned_saved_turn(client, account, dialogue, monkeypatch, engine):
     from core.main import app
     from uuid import UUID

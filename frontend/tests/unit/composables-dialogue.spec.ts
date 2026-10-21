@@ -47,6 +47,21 @@ it('connects only after explicit start and closes transport/microphone when unmo
   wrapper.unmount()
   expect(Socket.current.close).toHaveBeenCalled()
 })
+it('stops recording and shows a notice when the server reaches the time limit', async () => {
+  const wrapper = start()
+  await api.prepare(); await api.connect()
+  Socket.current.event({ type: 'connected', session: structuredClone(session) })
+  Socket.current.event({ type: 'ready' })
+  await new Promise(r => setTimeout(r, 1))
+  await api.record()
+  expect(recording.dispose).not.toHaveBeenCalled()
+  Socket.current.event({ type: 'time_limit' })
+  expect(recording.dispose).toHaveBeenCalled()
+  expect(api.status.value).toBe('thinking')
+  expect(api.notice.value).toContain('时间到')
+  expect(api.remaining.value).toBe(0)
+  wrapper.unmount()
+})
 it('ignores a response that arrives after the dialogue window is closed', async () => {
   let resolve!: (v: unknown) => void
   vi.mocked(dialogueApi.create).mockImplementationOnce(() => new Promise(r => { resolve = r }) as never)

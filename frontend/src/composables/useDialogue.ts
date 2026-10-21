@@ -119,7 +119,12 @@ export function useDialogue(entry: DialogueEntry) {
           else if (event.type === 'turn') addTurn(event.turn, event.user_turns)
           else if (event.type === 'ready') afterPlayback(() => { if (!disposed) status.value = 'ready' })
           else if (event.type === 'notice') { notice.value = event.text || ''; userPartial.value = '' }
-          else if (event.type === 'ended') {
+          else if (event.type === 'time_limit') {
+            stopRecording(); stopClock(); remaining.value = 0
+            userPartial.value = ''
+            notice.value = '本次对话时间到了，老师正在收尾…'
+            if (status.value === 'recording') status.value = 'thinking'
+          } else if (event.type === 'ended') {
             clearTimeout(connectionTimer)
             stopClock()
             stopRecording()

@@ -155,7 +155,9 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 if not pending_input:
                     await request_closing()
             elif kind in ('audio_begin', 'text'):
-                if not ready or responding or pending_input or recording or ending:
+                if ending:
+                    continue
+                if not ready or responding or pending_input or recording:
                     raise DomainError(409, 'DIALOGUE_NOT_READY', 'Wait for the agent to finish.')
                 if kind == 'text':
                     text = message.get('text')
@@ -171,6 +173,8 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                     recording, audio_bytes = True, 0
                     await send({'type': 'input_audio_buffer.clear'})
             elif kind == 'audio':
+                if ending and not recording:
+                    continue
                 if not recording or not isinstance(message.get('data'), str) or len(message['data']) > 65536:
                     raise DomainError(422, 'DIALOGUE_AUDIO_INVALID', 'Audio format is invalid.')
                 try:
@@ -182,6 +186,8 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                     raise DomainError(422, 'DIALOGUE_AUDIO_LIMIT', 'Please keep each turn under 30 seconds.')
                 await send({'type': 'input_audio_buffer.append', 'audio': message['data']})
             elif kind == 'commit':
+                if ending and not recording:
+                    continue
                 if not recording or audio_bytes < 3200:
                     recording, pending_input = False, False
                     turn_deadline = None
@@ -325,11 +331,15 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
 
     async def stop_at_time_limit():
         """Close the conversation gracefully once the session budget is spent."""
-        nonlocal ending
+        nonlocal ending, recording, audio_bytes
         await asyncio.sleep(SESSION_SECONDS)
         if ending or completed:
             return
         ending = 'time_limit'
+        recording, audio_bytes = False, 0
+        # Stop the browser recorder before the teacher closing so its audio cannot
+        # interrupt the closing response.
+        await browser.send_json({'type': 'time_limit'})
         await send({'type': 'input_audio_buffer.clear'})
         if not (responding or pending_input):
             await request_closing()
