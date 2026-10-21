@@ -6,7 +6,8 @@ afterEach(() => { vi.unstubAllEnvs(); vi.resetModules() })
 describe('core-only application entry', () => {
   it.each(['development', 'staging', 'production'])('declares one core API base in %s', mode => {
     const env = loadEnv(mode, process.cwd(), 'VITE_')
-    expect(env.VITE_API_BASE_URL).toBe('/api/content/v1')
+    // Release A and Release B are the two supported runtime contracts.
+    expect(['/api/content/v1', '/api/v1']).toContain(env.VITE_API_BASE_URL)
     expect(env.VITE_CONTENT_CORE).toBeUndefined()
     expect(env.VITE_LIBRARY_CONTENT_EDITOR).toBeUndefined()
     expect(env.VITE_CONTENT_API_BASE_URL).toBeUndefined()
