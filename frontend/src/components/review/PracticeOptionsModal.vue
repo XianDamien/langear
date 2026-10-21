@@ -9,13 +9,12 @@ const props = defineProps<{
   open: boolean
   deckId: string
   deckName?: string
-  initialTemplates?: ReviewTemplate[]
-  initialLimit?: number
+  initialTemplate?: ReviewTemplate
 }>()
 
 const emit = defineEmits<{
   close: []
-  confirm: [value: { templates: ReviewTemplate[]; limit?: number }]
+  confirm: [value: { template: ReviewTemplate }]
 }>()
 
 const META: Record<ReviewTemplate, { label: string; description: string; unit: string }> = {
@@ -32,17 +31,9 @@ const ORDER: ReviewTemplate[] = [
   'vocabulary_english_to_chinese',
   'vocabulary_chinese_to_english',
 ]
-const ROUND_OPTIONS = [
-  { value: 10, label: '10 个' },
-  { value: 20, label: '20 个' },
-  { value: 30, label: '30 个' },
-  { value: 50, label: '50 个' },
-  { value: 0, label: '不限（按今日额度）' },
-]
 
 const options = ref<PracticeOption[]>([])
-const selected = ref<ReviewTemplate[]>([])
-const limit = ref(10)
+const selected = ref<ReviewTemplate>()
 const loading = ref(false)
 const error = ref('')
 
@@ -59,9 +50,9 @@ async function load() {
   error.value = ''
   try {
     options.value = await fetchPracticeOptions(props.deckId)
-    const preferred = props.initialTemplates?.filter(key => available.value.includes(key)) ?? []
-    selected.value = preferred.length ? preferred : available.value.slice(0, 1)
-    limit.value = props.initialLimit && props.initialLimit > 0 ? props.initialLimit : 10
+    selected.value = props.initialTemplate && available.value.includes(props.initialTemplate)
+      ? props.initialTemplate
+      : available.value[0]
   } catch (cause) {
     error.value = resourceError(cause)
   } finally {
@@ -71,20 +62,13 @@ async function load() {
 
 watch(() => [props.open, props.deckId], load, { immediate: true })
 
-function toggle(key: ReviewTemplate) {
-  if (selected.value.includes(key)) {
-    if (selected.value.length > 1) selected.value = selected.value.filter(item => item !== key)
-    return
-  }
-  selected.value = [...selected.value, key]
+function choose(key: ReviewTemplate) {
+  selected.value = key
 }
 
 function confirm() {
-  if (!selected.value.length || loading.value || error.value) return
-  emit('confirm', {
-    templates: [...selected.value],
-    limit: limit.value > 0 ? limit.value : undefined,
-  })
+  if (!selected.value || loading.value || error.value) return
+  emit('confirm', { template: selected.value })
 }
 </script>
 
@@ -153,74 +137,50 @@ function confirm() {
           这个牌组还没有可练习的卡片。
         </p>
 
-        <template v-else>
-          <section>
-            <h3 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
-              练习类型
-            </h3>
-            <div class="grid gap-2">
-              <button
-                v-for="key in available"
-                :key="key"
-                type="button"
-                class="flex items-center justify-between gap-4 border-2 px-4 py-3 text-left transition"
-                :class="selected.includes(key)
-                  ? 'border-brand-accent bg-brand-accent/10'
-                  : 'border-slate-200 bg-white hover:border-brand-accent'"
-                :aria-pressed="selected.includes(key)"
-                :data-testid="`practice-option-${key}`"
-                @click="toggle(key)"
-              >
-                <span class="min-w-0">
-                  <span class="block font-bold uppercase text-slate-800">
-                    {{ META[key].label }}
-                  </span>
-                  <span class="mt-1 block text-sm text-slate-500">
-                    {{ META[key].description }}
-                  </span>
-                </span>
-                <span class="flex shrink-0 items-center gap-3">
-                  <span class="text-xs text-slate-500">{{ counts[key] }} {{ META[key].unit }}</span>
-                  <Check
-                    v-if="selected.includes(key)"
-                    :size="20"
-                    class="text-brand-accent"
-                  />
-                </span>
-              </button>
-            </div>
-          </section>
-
-          <section>
-            <label
-              for="practice-round-size"
-              class="mb-2 block text-sm font-bold uppercase tracking-wide text-slate-600"
+        <section v-else>
+          <h3 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-600">
+            练习类型
+          </h3>
+          <div class="grid gap-2">
+            <button
+              v-for="key in available"
+              :key="key"
+              type="button"
+              class="flex items-center justify-between gap-4 border-2 px-4 py-3 text-left transition"
+              :class="selected === key
+                ? 'border-brand-accent bg-brand-accent/10'
+                : 'border-slate-200 bg-white hover:border-brand-accent'"
+              :aria-pressed="selected === key"
+              :data-testid="`practice-option-${key}`"
+              @click="choose(key)"
             >
-              每轮练习数
-            </label>
-            <select
-              id="practice-round-size"
-              v-model.number="limit"
-              class="w-full border-2 border-slate-200 bg-white px-3 py-2 text-slate-900 outline-none focus:border-brand-accent"
-            >
-              <option
-                v-for="option in ROUND_OPTIONS"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </section>
-        </template>
+              <span class="min-w-0">
+                <span class="block font-bold uppercase text-slate-800">
+                  {{ META[key].label }}
+                </span>
+                <span class="mt-1 block text-sm text-slate-500">
+                  {{ META[key].description }}
+                </span>
+              </span>
+              <span class="flex shrink-0 items-center gap-3">
+                <span class="text-xs text-slate-500">{{ counts[key] }} {{ META[key].unit }}</span>
+                <Check
+                  v-if="selected === key"
+                  :size="20"
+                  class="text-brand-accent"
+                />
+              </span>
+            </button>
+          </div>
+        </section>
       </div>
 
-      <footer class="border-t border-slate-200 px-6 py-4">
+      <footer class="border-t border-slate-200 px-6 py-5">
         <RetroButton
           variant="primary"
           size="lg"
           class="w-full"
-          :disabled="loading || !!error || !selected.length"
+          :disabled="loading || !!error || !selected"
           data-testid="practice-confirm"
           @click="confirm"
         >

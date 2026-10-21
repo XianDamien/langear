@@ -29,7 +29,7 @@ const dialogueEntry = ref<DialogueEntry>()
 void dialogueApi.available().then(value => { dialogueAvailable.value = value === true }).catch(() => {})
 const route = useRoute()
 const router = useRouter()
-const { completedRound, deck, state, card: current, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplates, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
+const { completedRound, deck, state, card: current, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing } = useReviewSession()
 const isVocabulary = computed(() => current.value?.card_template_key.startsWith('vocabulary_'))
 const wordAnswer = computed(() => ({
   english: current.value?.back.word || '', chinese: current.value?.back.meaning,
@@ -38,18 +38,13 @@ const wordAnswer = computed(() => ({
 const wordMedia = computed(() => Object.fromEntries(Object.entries(current.value?.back || {}).filter(([key]) => key === 'reference_audio' || key === 'image')))
 const dueLabel = computed(() => state.value?.next_due_at ? new Date(state.value.next_due_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '')
 
-function practiceSelection(): ReviewTemplate[] {
-  const raw = route.query.templates
-  const keys = (Array.isArray(raw) ? raw : raw ? [raw] : [])
-    .flatMap(value => String(value).split(','))
-    .filter((key): key is ReviewTemplate => Object.hasOwn(templateLabels, key))
-  if (keys.length) return [...new Set(keys)]
-  const single = String(route.query.template || '')
-  return Object.hasOwn(templateLabels, single) ? [single as ReviewTemplate] : []
+function practiceSelection(): ReviewTemplate | undefined {
+  const key = String(route.query.template || '')
+  return Object.hasOwn(templateLabels, key) ? key as ReviewTemplate : undefined
 }
 
 function hasPracticeSelection(): boolean {
-  return Boolean(route.query.practice || route.query.template || route.query.templates)
+  return Boolean(route.query.practice || route.query.template)
 }
 
 function loadEntry() {
@@ -58,18 +53,13 @@ function loadEntry() {
     void router.replace({ name: 'MyCourses' })
     return Promise.resolve()
   }
-  const rawLimit = Number(route.query.limit)
-  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined
-  return load(deckId, { templates: practiceSelection(), limit })
+  return load(deckId, { template: practiceSelection() })
 }
 
-function confirmPracticeOptions(value: { templates: ReviewTemplate[]; limit?: number }) {
-  const query: Record<string, string> = { ...(route.query as Record<string, string>), practice: '1' }
-  delete query.template
-  if (value.templates.length) query.templates = value.templates.join(',')
-  else delete query.templates
-  if (value.limit) query.limit = String(value.limit)
-  else delete query.limit
+function confirmPracticeOptions(value: { template: ReviewTemplate }) {
+  const query: Record<string, string> = { ...(route.query as Record<string, string>), practice: '1', template: value.template }
+  delete query.templates
+  delete query.limit
   void router.replace({ path: route.path, query })
 }
 
@@ -91,7 +81,7 @@ function closePracticeOptions() {
 }
 
 watch(
-  () => [route.params.deckId, route.query.template, route.query.templates, route.query.limit, route.query.practice],
+  () => [route.params.deckId, route.query.template, route.query.practice],
   () => {
     dialogueEntry.value = undefined
     if (!hasPracticeSelection()) {
@@ -346,8 +336,7 @@ watch([completedRound, dialogueAvailable, busy, error], ([round, available, work
       :open="showPracticeOptions"
       :deck-id="String(route.params.deckId || '')"
       :deck-name="deck?.name || practiceDeck?.name"
-      :initial-templates="practiceTemplates"
-      :initial-limit="Number(route.query.limit) || undefined"
+      :initial-template="practiceTemplate"
       @close="closePracticeOptions"
       @confirm="confirmPracticeOptions"
     />

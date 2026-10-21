@@ -256,11 +256,10 @@ class ReviewService(ContentService):
         config = effective(self.collection, root.id, self.decks)
         cards = self.in_scope(scope)
         order = ordered(cards, self.collection, config, self.now, self.decks)
-        limit = scope.get("limit")
         q = RuntimeQueue(
             uuid7(),
             scope,
-            [c.id for c in order][:limit] if limit else [c.id for c in order],
+            [c.id for c in order],
             self.day,
             self.stamp(),
             self.now + timedelta(hours=2),
@@ -344,16 +343,11 @@ class ReviewService(ContentService):
             self.now,
             self.decks,
         )
-        limit = q.scope.get("limit")
-        if limit is not None:
-            # A round is the ordered slice captured at queue creation.
-            order = list(q.order)
-        else:
-            order = (
-                [c.id for c in fresh if c.queue == "learning"]
-                + q.order
-                + [c.id for c in fresh if c.id not in q.order]
-            )
+        order = (
+            [c.id for c in fresh if c.queue == "learning"]
+            + q.order
+            + [c.id for c in fresh if c.id not in q.order]
+        )
         if q.current in order:
             order = [q.current] + [i for i in order if i != q.current]
         seen = set()
@@ -368,15 +362,14 @@ class ReviewService(ContentService):
                     self.consume(
                         usage, card.original_deck_id or card.deck_id, card.queue
                     )
-        if limit is None:
-            # Keep the stored FSRS due time. Early learning is a queue policy, and
-            # must never jump ahead of due cards or available new/review work.
-            ahead = sorted(
-                (c for c in cards if c.queue == "learning"
-                 and self.now < c.due_at <= self.now + LEARN_AHEAD),
-                key=lambda c: (c.due_at, c.id),
-            )
-            result.extend(c for c in ahead if can_render(c))
+        # Keep the stored FSRS due time. Early learning is a queue policy, and
+        # must never jump ahead of due cards or available new/review work.
+        ahead = sorted(
+            (c for c in cards if c.queue == "learning"
+             and self.now < c.due_at <= self.now + LEARN_AHEAD),
+            key=lambda c: (c.due_at, c.id),
+        )
+        result.extend(c for c in ahead if can_render(c))
         return result
 
     def counts(self, q, *, scoped_cards=None, usage=None, renderable_ids=None, eligible_cards=None):

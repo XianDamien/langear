@@ -9,9 +9,7 @@ type PendingWrite = { key: string; kind: 'flip'; body: { card_id: string; review
 const recoverable = new Set(['QUEUE_EXPIRED', 'CARD_SCHEDULE_CONFLICT', 'RATING_ALREADY_SET', 'REVIEW_TOKEN_INVALID', 'REVIEW_TOKEN_REUSED', 'DAILY_LIMIT_REACHED'])
 
 export interface ReviewLoadOptions {
-  templates?: ReviewTemplate[]
-  /** Maximum cards in this round; omitted means the normal daily limits only. */
-  limit?: number
+  template?: ReviewTemplate
 }
 
 export function useReviewSession() {
@@ -26,7 +24,7 @@ export function useReviewSession() {
   const error = ref('')
   const needsRecovery = ref(false)
   const pendingReview = ref<PendingReview>()
-  const practiceTemplates = ref<ReviewTemplate[]>([])
+  const practiceTemplate = ref<ReviewTemplate>()
   const uploadProgress = ref<number | null>(null)
   const flipped = computed(() => !!state.value?.attempt)
   const card = computed<ResourceCard | undefined>(() => state.value?.card ? {
@@ -111,7 +109,7 @@ export function useReviewSession() {
     deckId = id
     entry = { id, options }
     pendingReview.value = undefined
-    practiceTemplates.value = []
+    practiceTemplate.value = undefined
     state.value = undefined
     deck.value = undefined
     pending = savedWrite()
@@ -126,12 +124,9 @@ export function useReviewSession() {
       if (request !== generation) return
       deck.value = resource
       const imported = !!resource.deck_guid?.startsWith('legacy:')
-      practiceTemplates.value = options?.templates?.length
-        ? options.templates
-        : imported ? ['sentence_retelling'] : []
+      practiceTemplate.value = options?.template || (imported ? 'sentence_retelling' : undefined)
       const { data } = await reviewHttp.post<ReviewQueue>('/review/queues', { scope: { deck_id: id, include_descendants: true, exclude_imported: !imported,
-        ...(practiceTemplates.value.length ? { card_template_keys: practiceTemplates.value } : {}),
-        ...(options?.limit ? { limit: options.limit } : {}),
+        ...(practiceTemplate.value ? { card_template_keys: [practiceTemplate.value] } : {}),
       } })
       if (request !== generation) return
       state.value = data.current || { ...data, review_token: null, card: null }
@@ -209,5 +204,5 @@ export function useReviewSession() {
     return perform(pending ? () => send() : retryAction || (() => next()))
   }
   onBeforeUnmount(() => { generation++; clearTimeout(pollTimer) })
-  return { completedRound, deck, state, card, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplates, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
+  return { completedRound, deck, state, card, flipped, loading, busy, actionStatus, error, needsRecovery, pendingReview, practiceTemplate, uploadProgress, load, flip, rate, undo, schedule, retry, retryProcessing }
 }

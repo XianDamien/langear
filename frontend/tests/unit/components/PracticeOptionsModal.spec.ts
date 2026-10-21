@@ -31,24 +31,19 @@ describe('practice options', () => {
     await wrapper.get('[data-testid="practice-confirm"]').trigger('click')
 
     expect(wrapper.emitted('confirm')?.[0]?.[0]).toEqual({
-      templates: ['sentence_retelling', 'sentence_translation'],
-      limit: 10,
+      template: 'sentence_translation',
     })
   })
 
-  it('restores an existing selection and round size', async () => {
-    const wrapper = mountModal({
-      initialTemplates: ['sentence_dictation'],
-      initialLimit: 20,
-    })
+  it('restores an existing single selection', async () => {
+    const wrapper = mountModal({ initialTemplate: 'sentence_dictation' })
     await flushPromises()
 
     expect(wrapper.get('[data-testid="practice-option-sentence_dictation"]').attributes('aria-pressed')).toBe('true')
     await wrapper.get('[data-testid="practice-confirm"]').trigger('click')
 
     expect(wrapper.emitted('confirm')?.[0]?.[0]).toEqual({
-      templates: ['sentence_dictation'],
-      limit: 20,
+      template: 'sentence_dictation',
     })
   })
 })
