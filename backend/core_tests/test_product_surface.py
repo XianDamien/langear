@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.auth import HASHER
 from core.models import (
+    Card,
     Collection,
     DailyActivity,
     Deck,
@@ -354,10 +355,30 @@ def test_dashboard_counts_attempts_streak_and_imported_history(client, account, 
     assert data["weeklyTrend"][-1]["sentences"] == 1
 
 
-def test_dashboard_counts_imported_cards_as_pending_reviews(client, account, engine):
-    """Migrated content is real study work and must appear in the queue counts."""
+def test_dashboard_pending_reviews_only_counts_due_review_cards(client, account, engine):
+    """A brand-new card is new work, never "待复习", even with a large new limit."""
     card = make_note(client, account)["cards"][0]
-    assert client.get("/api/v1/dashboard").json()["stats"]["reviewsPending"] == 1
+    stats = client.get("/api/v1/dashboard").json()["stats"]
+    assert stats["newDue"] == 1
+    assert stats["reviewsPending"] == 0
+
+    from core.scheduling import study_day
+
+    with Session(engine) as db, db.begin():
+        row = db.get(Card, UUID(card["id"]))
+        row.type = "review"
+        row.queue = "review"
+        row.new_position = None
+        row.due_day = study_day(utcnow(), "Asia/Shanghai")
+        row.reps = 1
+    stats = client.get("/api/v1/dashboard").json()["stats"]
+    assert stats["reviewDue"] == 1
+    assert stats["reviewsPending"] == 1
+
+
+def test_dashboard_counts_imported_review_cards_as_pending(client, account, engine):
+    """Migrated content counts once it has entered review state."""
+    card = make_note(client, account)["cards"][0]
     with Session(engine) as db, db.begin():
         deck = db.get(Deck, UUID(account["deck_id"]))
         deck.imported = True
@@ -365,6 +386,19 @@ def test_dashboard_counts_imported_cards_as_pending_reviews(client, account, eng
         note = db.get(Note, UUID(card["note_id"]))
         note.imported = True
         note.source_metadata = {"kind": "card", "source": "fixture", "legacy_id": "101"}
+    stats = client.get("/api/v1/dashboard").json()["stats"]
+    assert stats["newDue"] == 1
+    assert stats["reviewsPending"] == 0
+
+    from core.scheduling import study_day
+
+    with Session(engine) as db, db.begin():
+        row = db.get(Card, UUID(card["id"]))
+        row.type = "review"
+        row.queue = "review"
+        row.new_position = None
+        row.due_day = study_day(utcnow(), "Asia/Shanghai")
+        row.reps = 1
     assert client.get("/api/v1/dashboard").json()["stats"]["reviewsPending"] == 1
 
 

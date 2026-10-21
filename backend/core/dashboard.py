@@ -144,7 +144,10 @@ def dashboard_data(db, collection):
     return {
         "stats": {
             "points": completed["reviews"],
-            "reviewsPending": due["new_due"] + due["review_due"] + due["learning_due"],
+            # "待复习" is the due Review work only: a new or learning card has
+            # never entered review state, so counting it here would turn the
+            # number into the deck's total card count.
+            "reviewsPending": due["review_due"],
             "streakDays": current_streak(daily, today),
             "dailyGoal": config["new_limit"] + config["review_limit"],
             "dailyDone": completed["reviews"],
