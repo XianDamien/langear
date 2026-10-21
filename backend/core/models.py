@@ -85,7 +85,7 @@ DEFAULT_SCHEDULING = {
     "maximum_review_interval": 36500,
     "sibling_burying": True,
     "study_day_rollover_hour": 4,
-    "new_limit": 20,
+    "new_limit": 9999,
     "review_limit": 200,
     "new_card_gather_order": "random_cards",
     "new_card_sort_order": "order_gathered",

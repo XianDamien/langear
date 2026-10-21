@@ -25,7 +25,7 @@ def test_settings_persist_inherit_and_preserve_other_preferences(client, account
     assert all(saved[key] == value for key, value in VALUES.items())
     assert saved["scheduling_enabled"] is True
     assert client.get(f"/api/v1/decks/{child}/settings").json()["daily_new_limit"] == 7
-    assert client.get(f"/api/v1/decks/{sibling}/settings").json()["daily_new_limit"] == 20
+    assert client.get(f"/api/v1/decks/{sibling}/settings").json()["daily_new_limit"] == 9999
     client.put(f"/api/v1/decks/{child}/settings", json={**VALUES, "daily_new_limit": 3})
     assert client.get(path).json()["daily_new_limit"] == 7
     with Session(engine) as db:

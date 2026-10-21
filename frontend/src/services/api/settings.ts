@@ -27,6 +27,7 @@ function parseUuids(value: string, label: string): string[] {
 
 function collectionToFrontend(data: CollectionSettingsData): SettingsData {
   return {
+    dailyNewLimit: data.new_limit,
     desiredRetention: data.desired_retention,
     learningSteps: data.learning_steps.join(','),
     relearningSteps: data.relearning_steps.join(','),
@@ -65,8 +66,13 @@ function validateCommon(data: SettingsData) {
 
 function collectionPayload(data: SettingsData): BackendSettingsData {
   validateCommon(data)
+  const newLimit = data.dailyNewLimit
+  if (newLimit === undefined || !Number.isSafeInteger(newLimit) || newLimit < 0 || newLimit > 10000) {
+    throw new Error('每日新学数量必须为 0 至 10000 的整数')
+  }
   if (data.maximumInterval > 36500) throw new Error('最大复习间隔不能超过 36500 天')
   return {
+    new_limit: newLimit,
     desired_retention: data.desiredRetention,
     learning_steps: parsePositiveIntegers(data.learningSteps, '学习步长'),
     relearning_steps: parsePositiveIntegers(data.relearningSteps, '重学步长'),

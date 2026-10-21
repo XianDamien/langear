@@ -85,6 +85,7 @@ export interface SettingsData {
 }
 
 export interface CollectionSettingsData {
+  new_limit: number
   desired_retention: number
   learning_steps: number[]
   relearning_steps: number[]

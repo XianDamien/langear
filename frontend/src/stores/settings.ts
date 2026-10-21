@@ -75,11 +75,11 @@ export const useSettingsStore = defineStore('settings', () => {
         relearningSteps: relearningSteps.value,
         maximumInterval: maximumInterval.value,
         defaultDeckScope: defaultDeckScope.value,
+        dailyNewLimit: dailyNewLimit.value,
         ...(deckId.value === undefined ? {} : {
           newCardGatherOrder: newCardGatherOrder.value,
           newCardSortOrder: newCardSortOrder.value,
           deckId: deckId.value,
-          dailyNewLimit: dailyNewLimit.value,
           dailyReviewLimit: dailyReviewLimit.value,
         }),
       })

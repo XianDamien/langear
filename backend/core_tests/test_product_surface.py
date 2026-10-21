@@ -255,6 +255,7 @@ def test_settings_defaults_partial_update_inheritance_and_scope(client, account,
     response = client.get("/api/v1/settings")
     assert response.status_code == 200, response.text
     data = response.json()
+    assert data["new_limit"] == 9999
     assert data["desired_retention"] == 0.9
     assert data["learning_steps"] == [15]
     assert data["maximum_review_interval"] == 36500
@@ -262,6 +263,7 @@ def test_settings_defaults_partial_update_inheritance_and_scope(client, account,
     update = client.put(
         "/api/v1/settings",
         json={
+            "new_limit": 100,
             "desired_retention": 0.85,
             "learning_steps": [5, 20],
             "relearning_steps": [10],
@@ -270,11 +272,13 @@ def test_settings_defaults_partial_update_inheritance_and_scope(client, account,
         },
     )
     assert update.status_code == 200, update.text
+    assert update.json()["new_limit"] == 100
     assert update.json()["desired_retention"] == 0.85
     assert update.json()["learning_steps"] == [5, 20]
     assert update.json()["default_deck_scope"] == [account["deck_id"]]
     # Omitted fields are unchanged, not reset.
     partial = client.put("/api/v1/settings", json={"desired_retention": 0.8})
+    assert partial.json()["new_limit"] == 100
     assert partial.json()["learning_steps"] == [5, 20]
     assert partial.json()["desired_retention"] == 0.8
     deck = client.put(

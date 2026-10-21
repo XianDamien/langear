@@ -14,6 +14,7 @@ vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn() } }))
 const deckA = '01900000-0000-7000-8000-000000000018'
 const deckB = '01900000-0000-7000-8000-000000000019'
 const values = {
+  dailyNewLimit: 9999,
   desiredRetention: 0.91, learningSteps: '1,15', relearningSteps: '15',
   maximumInterval: 1200, defaultDeckScope: '',
 }

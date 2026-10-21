@@ -11,7 +11,7 @@ async function render(settings: Record<string, unknown> = {}) {
   await router.push(`/settings?deck_id=${deckId}`)
   const wrapper = mountWithApp(SettingsView, {
     pinia: { initialState: { settings: {
-      deckId, deckTitle: 'Lesson 1', dailyNewLimit: 20, dailyReviewLimit: 200,
+      deckId, deckTitle: 'Lesson 1', dailyNewLimit: 9999, dailyReviewLimit: 200,
       newCardGatherOrder: null, newCardSortOrder: null,
       effectiveNewCardGatherOrder: 'random_cards', effectiveNewCardSortOrder: 'order_gathered',
       ...settings,
@@ -20,6 +20,34 @@ async function render(settings: Record<string, unknown> = {}) {
   })
   return { wrapper, store: useSettingsStore() }
 }
+
+async function renderCollection(settings: Record<string, unknown> = {}) {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/settings', component: SettingsView }] })
+  await router.push('/settings')
+  const wrapper = mountWithApp(SettingsView, {
+    pinia: { initialState: { settings: {
+      dailyNewLimit: 9999, desiredRetention: 0.9, learningSteps: '15', relearningSteps: '15',
+      maximumInterval: 36500, defaultDeckScope: '',
+      ...settings,
+    } } },
+    global: { plugins: [router] },
+  })
+  return { wrapper, store: useSettingsStore() }
+}
+
+describe('account new-card quota settings', () => {
+  it('shows and saves the account-level new-card quota', async () => {
+    const { wrapper, store } = await renderCollection()
+    expect(store.load).toHaveBeenCalledWith(undefined)
+    expect(wrapper.get<HTMLInputElement>('#daily-new-limit').element.value).toBe('9999')
+    expect(wrapper.find('#daily-review-limit').exists()).toBe(false)
+    await wrapper.get('#daily-new-limit').setValue('12000')
+    await wrapper.get('form').trigger('submit')
+    expect(store.dailyNewLimit).toBe(12000)
+    expect(store.save).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+})
 
 describe('deck new-card order settings', () => {
   it('keeps inherited order on unrelated saves and explicitly selects textbook order', async () => {

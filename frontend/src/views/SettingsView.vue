@@ -83,6 +83,17 @@ async function handleSave() {
       </p>
       <RetroCard class="space-y-6">
         <form class="space-y-6" @submit.prevent="handleSave">
+          <div>
+            <label for="daily-new-limit" class="block text-sm font-bold text-slate-500 mb-2">
+              {{ deckId ? '每日新学数量' : '每日新学数量（账号默认）' }}
+            </label>
+            <input id="daily-new-limit" v-model.number="dailyNewLimit" type="number" min="0" max="10000" step="1" required class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
+            <p class="mt-2 text-xs text-slate-500">
+              {{ deckId
+                ? '此牌组每日新卡额度；实际可用数量仍受上级课程与账号总额度限制。'
+                : '整个账号的每日新卡总额度，默认 9999（相当于不限制）。单个牌组可另外下调。' }}
+            </p>
+          </div>
           <template v-if="deckId">
             <div>
               <label
@@ -119,10 +130,6 @@ async function handleSave() {
               <p class="mt-2 text-xs text-slate-500">
                 仅影响尚未学习的新卡，复习卡仍按复习计划出现。保存后重新进入练习生效。
               </p>
-            </div>
-            <div>
-              <label for="daily-new-limit" class="block text-sm font-bold text-slate-500 mb-2">每日新学数量</label>
-              <input id="daily-new-limit" v-model.number="dailyNewLimit" type="number" min="0" max="10000" step="1" required class="w-full border border-slate-200 p-2 text-slate-900 outline-none focus:border-brand-accent">
             </div>
             <div>
               <label for="daily-review-limit" class="block text-sm font-bold text-slate-500 mb-2">每日复习数量</label>
