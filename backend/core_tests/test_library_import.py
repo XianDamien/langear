@@ -621,3 +621,245 @@ def test_library_import_rejects_a_filtered_deck_source(client, account, engine):
         filtered_id = filtered.id
     response = client.post(f"/api/v1/library/decks/{filtered_id}/import")
     assert response.status_code == 404, response.text
+
+
+def test_import_selection_copies_all_cards_but_limits_study_scope(
+    client, account, engine
+):
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        deck = add_deck(db, shared, "Selectable course", guid="lib:selectable")
+        first = add_note(db, shared, {"english": "First."}, guid="lib:first")
+        second = add_note(db, shared, {"english": "Second."}, guid="lib:second")
+        add_card(db, shared, first, deck, "sentence_translation", 1)
+        add_card(db, shared, second, deck, "sentence_translation", 2)
+        deck_id = deck.id
+
+    response = client.post(
+        f"/api/v1/library/decks/{deck_id}/import",
+        json={"note_guids": ["lib:first"]},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    copied = body["deck_id"]
+    assert body["selection"] == {"note_guids": ["lib:first"], "cards": 1}
+
+    # The whole lesson is copied so the learner keeps the course structure...
+    all_cards = client.get("/api/v1/cards", params={"deck_id": copied}).json()["cards"]
+    assert len(all_cards) == 2
+    # ...while only the selected sentence enters the study queue.
+    study = client.get(
+        "/api/v1/cards", params={"deck_id": copied, "study_only": True}
+    ).json()["cards"]
+    assert [card["note_guid"] for card in study] == ["lib:first"]
+    selection = client.get(
+        f"/api/v1/library/decks/{deck_id}/selection"
+    ).json()
+    assert selection == {"note_guids": ["lib:first"], "joined": True}
+
+    # Re-importing without a selection body keeps the learner's scope.
+    kept = client.post(f"/api/v1/library/decks/{deck_id}/import")
+    assert kept.status_code == 200, kept.text
+    assert client.get(f"/api/v1/library/decks/{deck_id}/selection").json()[
+        "note_guids"
+    ] == ["lib:first"]
+
+    # A different subset replaces the previous scope without duplicating cards.
+    updated = client.post(
+        f"/api/v1/library/decks/{deck_id}/import",
+        json={"note_guids": ["lib:second"]},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["created"]["cards"] == 0
+    assert client.get(f"/api/v1/library/decks/{deck_id}/selection").json()[
+        "note_guids"
+    ] == ["lib:second"]
+
+    # Explicitly importing the whole course clears the subset and restores all cards.
+    whole = client.post(
+        f"/api/v1/library/decks/{deck_id}/import",
+        json={"note_guids": None},
+    )
+    assert whole.status_code == 200, whole.text
+    assert whole.json()["selection"]["note_guids"] is None
+    assert client.get(f"/api/v1/library/decks/{deck_id}/selection").json()[
+        "note_guids"
+    ] is None
+    study = client.get(
+        "/api/v1/cards", params={"deck_id": copied, "study_only": True}
+    ).json()["cards"]
+    assert len(study) == 2
+
+
+def test_import_selection_rejects_notes_outside_the_deck(client, account, engine):
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        deck = add_deck(db, shared, "Selectable course", guid="lib:selectable")
+        other = add_deck(db, shared, "Other course", guid="lib:other")
+        note = add_note(db, shared, {"english": "Outside."}, guid="lib:outside")
+        add_card(db, shared, note, other, "sentence_translation", 1)
+        deck_id = deck.id
+
+    response = client.post(
+        f"/api/v1/library/decks/{deck_id}/import",
+        json={"note_guids": ["lib:outside"]},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "STUDY_SELECTION_INVALID"
+
+
+def test_import_adopts_legacy_deck_and_note_identity(client, account, engine):
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        source = add_deck(db, shared, "Legacy course", guid="lib:legacy")
+        source_note = add_note(
+            db, shared, {"english": "Legacy.", "chinese": "旧。"}, guid="lib:legacy-note"
+        )
+        add_card(db, shared, source_note, source, "sentence_translation")
+
+        user = db.get(Collection, UUID(account["collection"]["id"]))
+        note_type_id = source_note.note_type_id
+        template = db.scalar(
+            select(CardTemplate).where(CardTemplate.key == "sentence_translation")
+        )
+        legacy_deck = Deck(
+            collection_id=user.id,
+            name="Legacy course",
+            deck_guid="lib:legacy",
+            imported=True,
+            in_my_courses=False,
+            source_metadata={"kind": "deck", "source": "legacy-fixture"},
+        )
+        db.add(legacy_deck)
+        db.flush()
+        legacy_note = Note(
+            collection_id=user.id,
+            note_type_id=note_type_id,
+            fields={"english": "Legacy.", "chinese": "旧。"},
+            guid="lib:legacy-note",
+            imported=True,
+            source_metadata={"kind": "card", "source": "legacy-fixture"},
+        )
+        db.add(legacy_note)
+        db.flush()
+        db.add(
+            Card(
+                collection_id=user.id,
+                note_id=legacy_note.id,
+                note_type_id=note_type_id,
+                card_template_id=template.id,
+                template_ord=template.ord,
+                deck_id=legacy_deck.id,
+                new_position=1,
+            )
+        )
+        source_id, legacy_deck_id = source.id, legacy_deck.id
+
+    response = client.post(f"/api/v1/library/decks/{source_id}/import")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["created"] == {"decks": 0, "notes": 0, "cards": 0}
+    assert body["existing"] == {"decks": 1, "notes": 1, "cards": 1}
+
+    with Session(engine) as db:
+        deck = db.get(Deck, legacy_deck_id)
+        note = db.scalar(
+            select(Note).where(
+                Note.guid == "lib:legacy-note",
+                Note.collection_id == UUID(account["collection"]["id"]),
+            )
+        )
+        assert deck.in_my_courses is True
+        assert deck.source_metadata["source"] == "library"
+        assert deck.source_metadata["legacy_source"] == "legacy-fixture"
+        assert note.source_metadata["source"] == "library"
+        assert note.source_metadata["legacy_source"] == "legacy-fixture"
+
+    # The Library now shows the adopted copy as joined instead of "加入".
+    node = find_node(
+        client.get("/api/v1/library/decks/tree").json()["tree"], "Legacy course"
+    )
+    assert node["in_my_courses"] is True
+
+
+def test_import_still_rejects_an_user_authored_identity(client, account, engine):
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        source = add_deck(db, shared, "User course", guid="lib:user-owned")
+        user = db.get(Collection, UUID(account["collection"]["id"]))
+        db.add(
+            Deck(
+                collection_id=user.id,
+                name="My own course",
+                deck_guid="lib:user-owned",
+                imported=False,
+                source_metadata={"kind": "deck"},
+            )
+        )
+        source_id = source.id
+
+    response = client.post(f"/api/v1/library/decks/{source_id}/import")
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "LIBRARY_IMPORT_CONFLICT"
+
+
+def test_parent_selection_is_distributed_across_child_decks(
+    client, account, engine
+):
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        root = add_deck(db, shared, "Book", guid="lib:book")
+        first = add_deck(db, shared, "Lesson A", parent=root, guid="lib:a")
+        second = add_deck(db, shared, "Lesson B", parent=root, guid="lib:b")
+        first_note = add_note(db, shared, {"english": "A."}, guid="lib:a-note")
+        second_note = add_note(db, shared, {"english": "B."}, guid="lib:b-note")
+        add_card(db, shared, first_note, first, "sentence_translation", 1)
+        add_card(db, shared, second_note, second, "sentence_translation", 2)
+        root_id = root.id
+
+    imported = client.post(
+        f"/api/v1/library/decks/{root_id}/import",
+        json={"note_guids": ["lib:a-note"]},
+    )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["selection"] == {
+        "note_guids": ["lib:a-note"],
+        "cards": 1,
+    }
+    tree = imported_tree(client)
+    imported_root = find_node(tree, "Book")
+    imported_a = find_node(imported_root["children"], "Lesson A")
+    imported_b = find_node(imported_root["children"], "Lesson B")
+    assert imported_root["in_my_courses"] is True
+    assert imported_a["in_my_courses"] is True
+    assert imported_b["in_my_courses"] is False
+    assert [
+        card["note_guid"]
+        for card in client.get(
+            "/api/v1/cards", params={"deck_id": imported_a["id"], "study_only": True}
+        ).json()["cards"]
+    ] == ["lib:a-note"]
+    assert client.get(
+        "/api/v1/cards", params={"deck_id": imported_b["id"], "study_only": True}
+    ).json()["cards"] == []
+    assert client.get(
+        f"/api/v1/library/decks/{root_id}/selection"
+    ).json()["note_guids"] == ["lib:a-note"]
+
+    switched = client.post(
+        f"/api/v1/library/decks/{root_id}/import",
+        json={"note_guids": ["lib:b-note"]},
+    )
+    assert switched.status_code == 200, switched.text
+    assert client.get(
+        f"/api/v1/library/decks/{root_id}/selection"
+    ).json()["note_guids"] == ["lib:b-note"]
+    assert client.get(
+        "/api/v1/cards", params={"deck_id": imported_a["id"], "study_only": True}
+    ).json()["cards"] == []
+    assert [
+        card["note_guid"]
+        for card in client.get(
+            "/api/v1/cards", params={"deck_id": imported_b["id"], "study_only": True}
+        ).json()["cards"]
+    ] == ["lib:b-note"]

@@ -10,6 +10,20 @@ VALUES = {
     "learning_steps": [15], "relearning_steps": [15],
 }
 
+SOURCE_ORDER = {
+    "new_card_gather_order": "lowest_position",
+    "new_card_sort_order": "order_gathered",
+}
+
+
+def test_new_card_order_defaults_to_source_order(client, account):
+    parent = account["deck_id"]
+    child = client.post("/api/v1/decks", json={"name": "Child", "parent_id": parent}).json()["id"]
+    for deck_id in (parent, child):
+        data = client.get(f"/api/v1/decks/{deck_id}/settings").json()
+        assert {key: data[key] for key in SOURCE_ORDER} == SOURCE_ORDER
+        assert data["new_card_order_overrides"] == dict.fromkeys(SOURCE_ORDER)
+
 
 def test_settings_persist_inherit_and_preserve_other_preferences(client, account, engine):
     parent = account["deck_id"]

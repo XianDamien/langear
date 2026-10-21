@@ -18,7 +18,7 @@ const lesson: DeckView = {
 }
 
 describe('core deck tree entry points', () => {
-  it('keeps library leaf decks read-only and copies the whole course on join', async () => {
+  it('offers sentence selection, preview and whole-course import for library decks', async () => {
     const wrapper = mount(DeckTreeItem, {
       props: { deck: lesson, mode: 'library' },
     })
@@ -26,8 +26,11 @@ describe('core deck tree entry points', () => {
     await wrapper.get('.truncate').trigger('click')
     expect(wrapper.emitted('playDeck')).toBeUndefined()
     expect(wrapper.find('button[aria-label="Lesson one 设置"]').exists()).toBe(false)
-    // Library browsing never exposes card selection or mutation entry points.
-    expect(wrapper.find('button[aria-label="Lesson one 选择卡片"]').exists()).toBe(false)
+    // Library leaves offer sentence selection, card preview and whole-course import.
+    const selectButton = wrapper.get('button[aria-label="选择 Lesson one 的句子"]')
+    expect(selectButton.exists()).toBe(true)
+    await selectButton.trigger('click')
+    expect(wrapper.emitted('selectCards')).toEqual([[lesson.id]])
     expect(wrapper.emitted('toggleMembership')).toBeUndefined()
     await wrapper.get('button[aria-label="查看 Lesson one 的卡片"]').trigger('click')
     expect(wrapper.emitted('previewDeck')).toEqual([[lesson.id]])
@@ -74,6 +77,8 @@ describe('core deck tree entry points', () => {
       },
     })
     expect(wrapper.findAll('.truncate')).toHaveLength(2)
+    expect(wrapper.find('button[aria-label="选择 Book 的句子"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="选择 Lesson one 的句子"]').exists()).toBe(true)
     await wrapper.findAll('.truncate')[0]!.trigger('click')
     expect(wrapper.findAll('.truncate')).toHaveLength(1)
     await wrapper.get('.truncate').trigger('click')

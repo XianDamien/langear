@@ -9,7 +9,7 @@ import re
 
 from sqlalchemy import select
 
-from core.content import LIBRARY_SOURCE, ContentService
+from core.content import ContentService
 from core.models import Card, Deck, Note, utcnow
 from core.scheduling import study_day
 
@@ -197,7 +197,7 @@ def library_deck_tree(db, collection, user_collection=None):
             db.scalars(
                 select(Deck.deck_guid).where(
                     Deck.collection_id == user_collection.id,
-                    Deck.source_metadata["source"].astext == LIBRARY_SOURCE,
+                    Deck.kind == "standard",
                 )
             )
         )

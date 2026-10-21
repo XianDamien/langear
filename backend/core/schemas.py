@@ -144,3 +144,7 @@ class DisableAccount(Body):
 
 class DeckMembership(Body):
     joined: bool
+
+
+class LibraryImport(Body):
+    note_guids: list[str] | None = Field(default=None, max_length=5000)

@@ -217,6 +217,7 @@ class ContentService:
         return {
             "id": card.id,
             "note_id": note.id,
+            "note_guid": note.guid,
             "deck_id": card.deck_id,
             "card_template_key": template.key,
             "template_ord": card.template_ord,

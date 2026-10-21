@@ -87,7 +87,7 @@ DEFAULT_SCHEDULING = {
     "study_day_rollover_hour": 4,
     "new_limit": 9999,
     "review_limit": 200,
-    "new_card_gather_order": "random_cards",
+    "new_card_gather_order": "lowest_position",
     "new_card_sort_order": "order_gathered",
     "new_review_order": "after_reviews",
     "interday_learning_review_order": "before_reviews",

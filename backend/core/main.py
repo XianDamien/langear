@@ -18,7 +18,7 @@ from core import auth, schemas
 from core.config import get_settings
 from core.content import ContentService
 from core.courses import deck_rows, deck_statistics, deck_tree, library_deck_tree
-from core.library import import_library_deck, library_cards, shared_collection
+from core.library import UNSET, import_library_deck, library_cards, library_selection, shared_collection
 from core.deck_settings import DeckSettingsUpdate, get_deck_settings, save_deck_settings
 from core.db import get_db, get_engine
 from core.errors import DomainError, missing
@@ -379,10 +379,24 @@ def shared_library_cards(
     )
 
 
+@app.get("/api/v1/library/decks/{deck_id}/selection")
+def shared_library_selection(deck_id: UUID, service=Depends(content)):
+    return library_selection(service.db, service.collection, deck_id)
+
+
 @app.post("/api/v1/library/decks/{deck_id}/import")
-def import_shared_deck(deck_id: UUID, service=Depends(content)):
+def import_shared_deck(
+    deck_id: UUID,
+    body: schemas.LibraryImport | None = None,
+    service=Depends(content),
+):
     service.repo.lock()
-    return import_library_deck(service.db, service.collection, deck_id)
+    return import_library_deck(
+        service.db,
+        service.collection,
+        deck_id,
+        note_guids=UNSET if body is None else body.note_guids,
+    )
 
 
 @app.get("/api/v1/decks/{deck_id}")

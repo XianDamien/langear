@@ -67,6 +67,7 @@ export interface ResourceNoteType {
 export interface ResourceCard {
   id: string
   note_id: string
+  note_guid?: string
   deck_id: string
   card_template_key: string
   template_ord?: number
@@ -198,6 +199,7 @@ export interface LibraryImportResult {
   imported: boolean
   deck_id: string
   deck_ids: string[]
+  selection: { note_guids: string[]; cards: number } | null
   created: { decks: number; notes: number; cards: number }
   existing: { decks: number; notes: number; cards: number }
   skipped_cards: {
@@ -209,8 +211,17 @@ export interface LibraryImportResult {
   warnings: { note_guid: string; code: string }[]
 }
 
-export function importLibraryDeck(deckId: string) {
-  return coreHttp.post<LibraryImportResult>(`/library/decks/${deckId}/import`)
+export function importLibraryDeck(deckId: string, noteGuids?: string[] | null) {
+  return coreHttp.post<LibraryImportResult>(
+    `/library/decks/${deckId}/import`,
+    noteGuids === undefined ? undefined : { note_guids: noteGuids },
+  )
+}
+
+export function fetchLibrarySelection(deckId: string) {
+  return coreHttp.get<{ note_guids: string[] | null; joined: boolean }>(
+    `/library/decks/${deckId}/selection`,
+  )
 }
 
 export interface DeletePreview {
@@ -252,6 +263,12 @@ export function fetchLibraryCards(
       ...(params.limit ? { limit: params.limit } : {}),
       ...(params.offset ? { offset: params.offset } : {}),
     },
+  })
+}
+
+export function fetchAllLibraryCards(deckId: string) {
+  return allResources<ResourceCard>(`/library/decks/${deckId}/cards`, 'cards', {
+    include_descendants: true,
   })
 }
 

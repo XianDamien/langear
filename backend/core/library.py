@@ -1,6 +1,7 @@
 """Read the shared Library and copy its content into a learner Collection."""
 
 from collections import defaultdict
+from uuid import UUID
 
 from sqlalchemy import func, select
 
@@ -8,6 +9,8 @@ from core.content import LIBRARY_SOURCE, ContentService, is_library_copy
 from core.courses import deck_sort_key
 from core.errors import DomainError, missing
 from core.models import Card, CardTemplate, Collection, Deck, Note
+
+UNSET = object()
 
 
 def shared_collection(db):
@@ -54,12 +57,77 @@ def _name_taken(db, collection_id, parent_id, name, exclude_id=None):
     return db.scalar(query) is not None
 
 
-def import_library_deck(db, collection, deck_id):
+def library_selection(db, collection, deck_id):
+    """Return the learner's current study selection in Library note GUIDs."""
+    library = shared_collection(db)
+    source = db.scalar(
+        select(Deck).where(Deck.collection_id == library.id, Deck.id == deck_id)
+    )
+    if source is None or source.kind != "standard":
+        missing()
+    decks = list(
+        db.scalars(
+            select(Deck).where(
+                Deck.collection_id == collection.id, Deck.kind == "standard"
+            )
+        )
+    )
+    target = next(
+        (deck for deck in decks if deck.deck_guid == source.deck_guid), None
+    )
+    if target is None:
+        return {"note_guids": None, "joined": False}
+    children = defaultdict(list)
+    for deck in decks:
+        children[deck.parent_id].append(deck)
+    subtree, stack = [], [target]
+    while stack:
+        current = stack.pop()
+        subtree.append(current)
+        stack.extend(children.get(current.id, []))
+    selections = [
+        (deck, (deck.scheduling_config or {}).get("study_card_ids"))
+        for deck in subtree
+    ]
+    # A completely unfiltered subtree is the canonical "all content" state.
+    if all(selected is None for _, selected in selections):
+        return {"note_guids": None, "joined": target.in_my_courses}
+    card_ids = []
+    for deck, selected in selections:
+        if selected == []:
+            continue
+        query = select(Card.id).where(
+            Card.collection_id == collection.id, Card.deck_id == deck.id
+        )
+        if selected is not None:
+            query = query.where(
+                Card.id.in_([UUID(value) for value in selected])
+            )
+        card_ids.extend(db.scalars(query))
+    guids = (
+        set(
+            db.scalars(
+                select(Note.guid)
+                .join(Card, Card.note_id == Note.id)
+                .where(Card.id.in_(card_ids))
+            )
+        )
+        if card_ids
+        else set()
+    )
+    return {"note_guids": sorted(guids), "joined": target.in_my_courses}
+
+
+def import_library_deck(db, collection, deck_id, note_guids=UNSET):
     """Idempotently clone a shared deck and its complete descendant subtree.
 
     Re-imports only add what is missing. Learner-owned deck names, note fields,
     card scheduling and review history are never overwritten, and an existing
     card is never moved to another deck.
+
+    `note_guids` is unset to leave the study selection alone, `None` to study
+    the whole imported subtree, or a list of Library note GUIDs to study only
+    those notes.
     """
     if collection.kind != "user":
         raise DomainError(403, "LIBRARY_READ_ONLY", "System Library is read-only.")
@@ -131,11 +199,28 @@ def import_library_deck(db, collection, deck_id):
             existing_decks[source.deck_guid] = target
             created_decks += 1
         else:
-            if target.kind != "standard" or not is_library_copy(target):
+            if target.kind != "standard":
                 _conflict(
                     "A Deck with the same identity did not come from the shared Library.",
                     {"deck_guid": source.deck_guid},
                 )
+            if not is_library_copy(target):
+                # Older imports already own a Deck with this stable identity.
+                # Adopt it instead of asking the learner to discard progress.
+                if not target.imported:
+                    _conflict(
+                        "A Deck with the same identity did not come from the shared Library.",
+                        {"deck_guid": source.deck_guid},
+                    )
+                metadata = dict(target.source_metadata or {})
+                legacy_source = metadata.get("source")
+                if legacy_source:
+                    metadata["legacy_source"] = legacy_source
+                target.source_metadata = {
+                    **metadata,
+                    "source": LIBRARY_SOURCE,
+                    "library_deck_id": str(source.id),
+                }
             metadata = dict(target.source_metadata or {})
             previous_parent = metadata.get("library_parent_id", object())
             current_parent = str(target.parent_id) if target.parent_id else None
@@ -195,8 +280,27 @@ def import_library_deck(db, collection, deck_id):
             )
         }
         if source_notes
-        else {}
+        else []
     )
+    source_note_guids = {note.id: note.guid for note in source_notes}
+    selection_requested = note_guids is not UNSET
+    select_all = note_guids is None
+    selected_guids = (
+        set(source_note_guids.values())
+        if select_all
+        else set(note_guids)
+        if selection_requested
+        else None
+    )
+    if selected_guids is not None:
+        unknown = selected_guids - set(source_note_guids.values())
+        if unknown:
+            raise DomainError(
+                422,
+                "STUDY_SELECTION_INVALID",
+                "Selected notes do not belong to this Deck.",
+                {"note_guids": sorted(unknown)[:20]},
+            )
     service = ContentService(db, collection)
     note_map, created_notes, warnings = {}, 0, []
     for source in source_notes:
@@ -237,10 +341,23 @@ def import_library_deck(db, collection, deck_id):
             existing_notes[source.guid] = target
             created_notes += 1
         elif not is_library_copy(target):
-            _conflict(
-                "A Note with the same identity did not come from the shared Library.",
-                {"note_guid": source.guid},
-            )
+            # Match Deck adoption: legacy-imported notes with the same stable
+            # identity become Library copies instead of blocking the import.
+            if not target.imported:
+                _conflict(
+                    "A Note with the same identity did not come from the shared Library.",
+                    {"note_guid": source.guid},
+                )
+            metadata = dict(target.source_metadata or {})
+            legacy_source = metadata.get("source")
+            if legacy_source:
+                metadata["legacy_source"] = legacy_source
+            target.source_metadata = {
+                **metadata,
+                "source": LIBRARY_SOURCE,
+                "library_deck_id": str(root.id),
+                "library_note_id": str(source.id),
+            }
         note_map[source.id] = target
 
     existing_cards = (
@@ -259,6 +376,7 @@ def import_library_deck(db, collection, deck_id):
     templates = {template.id: template for template in db.scalars(select(CardTemplate))}
     created_cards = existing_card_count = 0
     skipped_cards = []
+    selection_by_deck = defaultdict(list)
     for source in source_cards:
         target_note = note_map[source.note_id]
         target_deck_id = cloned_ids[source.deck_id]
@@ -284,6 +402,11 @@ def import_library_deck(db, collection, deck_id):
                         "deck_id": str(current.deck_id),
                     }
                 )
+            elif (
+                selected_guids is not None
+                and source_note_guids[source.note_id] in selected_guids
+            ):
+                selection_by_deck[target_deck_id].append(current.id)
             continue
         # Copy the source card even when the current template would refuse to
         # generate it: a shared card is never silently dropped on import.
@@ -300,10 +423,49 @@ def import_library_deck(db, collection, deck_id):
         db.flush()
         existing_cards[(target_note.id, template.id)] = card
         created_cards += 1
+        if (
+            selected_guids is not None
+            and source_note_guids[source.note_id] in selected_guids
+        ):
+            selection_by_deck[target_deck_id].append(card.id)
+
+    selection = None
+    if selected_guids is not None:
+        target_ids = {cloned_ids[deck.id] for deck in subtree}
+        selected_target_ids = {
+            target_id for target_id, cards in selection_by_deck.items() if cards
+        }
+        visible_target_ids = set(target_ids) if select_all else set(selected_target_ids)
+        if not select_all:
+            # Keep ancestor paths visible while pruning branches with no selection.
+            subtree_source_ids = {deck.id for deck in subtree}
+            for source in subtree:
+                if cloned_ids[source.id] not in selected_target_ids:
+                    continue
+                current = by_id.get(source.parent_id)
+                while current is not None and current.id in subtree_source_ids:
+                    visible_target_ids.add(cloned_ids[current.id])
+                    current = by_id.get(current.parent_id)
+        for target_id in target_ids:
+            target = db.get(Deck, target_id)
+            target.scheduling_config = {
+                **target.scheduling_config,
+                "study_card_ids": None
+                if select_all
+                else sorted(
+                    str(value) for value in selection_by_deck.get(target_id, [])
+                ),
+            }
+            target.in_my_courses = target_id in visible_target_ids
+        selection = {
+            "note_guids": None if select_all else sorted(selected_guids),
+            "cards": sum(len(cards) for cards in selection_by_deck.values()),
+        }
     return {
         "imported": True,
         "deck_id": str(cloned_ids[root.id]),
         "deck_ids": [str(cloned_ids[deck.id]) for deck in subtree],
+        "selection": selection,
         "created": {
             "decks": created_decks,
             "notes": created_notes,

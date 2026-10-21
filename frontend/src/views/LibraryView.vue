@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
 import LibraryCardsDialog from '@/components/library/LibraryCardsDialog.vue'
+import CardPickerModal from '@/components/library/CardPickerModal.vue'
 import { toView, useDecksStore } from '@/stores/decks'
 import { fetchLibraryDeckTree, importLibraryDeck, resourceError } from '@/services/content'
 import type { DeckView } from '@/stores/decks'
@@ -14,6 +15,7 @@ const importing = ref(false)
 const error = ref<string | null>(null)
 const coreError = ref('')
 const cardsDialog = ref<InstanceType<typeof LibraryCardsDialog>>()
+const cardPicker = ref<InstanceType<typeof CardPickerModal>>()
 
 function findDeck(nodes: DeckView[], deckId: string): DeckView | undefined {
   for (const node of nodes) {
@@ -27,6 +29,17 @@ function findDeck(nodes: DeckView[], deckId: string): DeckView | undefined {
 function handlePreview(deckId: string) {
   const deck = findDeck(libraryTree.value, deckId)
   if (deck) cardsDialog.value?.show(deck)
+}
+
+function handleSelectCards(deckId: string) {
+  if (importing.value) return
+  const deck = findDeck(libraryTree.value, deckId)
+  if (deck) cardPicker.value?.show(deck)
+}
+
+async function handleSelectionSaved() {
+  await Promise.all([load(), decksStore.load()])
+  ElMessage.success('学习句子已更新')
 }
 
 async function load() {
@@ -127,8 +140,13 @@ async function handleToggleMembership(deckId: string) {
         :depth="0"
         @toggle-membership="handleToggleMembership"
         @preview-deck="handlePreview"
+        @select-cards="handleSelectCards"
       />
     </div>
     <LibraryCardsDialog ref="cardsDialog" />
+    <CardPickerModal
+      ref="cardPicker"
+      @saved="handleSelectionSaved"
+    />
   </div>
 </template>

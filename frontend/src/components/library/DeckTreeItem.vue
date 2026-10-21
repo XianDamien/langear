@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, ChevronRight, Eye, Play, Plus, RefreshCw, Settings, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Eye, ListChecks, Play, Plus, RefreshCw, Settings, Trash2 } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import type { DeckView } from '@/stores/decks'
 
@@ -17,6 +17,7 @@ const emit = defineEmits<{
   editDeckSettings: [deckId: string]
   removeDeck: [deckId: string]
   previewDeck: [deckId: string]
+  selectCards: [deckId: string]
 }>()
 
 const expanded = ref((props.depth ?? 0) === 0)
@@ -124,6 +125,16 @@ function handleRowClick() {
         <template v-else>
           <button
             type="button"
+            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-500 transition hover:border-brand-accent hover:text-brand-accent disabled:opacity-40"
+            :disabled="selectionDisabled"
+            :title="`选择 ${deck.name} 的句子加入我的课程`"
+            :aria-label="`选择 ${deck.name} 的句子`"
+            @click.stop="emit('selectCards', deck.id)"
+          >
+            <ListChecks :size="16" />
+          </button>
+          <button
+            type="button"
             class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-500 transition hover:border-brand-accent hover:text-brand-accent"
             :title="`查看 ${deck.name} 的卡片`"
             :aria-label="`查看 ${deck.name} 的卡片`"
@@ -158,6 +169,7 @@ function handleRowClick() {
         @edit-deck-settings="emit('editDeckSettings', $event)"
         @remove-deck="emit('removeDeck', $event)"
         @preview-deck="emit('previewDeck', $event)"
+        @select-cards="emit('selectCards', $event)"
       />
     </template>
   </div>

@@ -65,6 +65,7 @@ function importResult(overrides: Partial<LibraryImportResult> = {}): LibraryImpo
     imported: true,
     deck_id: copiedId,
     deck_ids: [copiedId],
+    selection: null,
     created: { decks: 1, notes: 4, cards: 4 },
     existing: { decks: 0, notes: 0, cards: 0 },
     skipped_cards: [],
