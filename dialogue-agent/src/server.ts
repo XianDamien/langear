@@ -25,7 +25,7 @@ export function server(run: AgentRun, token: string) {
     const kind = request.url === '/scenario' ? 'scenario' : request.url === '/review' ? 'review' : request.url === '/translation' ? 'translation' : undefined
     if (request.method !== 'POST' || !kind) { response.writeHead(404).end('{}'); return }
     const abort = new AbortController()
-    const timer = setTimeout(() => abort.abort(), 90000)
+    const timer = setTimeout(() => abort.abort(), 30000)
     response.on('close', () => { if (!response.writableEnded) abort.abort() })
     try {
       const context = await body(request)

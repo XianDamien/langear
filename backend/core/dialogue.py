@@ -37,7 +37,7 @@ def planner(kind, context):
     try:
         response = httpx.post(config.dialogue_agent_url.rstrip('/') + '/' + kind,
             headers={'Authorization': 'Bearer ' + config.dialogue_agent_token.get_secret_value()},
-            json=context, timeout=100)
+            json=context, timeout=35)
         response.raise_for_status()
         return response.json()
     except (httpx.HTTPError, ValueError):

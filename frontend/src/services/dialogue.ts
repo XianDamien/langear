@@ -33,11 +33,11 @@ export const dialogueApi = {
   available: async () => (await reviewHttp.get<{ enabled: boolean }>('/dialogue/availability')).data.enabled,
   list: async () => (await reviewHttp.get<{ sessions: DialogueHistoryItem[] }>('/dialogue/sessions')).data.sessions,
   remove: async (id: string) => { await reviewHttp.delete(`/dialogue/sessions/${id}`) },
-  create: async (entry: DialogueEntry) => (await reviewHttp.post<DialogueSession>('/dialogue/sessions', entry, { timeout: 110000 })).data,
+  create: async (entry: DialogueEntry) => (await reviewHttp.post<DialogueSession>('/dialogue/sessions', entry, { timeout: 40000 })).data,
   get: async (id: string) => (await reviewHttp.get<DialogueSession>(`/dialogue/sessions/${id}`)).data,
   finish: async (id: string) => (await reviewHttp.post<DialogueSession>(`/dialogue/sessions/${id}/finish`)).data,
-  review: async (id: string) => (await reviewHttp.post<DialogueSession>(`/dialogue/sessions/${id}/review`, {}, { timeout: 110000 })).data,
-  translate: async (id: string, turn: string) => (await reviewHttp.post<{ chinese: string }>(`/dialogue/sessions/${id}/turns/${turn}/translation`, {}, { timeout: 65000 })).data.chinese,
+  review: async (id: string) => (await reviewHttp.post<DialogueSession>(`/dialogue/sessions/${id}/review`, {}, { timeout: 40000 })).data,
+  translate: async (id: string, turn: string) => (await reviewHttp.post<{ chinese: string }>(`/dialogue/sessions/${id}/turns/${turn}/translation`, {}, { timeout: 40000 })).data.chinese,
 }
 export function dialogueSocketUrl(id: string): string {
   const url = new URL(`${reviewHttp.defaults.baseURL}/dialogue/sessions/${id}/ws`, window.location.origin)
