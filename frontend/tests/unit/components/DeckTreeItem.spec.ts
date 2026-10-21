@@ -18,7 +18,7 @@ const lesson: DeckView = {
 }
 
 describe('core deck tree entry points', () => {
-  it('keeps library leaf decks on the page and allows joining or selecting cards', async () => {
+  it('keeps library leaf decks read-only and copies the whole course on join', async () => {
     const wrapper = mount(DeckTreeItem, {
       props: { deck: lesson, mode: 'library' },
     })
@@ -26,21 +26,43 @@ describe('core deck tree entry points', () => {
     await wrapper.get('.truncate').trigger('click')
     expect(wrapper.emitted('playDeck')).toBeUndefined()
     expect(wrapper.find('button[aria-label="Lesson one 设置"]').exists()).toBe(false)
+    // Library browsing never exposes card selection or mutation entry points.
+    expect(wrapper.find('button[aria-label="Lesson one 选择卡片"]').exists()).toBe(false)
+    expect(wrapper.emitted('toggleMembership')).toBeUndefined()
+    await wrapper.get('button[aria-label="查看 Lesson one 的卡片"]').trigger('click')
+    expect(wrapper.emitted('previewDeck')).toEqual([[lesson.id]])
     await wrapper.findAll('button').find(button => button.text() === '加入')!.trigger('click')
     expect(wrapper.emitted('toggleMembership')).toEqual([[lesson.id]])
-    await wrapper.get('button[aria-label="Lesson one 选择卡片"]').trigger('click')
-    expect(wrapper.emitted('selectCards')).toEqual([[lesson.id]])
   })
 
-  it('starts review and opens settings from my courses', async () => {
+  it('offers an idempotent refresh once the copy is already in my courses', async () => {
     const wrapper = mount(DeckTreeItem, {
-      props: { deck: { ...lesson, inMyCourses: true }, mode: 'my-courses' },
+      props: { deck: { ...lesson, inMyCourses: true }, mode: 'library' },
+    })
+    const joined = wrapper.findAll('button').find(button => button.text() === '已加入')!
+    expect(joined.attributes('title')).toContain('重新同步')
+    await joined.trigger('click')
+    expect(wrapper.emitted('toggleMembership')).toEqual([[lesson.id]])
+  })
+
+  it('starts review, opens settings and removes a Library copy from my courses', async () => {
+    const wrapper = mount(DeckTreeItem, {
+      props: { deck: { ...lesson, inMyCourses: true, source: 'library' }, mode: 'my-courses' },
     })
     await wrapper.findAll('button').find(button => button.text() === '开始')!.trigger('click')
     expect(wrapper.emitted('playDeck')).toEqual([[lesson.id]])
     await wrapper.get('button[aria-label="Lesson one 设置"]').trigger('click')
     expect(wrapper.emitted('editDeckSettings')).toEqual([[lesson.id]])
     expect(wrapper.emitted('playDeck')).toHaveLength(1)
+    await wrapper.get('button[aria-label="删除 Lesson one 的个人副本"]').trigger('click')
+    expect(wrapper.emitted('removeDeck')).toEqual([[lesson.id]])
+  })
+
+  it('hides the copy delete action for learner-authored courses', () => {
+    const wrapper = mount(DeckTreeItem, {
+      props: { deck: { ...lesson, inMyCourses: true }, mode: 'my-courses' },
+    })
+    expect(wrapper.find('button[aria-label="删除 Lesson one 的个人副本"]').exists()).toBe(false)
   })
 
   it('expands library groups without opening practice from nested leaves', async () => {
@@ -67,5 +89,19 @@ describe('core deck tree entry points', () => {
     expect(joined.attributes('disabled')).toBeDefined()
     await joined.trigger('click')
     expect(wrapper.emitted('toggleMembership')).toBeUndefined()
+  })
+
+  it('disables deleting a copy while a removal is pending', async () => {
+    const wrapper = mount(DeckTreeItem, {
+      props: {
+        deck: { ...lesson, inMyCourses: true, source: 'library' },
+        mode: 'my-courses',
+        selectionDisabled: true,
+      },
+    })
+    const remove = wrapper.get('button[aria-label="删除 Lesson one 的个人副本"]')
+    expect(remove.attributes('disabled')).toBeDefined()
+    await remove.trigger('click')
+    expect(wrapper.emitted('removeDeck')).toBeUndefined()
   })
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, ChevronRight, Check, Play, Plus, Settings, ListChecks } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Eye, Play, Plus, RefreshCw, Settings, Trash2 } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import type { DeckView } from '@/stores/decks'
 
@@ -15,11 +15,19 @@ const emit = defineEmits<{
   toggleMembership: [deckId: string]
   playDeck: [deckId: string]
   editDeckSettings: [deckId: string]
-  selectCards: [deckId: string]
+  removeDeck: [deckId: string]
+  previewDeck: [deckId: string]
 }>()
 
 const expanded = ref((props.depth ?? 0) === 0)
 const hasChildren = computed(() => props.deck.children.length > 0)
+const membershipLabel = computed(() => (props.deck.inMyCourses ? '已加入' : '加入'))
+const membershipIcon = computed(() => (props.deck.inMyCourses ? RefreshCw : Plus))
+const membershipTitle = computed(() =>
+  props.deck.inMyCourses
+    ? `重新同步 ${props.deck.name} 的个人副本，保留已学进度`
+    : `把 ${props.deck.name} 及其子课程复制到我的课程`,
+)
 
 function toggle() {
   if (hasChildren.value) expanded.value = !expanded.value
@@ -73,7 +81,6 @@ function handleRowClick() {
           >
             {{ deck.name }}
           </button>
-
           <div
             class="min-h-4 text-slate-500"
             :class="hasChildren ? 'text-xs leading-4' : 'text-sm leading-5'"
@@ -94,6 +101,17 @@ function handleRowClick() {
           >
             <Settings :size="16" />
           </button>
+          <button
+            v-if="deck.source === 'library'"
+            type="button"
+            class="flex items-center justify-center rounded-md border border-red-200 p-1.5 text-red-500 transition hover:bg-red-50 disabled:opacity-40"
+            :disabled="selectionDisabled"
+            :title="`删除 ${deck.name} 的个人副本`"
+            :aria-label="`删除 ${deck.name} 的个人副本`"
+            @click.stop="emit('removeDeck', deck.id)"
+          >
+            <Trash2 :size="16" />
+          </button>
           <RetroButton
             variant="primary"
             size="sm"
@@ -106,22 +124,22 @@ function handleRowClick() {
         <template v-else>
           <button
             type="button"
-            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-400 transition hover:border-brand-accent hover:text-brand-accent disabled:opacity-40"
-            :disabled="selectionDisabled"
-            :title="`${deck.name} 选择卡片`"
-            :aria-label="`${deck.name} 选择卡片`"
-            @click.stop="emit('selectCards', deck.id)"
+            class="flex items-center justify-center rounded-md border border-slate-200 p-1.5 text-slate-500 transition hover:border-brand-accent hover:text-brand-accent"
+            :title="`查看 ${deck.name} 的卡片`"
+            :aria-label="`查看 ${deck.name} 的卡片`"
+            @click.stop="emit('previewDeck', deck.id)"
           >
-            <ListChecks :size="16" />
+            <Eye :size="16" />
           </button>
           <RetroButton
             :variant="deck.inMyCourses ? 'primary' : 'secondary'"
             :disabled="selectionDisabled"
             size="sm"
-            :icon="deck.inMyCourses ? Check : Plus"
+            :icon="membershipIcon"
+            :title="membershipTitle"
             @click.stop="emit('toggleMembership', deck.id)"
           >
-            {{ deck.inMyCourses ? '已加入' : '加入' }}
+            {{ membershipLabel }}
           </RetroButton>
         </template>
       </div>
@@ -138,7 +156,8 @@ function handleRowClick() {
         @toggle-membership="emit('toggleMembership', $event)"
         @play-deck="emit('playDeck', $event)"
         @edit-deck-settings="emit('editDeckSettings', $event)"
-        @select-cards="emit('selectCards', $event)"
+        @remove-deck="emit('removeDeck', $event)"
+        @preview-deck="emit('previewDeck', $event)"
       />
     </template>
   </div>

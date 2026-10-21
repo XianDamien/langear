@@ -3,12 +3,12 @@ import { coreHttp, extractApiError } from './coreApi'
 export interface DeckStats {
   total_cards: number
   note_count: number
-  selected_cards: number
-  new_cards: number
-  learning_cards: number
-  review_cards: number
-  completed_cards: number
-  due_cards: number
+  selected_cards?: number
+  new_cards?: number
+  learning_cards?: number
+  review_cards?: number
+  completed_cards?: number
+  due_cards?: number
 }
 
 export interface ResourceDeck {
@@ -137,6 +137,9 @@ const RESOURCE_MESSAGES: Record<string, string> = {
   CSRF_INVALID: '登录状态已更新，请刷新页面后重试。',
   DECK_SCOPE_INVALID: '默认牌组范围只能包含你拥有的牌组。',
   DECK_HIERARCHY_CYCLE: '牌组不能成为自己的上级。',
+  LIBRARY_IMPORT_CONFLICT: '我的课程里已有同名或同来源冲突的牌组，请先改名或删除后重试。',
+  LIBRARY_READ_ONLY: '共享题库是只读的，请先加入我的课程再修改。',
+  DELETION_IMPACT_CHANGED: '课程内容已变化，请重新确认删除范围。',
 }
 
 export function resourceError(error: unknown): string {
@@ -184,6 +187,72 @@ export async function allResources<T>(
 export async function fetchDeckTree() {
   const { data } = await coreHttp.get<DeckTree>('/decks/tree')
   return data
+}
+
+export async function fetchLibraryDeckTree() {
+  const { data } = await coreHttp.get<DeckTree>('/library/decks/tree')
+  return data
+}
+
+export interface LibraryImportResult {
+  imported: boolean
+  deck_id: string
+  deck_ids: string[]
+  created: { decks: number; notes: number; cards: number }
+  existing: { decks: number; notes: number; cards: number }
+  skipped_cards: {
+    card_id: string
+    card_template_key: string
+    reason: string
+    deck_id?: string
+  }[]
+  warnings: { note_guid: string; code: string }[]
+}
+
+export function importLibraryDeck(deckId: string) {
+  return coreHttp.post<LibraryImportResult>(`/library/decks/${deckId}/import`)
+}
+
+export interface DeletePreview {
+  impact: {
+    decks_deleted: number
+    notes_deleted: number
+    cards_deleted: number
+    attempts_deleted: number
+    media_references_deleted: number
+    cards_returned: number
+  }
+  confirmation_token: string
+}
+
+export function fetchDeletePreview(id: string) {
+  return coreHttp.post<DeletePreview>(`/decks/${id}/delete/preview`)
+}
+
+export function deleteDeck(id: string, confirmationToken: string) {
+  return coreHttp.post<{ deleted: boolean; impact: DeletePreview['impact'] }>(
+    `/decks/${id}/delete`,
+    { confirmation_token: confirmationToken },
+  )
+}
+
+export function fetchLibraryCards(
+  deckId: string,
+  params: { includeDescendants?: boolean; limit?: number; offset?: number } = {},
+) {
+  return coreHttp.get<{
+    cards: ResourceCard[]
+    total: number
+    limit: number
+    offset: number
+    scope: 'deck' | 'subtree'
+  }>(`/library/decks/${deckId}/cards`, {
+    params: {
+      ...(params.includeDescendants ? { include_descendants: true } : {}),
+      ...(params.limit ? { limit: params.limit } : {}),
+      ...(params.offset ? { offset: params.offset } : {}),
+    },
+  })
 }
 
 export function fetchDeck(deckId: string) {

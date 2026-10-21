@@ -18,6 +18,7 @@ export interface DeckView {
   origin: 'core'
   type: DeckNodeType
   deckGuid?: string | null
+  source?: string
   inMyCourses: boolean
   sentenceCount: number
   totalCards: number
@@ -33,20 +34,21 @@ function viewType(children: DeckTreeNode[]): DeckNodeType {
   return 'source'
 }
 
-function toView(node: DeckTreeNode): DeckView {
+export function toView(node: DeckTreeNode): DeckView {
   return {
     id: node.id,
     name: node.name,
     origin: 'core',
     type: viewType(node.children),
     deckGuid: node.deck_guid,
+    source: node.source_metadata?.source as string | undefined,
     inMyCourses: node.in_my_courses,
     sentenceCount: node.stats.note_count,
     totalCards: node.stats.total_cards,
-    newCards: node.stats.new_cards,
-    reviewCards: node.stats.review_cards + node.stats.learning_cards,
-    completedCards: node.stats.completed_cards,
-    dueCards: node.stats.due_cards,
+    newCards: node.stats.new_cards ?? 0,
+    reviewCards: (node.stats.review_cards ?? 0) + (node.stats.learning_cards ?? 0),
+    completedCards: node.stats.completed_cards ?? 0,
+    dueCards: node.stats.due_cards ?? 0,
     children: node.children.map(toView),
   }
 }
@@ -58,13 +60,14 @@ function toFlatView(row: DeckTreeRow): DeckView {
     origin: 'core',
     type: 'lesson',
     deckGuid: row.deck_guid,
+    source: row.source_metadata?.source as string | undefined,
     inMyCourses: row.in_my_courses,
     sentenceCount: row.stats.note_count,
     totalCards: row.stats.total_cards,
-    newCards: row.stats.new_cards,
-    reviewCards: row.stats.review_cards + row.stats.learning_cards,
-    completedCards: row.stats.completed_cards,
-    dueCards: row.stats.due_cards,
+    newCards: row.stats.new_cards ?? 0,
+    reviewCards: (row.stats.review_cards ?? 0) + (row.stats.learning_cards ?? 0),
+    completedCards: row.stats.completed_cards ?? 0,
+    dueCards: row.stats.due_cards ?? 0,
     children: [],
   }
 }

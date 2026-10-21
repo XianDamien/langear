@@ -2,17 +2,24 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import { ElMessage } from 'element-plus'
 import DeckTreeItem from '@/components/library/DeckTreeItem.vue'
+import LibraryContentEditor from '@/components/library/LibraryContentEditor.vue'
 import RetroButton from '@/components/ui/RetroButton.vue'
 import { useDecksStore } from '@/stores/decks'
 import type { DeckView } from '@/stores/decks'
-import { resourceError } from '@/services/content'
+import { deleteDeck, fetchDeletePreview, resourceError, type DeletePreview } from '@/services/content'
+import { extractApiError } from '@/services/coreApi'
 
 const route = useRoute()
 const router = useRouter()
 const decksStore = useDecksStore()
 const { myCoursesTree, loading } = storeToRefs(decksStore)
 const error = ref('')
+const editor = ref<InstanceType<typeof LibraryContentEditor>>()
+const removal = ref<{ deckId: string; deckName: string; preview: DeletePreview } | null>(null)
+const removing = ref(false)
+const removalError = ref('')
 
 const notice = computed(() => {
   switch (route.query.notice) {
@@ -65,13 +72,85 @@ function handlePlayDeck(deckId: string) {
 function handleEditDeckSettings(deckId: string) {
   void router.push({ name: 'Settings', query: { deck_id: deckId } })
 }
+
+async function handleRemoveDeck(deckId: string) {
+  removalError.value = ''
+  error.value = ''
+  try {
+    const { data } = await fetchDeletePreview(deckId)
+    const deck = findDeck(myCoursesTree.value, deckId)
+    removal.value = { deckId, deckName: deck?.name ?? '这门课程', preview: data }
+  } catch (cause) {
+    error.value = resourceError(cause)
+  }
+}
+
+function cancelRemoval() {
+  removal.value = null
+  removalError.value = ''
+}
+
+async function confirmRemoval() {
+  const pending = removal.value
+  if (!pending || removing.value) return
+  removing.value = true
+  removalError.value = ''
+  try {
+    await deleteDeck(pending.deckId, pending.preview.confirmation_token)
+    removal.value = null
+    await decksStore.load()
+    ElMessage.success('个人副本已删除，共享题库内容未受影响')
+  } catch (cause) {
+    // A changed impact invalidates the signed token; fetch a fresh preview so
+    // the learner sees the new scope instead of retrying a stale confirmation.
+    if (extractApiError(cause).code === 'DELETION_IMPACT_CHANGED') {
+      removalError.value = '课程内容已变化，已刷新影响范围，请重新确认。'
+      try {
+        const { data } = await fetchDeletePreview(pending.deckId)
+        removal.value = { deckId: pending.deckId, deckName: pending.deckName, preview: data }
+      } catch (refreshCause) {
+        error.value = resourceError(refreshCause)
+        removal.value = null
+      }
+    } else {
+      removalError.value = resourceError(cause)
+    }
+  } finally {
+    removing.value = false
+  }
+}
+
+async function handleContentChanged() {
+  await decksStore.load()
+}
 </script>
 
 <template>
   <div class="animate-fadeIn">
-    <h2 class="mb-6 text-3xl font-bold uppercase text-brand-accent">
-      我的课程
-    </h2>
+    <header class="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <h2 class="text-3xl font-bold uppercase text-brand-accent">
+        我的课程
+      </h2>
+      <div class="flex gap-2">
+        <RetroButton
+          variant="secondary"
+          size="sm"
+          @click="editor?.openDeck()"
+        >
+          添加牌组
+        </RetroButton>
+        <RetroButton
+          size="sm"
+          @click="editor?.openCard()"
+        >
+          添加卡片
+        </RetroButton>
+      </div>
+    </header>
+    <LibraryContentEditor
+      ref="editor"
+      @created="handleContentChanged"
+    />
 
     <p
       v-if="notice"
@@ -127,9 +206,60 @@ function handleEditDeckSettings(deckId: string) {
         :deck="deck"
         mode="my-courses"
         :depth="0"
+        :selection-disabled="removing"
         @play-deck="handlePlayDeck"
         @edit-deck-settings="handleEditDeckSettings"
+        @remove-deck="handleRemoveDeck"
       />
+    </div>
+
+    <div
+      v-if="removal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="remove-copy-title"
+    >
+      <div class="w-full max-w-lg border-2 border-slate-900 bg-white p-6 shadow-mech">
+        <h3
+          id="remove-copy-title"
+          class="mb-3 text-lg font-bold text-slate-900"
+        >
+          删除「{{ removal.deckName }}」的个人副本？
+        </h3>
+        <p class="mb-3 text-sm leading-6 text-slate-600">
+          将删除 {{ removal.preview.impact.decks_deleted }} 个牌组、{{
+            removal.preview.impact.notes_deleted
+          }} 条内容、{{ removal.preview.impact.cards_deleted }} 张卡片和 {{
+            removal.preview.impact.attempts_deleted
+          }} 条复习记录。共享题库不受影响，之后仍可重新加入。
+        </p>
+        <p
+          v-if="removalError"
+          role="alert"
+          class="mb-3 text-sm text-amber-700"
+        >
+          {{ removalError }}
+        </p>
+        <div class="flex justify-end gap-3">
+          <RetroButton
+            variant="secondary"
+            size="sm"
+            :disabled="removing"
+            @click="cancelRemoval"
+          >
+            取消
+          </RetroButton>
+          <RetroButton
+            variant="primary"
+            size="sm"
+            :disabled="removing"
+            @click="confirmRemoval"
+          >
+            {{ removing ? '删除中…' : '删除副本' }}
+          </RetroButton>
+        </div>
+      </div>
     </div>
   </div>
 </template>
