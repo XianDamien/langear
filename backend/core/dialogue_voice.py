@@ -4,6 +4,7 @@ import base64
 import binascii
 import json
 import logging
+import re
 import time
 from datetime import timedelta
 from urllib.parse import urlencode
@@ -230,10 +231,18 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 else:
                     turn_deadline = None
                     await browser.send_json({'type': 'ready', 'user_turns': user_turns})
+            elif kind in ('conversation.item.input_audio_transcription.delta',
+                          'conversation.item.input_audio_transcription.text'):
+                if not (recording or pending_input):
+                    continue
+                # Committed prefix plus the in-flight suffix form the live transcript.
+                partial = (str(event.get('text') or '') + str(event.get('stash') or '')).strip()
+                if partial:
+                    await browser.send_json({'type': 'transcript_partial', 'text': partial})
             elif kind == 'conversation.item.input_audio_transcription.completed':
                 if not pending_input:
                     continue
-                transcript = str(event.get('transcript') or '').strip()
+                transcript = re.sub(r'\s*。\s*$', '', str(event.get('transcript') or '')).strip()
                 pending_input, turn_deadline = False, None
                 if not transcript:
                     await browser.send_json({'type': 'ready', 'user_turns': user_turns})

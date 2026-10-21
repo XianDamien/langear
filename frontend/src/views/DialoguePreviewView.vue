@@ -34,14 +34,14 @@ function reopen() {
       class="dialogue-preview"
       :entry="previewEntry"
       :confirm-on-close="false"
-      close-label="Close"
+      close-label="关闭"
       :style="narrow ? { width: '390px', maxWidth: '94vw' } : undefined"
       @close="open = false"
     >
       <template #preview-controls>
         <div class="border-b border-slate-200 bg-brand-dark px-4 py-3">
           <div class="mb-2 flex items-center justify-between gap-3">
-            <span class="text-[11px] font-semibold text-slate-500">UI preview · Scripted replies · No live audio</span>
+            <span class="text-[11px] font-semibold text-slate-500">界面预览 · 脚本回复 · 无实时音频</span>
             <div class="flex gap-1">
               <button
                 class="rounded-md border border-slate-200 bg-brand-panel p-1.5 text-slate-600 hover:border-brand-accent hover:text-brand-accent"
@@ -67,7 +67,7 @@ function reopen() {
             </div>
           </div>
           <label class="flex items-center gap-2 text-xs text-slate-600">
-            Preview
+            预览
             <select
               :value="preview.page.value"
               class="min-w-0 flex-1 rounded-md border border-slate-200 bg-brand-panel px-2 py-1.5 text-xs outline-brand-accent outline-offset-2"
@@ -87,7 +87,7 @@ function reopen() {
           id="dialogue-title"
           class="sr-only"
         >
-          Conversation
+          情景对话
         </h2>
       </template>
       <template #content>

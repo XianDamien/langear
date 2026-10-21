@@ -27,7 +27,10 @@ async function toggle() {
 
 <template>
   <div>
-    <p class="whitespace-pre-wrap text-sm leading-7 text-slate-800">
+    <p
+      class="whitespace-pre-wrap text-sm leading-7 text-slate-800"
+      lang="en"
+    >
       {{ english }}
     </p>
     <button

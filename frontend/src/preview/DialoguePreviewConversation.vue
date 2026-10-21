@@ -17,11 +17,10 @@ watch(() => props.preview.messages.value.length, async () => {
 <template>
   <div
     class="space-y-5"
-    lang="en"
   >
     <ol
       class="space-y-5"
-      aria-label="Conversation"
+      aria-label="对话记录"
     >
       <li
         v-for="message in preview.messages.value"
@@ -38,7 +37,7 @@ watch(() => props.preview.messages.value.length, async () => {
         </span>
         <div class="min-w-0 flex-1">
           <p class="mb-1.5 text-xs text-slate-400">
-            {{ message.speaker === 'user' ? 'You' : message.speaker === 'staff' ? 'Theatre staff' : 'Your teacher' }}
+            {{ message.speaker === 'user' ? '你' : message.speaker === 'staff' ? '剧场工作人员' : '老师' }}
           </p>
           <div
             class="rounded-md border p-3.5"
@@ -59,7 +58,7 @@ watch(() => props.preview.messages.value.length, async () => {
               class="mt-4 space-y-3 border-t border-slate-200 pt-3"
             >
               <p class="text-xs font-semibold text-slate-500">
-                Try these expressions
+                试试这些表达
               </p>
               <EnglishMessage
                 v-for="expression in message.expressions"
@@ -82,7 +81,7 @@ watch(() => props.preview.messages.value.length, async () => {
         class="rounded-md"
         @click="preview.introduceTask"
       >
-        Try a real-life task
+        试试真实场景任务
       </RetroButton>
     </div>
     <div
@@ -94,10 +93,10 @@ watch(() => props.preview.messages.value.length, async () => {
         class="rounded-md"
         @click="preview.startRoleplay"
       >
-        I’m ready. Let’s try!
+        我准备好了，开始吧！
       </RetroButton>
       <p class="text-xs text-slate-400">
-        Your teacher will now play the staff member.
+        接下来老师会扮演工作人员。
       </p>
     </div>
     <form
@@ -106,13 +105,13 @@ watch(() => props.preview.messages.value.length, async () => {
       @submit.prevent="preview.submit"
     >
       <div class="flex items-center justify-between text-xs text-slate-500">
-        <label for="preview-answer">{{ preview.page.value === 'recap' ? 'Your short recap' : 'Your reply' }}</label>
+        <label for="preview-answer">{{ preview.page.value === 'recap' ? '你的简短复述' : '你的回复' }}</label>
         <button
           type="button"
           class="text-brand-accent hover:underline"
           @click="preview.useSample"
         >
-          Use a sample
+          使用示例
         </button>
       </div>
       <textarea
@@ -120,7 +119,7 @@ watch(() => props.preview.messages.value.length, async () => {
         :value="preview.input.value"
         rows="2"
         class="w-full resize-none rounded-md border border-slate-200 bg-brand-dark px-3 py-2 text-sm leading-6 outline-brand-accent placeholder:text-slate-400"
-        placeholder="Type a short answer in English…"
+        placeholder="用英语输入简短回答…"
         :disabled="preview.controller.status.value === 'recording'"
         @input="preview.setInput(($event.target as HTMLTextAreaElement).value)"
       />
@@ -137,7 +136,7 @@ watch(() => props.preview.messages.value.length, async () => {
             v-else
             :size="14"
           />
-          {{ preview.controller.status.value === 'recording' ? 'Send sample voice' : 'Preview voice' }}
+          {{ preview.controller.status.value === 'recording' ? '发送示例语音' : '预览语音' }}
         </button>
         <RetroButton
           type="submit"
@@ -145,7 +144,7 @@ watch(() => props.preview.messages.value.length, async () => {
           class="rounded-md"
           :disabled="!preview.input.value.trim() || preview.controller.status.value === 'recording'"
         >
-          <Send :size="14" /> Send
+          <Send :size="14" /> 发送
         </RetroButton>
       </div>
       <p
@@ -153,7 +152,7 @@ watch(() => props.preview.messages.value.length, async () => {
         role="status"
         class="text-xs text-brand-accent"
       >
-        Voice preview only. No microphone is recording.
+        仅语音预览，未使用麦克风录音。
       </p>
       <button
         v-if="preview.page.value === 'roleplay'"
@@ -161,7 +160,7 @@ watch(() => props.preview.messages.value.length, async () => {
         class="text-xs text-slate-400 underline"
         @click="preview.finish"
       >
-        Finish here
+        在这里结束
       </button>
     </form>
     <div
@@ -179,7 +178,7 @@ watch(() => props.preview.messages.value.length, async () => {
         class="rounded-md"
         @click="preview.controller.connect"
       >
-        Reconnect
+        重新连接
       </RetroButton>
     </div>
     <div
@@ -192,14 +191,14 @@ watch(() => props.preview.messages.value.length, async () => {
         class="rounded-md"
         @click="preview.reset"
       >
-        Try again
+        重试
       </RetroButton>
       <RetroButton
         size="sm"
         class="rounded-md"
         @click="emit('close')"
       >
-        Done
+        完成
       </RetroButton>
     </div>
   </div>

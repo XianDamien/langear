@@ -4,12 +4,12 @@ import type { DialogueEntry, DialogueSession } from '@/services/dialogue'
 
 export type PreviewPage = 'recap' | 'refine' | 'task' | 'roleplay' | 'complete' | 'failed'
 export const previewStates: { value: PreviewPage; label: string }[] = [
-  { value: 'recap', label: '1 · Quick recap' },
-  { value: 'refine', label: '2 · A clearer answer' },
-  { value: 'task', label: '3 · Your task' },
-  { value: 'roleplay', label: '4 · Roleplay' },
-  { value: 'complete', label: '5 · Wrap-up' },
-  { value: 'failed', label: 'Connection issue' },
+  { value: 'recap', label: '1 · 快速复述' },
+  { value: 'refine', label: '2 · 更清楚的回答' },
+  { value: 'task', label: '3 · 你的任务' },
+  { value: 'roleplay', label: '4 · 角色扮演' },
+  { value: 'complete', label: '5 · 总结' },
+  { value: 'failed', label: '连接问题' },
 ]
 export interface PreviewMessage {
   id: number
@@ -43,6 +43,7 @@ export function createDialoguePreview() {
   const error = ref('')
   const notice = ref('')
   const partial = ref('')
+  const userPartial = ref('')
   const remaining = ref(0)
   const canReply = computed(() => ['recap', 'roleplay'].includes(page.value))
   const sample = computed(() => page.value === 'recap' ? sampleSummary : roleplayTurns.value ? sampleSeats : sampleRequest)
@@ -63,13 +64,13 @@ export function createDialoguePreview() {
       ? 'You mentioned the noise. Add how it affected him: he couldn’t hear the actors.'
       : 'Let’s connect the setting, the problem, and his reaction. Here’s one way to say it.',
     mentionedNoise ? '你提到了噪声。再补充它带来的影响：他听不清演员的台词。' : '我们把场景、问题和他的反应连起来。可以这样说。')
-    add('coach', 'He went to the theatre, but the people behind him were talking loudly. He couldn’t hear the actors, so he asked them to be quiet.', '他去剧院看戏，但后面的人一直大声说话。他听不清演员的台词，于是请他们安静一些。', { label: 'A clearer version' })
+    add('coach', 'He went to the theatre, but the people behind him were talking loudly. He couldn’t hear the actors, so he asked them to be quiet.', '他去剧院看戏，但后面的人一直大声说话。他听不清演员的台词，于是请他们安静一些。', { label: '更清楚的版本' })
     page.value = 'refine'
   }
   function introduceTask() {
     page.value = 'task'; status.value = 'preview'
     add('coach', 'Now it’s your turn. You’re at the theatre and can’t hear the play. I’ll be a staff member. Explain the problem and ask for help. If it’s still noisy, ask to change seats.', '现在换你了。你在剧院里听不清演出。我来扮演工作人员。说明问题并请求帮助；如果仍然太吵，就试着请求换座。', {
-      label: 'Your mission',
+      label: '本次任务',
       expressions: [
         { english: 'I can’t hear the actors.', chinese: '我听不清演员的台词。' },
         { english: 'Could you… please?', chinese: '能请你……吗？' },
@@ -123,12 +124,12 @@ export function createDialoguePreview() {
       input.value = sampleSeats; submit()
     } else if (target === 'failed') {
       page.value = 'failed'; status.value = 'failed'
-      error.value = 'Connection lost. Your conversation is still here.'
+      error.value = '连接已断开，你的对话记录还在。'
     }
   }
   async function connect() { error.value = ''; page.value = 'roleplay'; status.value = 'ready'; remaining.value = session.value.time_limit_seconds }
   const controller: ReturnType<typeof useDialogue> = {
-    session, status, error, notice, partial, remaining, prepare: async () => {}, connect,
+    session, status, error, notice, partial, userPartial, remaining, prepare: async () => {}, connect,
     record: async () => { record() }, sendRecording, sendText: text => { input.value = text; submit() },
     end: finish, finishAndReview: async () => { finish() },
   }

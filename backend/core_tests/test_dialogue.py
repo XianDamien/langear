@@ -255,6 +255,90 @@ def test_interrupted_agent_output_is_not_saved_and_can_reconnect(client, account
     assert client.get(path).json()['status'] == 'finished'
 
 
+def test_reconnect_replays_assistant_turns_as_output_text(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    provider = FakeOmni()
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        speech(ws)
+        assert receive(ws, 'turn')['turn']['role'] == 'user'
+        assert receive(ws, 'turn')['turn']['role'] == 'assistant'
+        receive(ws, 'ready')
+    assert client.get(path).json()['status'] == 'interrupted'
+    provider.sent.clear()
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        replayed = [e['item'] for e in provider.sent if e['type'] == 'conversation.item.create']
+        assistant = [item for item in replayed if item['role'] == 'assistant']
+        assert assistant and assistant[0]['content'][0]['type'] == 'output_text'
+        user = [item for item in replayed if item['role'] == 'user']
+        assert user and user[0]['content'][0]['type'] == 'input_text'
+        ws.send_json({'type': 'end'})
+        assert receive(ws, 'ended')['reason'] == 'user_ended'
+
+
+class LiveTranscriptOmni(FakeOmni):
+    async def send(self, raw):
+        import json
+        value = json.loads(raw)
+        if value['type'] == 'input_audio_buffer.append':
+            self.sent.append(value)
+            self.events.put_nowait({'type': 'conversation.item.input_audio_transcription.delta',
+                'text': 'I would like', 'stash': ' an apple'})
+            return
+        await super().send(raw)
+
+
+def test_live_transcript_is_forwarded_while_recording(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    provider = LiveTranscriptOmni()
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        ws.send_json({'type': 'audio_begin'})
+        ws.send_json({'type': 'audio', 'data': base64.b64encode(b'\x00\x01' * 1600).decode()})
+        assert receive(ws, 'transcript_partial')['text'] == 'I would like an apple'
+        ws.send_json({'type': 'commit'})
+        assert receive(ws, 'turn')['turn']['role'] == 'user'
+        assert receive(ws, 'turn')['turn']['role'] == 'assistant'
+        receive(ws, 'ready')
+        ws.send_json({'type': 'end'})
+        assert receive(ws, 'ended')['reason'] == 'user_ended'
+
+
+class TooLongOmni(FakeOmni):
+    async def send(self, raw):
+        import json
+        value = json.loads(raw)
+        if value['type'] == 'input_audio_buffer.commit':
+            self.sent.append(value)
+            self.events.put_nowait({'type': 'error', 'error': {'type': 'invalid_request_error',
+                'message': 'Input audio buffer exceeded maximum duration (30s). Please commit or clear the buffer.'}})
+            return
+        await super().send(raw)
+
+
+def test_oversized_audio_is_reported_without_closing_the_dialogue(client, account, dialogue, monkeypatch):
+    from core import dialogue_voice
+    provider = TooLongOmni()
+    monkeypatch.setattr(dialogue_voice, 'provider_connection', lambda: provider)
+    session = create(client, dialogue)
+    path = '/api/v1/dialogue/sessions/' + session['id']
+    with client.websocket_connect('wss://testserver' + path + '/ws') as ws:
+        receive(ws, 'ready')
+        speech(ws)
+        assert '30 秒' in receive(ws, 'notice')['text']
+        assert any(e['type'] == 'input_audio_buffer.clear' for e in provider.sent)
+        ws.send_json({'type': 'end'})
+        assert receive(ws, 'ended')['reason'] == 'user_ended'
+    assert client.get(path).json()['status'] == 'finished'
+
+
 @pytest.mark.parametrize('phase', ['responding', 'transcribing'])
 def test_finish_waits_for_inflight_work_then_requests_distinct_closing(client, account, dialogue, monkeypatch, phase):
     import json

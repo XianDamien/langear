@@ -8,10 +8,10 @@ import RetroButton from '@/components/ui/RetroButton.vue'
 import type { DialogueSource } from '@/services/dialogue'
 import type { DialogueEntry } from '@/services/dialogue'
 
-const props = withDefaults(defineProps<{ entry: DialogueEntry; confirmOnClose?: boolean; closeLabel?: string }>(), { confirmOnClose: true, closeLabel: 'Close' })
+const props = withDefaults(defineProps<{ entry: DialogueEntry; confirmOnClose?: boolean; closeLabel?: string }>(), { confirmOnClose: true, closeLabel: '关闭' })
 const emit = defineEmits<{ close: [] }>()
 const createController = inject(dialogueControllerKey, useDialogue)
-const { session, status, error, notice, partial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview } = createController(props.entry)
+const { session, status, error, notice, partial, userPartial, remaining, prepare, connect, record, sendRecording, sendText, end, finishAndReview } = createController(props.entry)
 const dialog = ref<HTMLDialogElement>()
 const evidence = ref<DialogueSource>()
 const reply = ref('')
@@ -28,7 +28,7 @@ function submitText() {
 watch(session, () => { evidence.value = undefined })
 const busy = computed(() => ['preparing', 'connecting', 'thinking', 'reviewing'].includes(status.value))
 const talking = computed(() => ['ready', 'recording', 'speaking', 'thinking', 'connecting'].includes(status.value))
-const labels: Record<string, string> = { preparing: 'Getting ready…', connecting: 'Connecting…', speaking: 'Your teacher is speaking…', ready: 'Your turn', recording: 'Recording. Tap again to send.', thinking: 'Thinking…', reviewing: 'Finishing up…' }
+const labels: Record<string, string> = { preparing: '正在准备…', connecting: '正在连接…', speaking: '老师正在说话…', ready: '轮到你了', recording: '正在录音，再次点击发送。', thinking: '正在思考…', reviewing: '正在整理…' }
 const clock = computed(() => {
   const total = Math.max(0, remaining.value)
   return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0')
@@ -58,7 +58,7 @@ onUnmounted(() => previousFocus?.focus())
             id="dialogue-title"
             class="sr-only"
           >
-            Conversation
+            情景对话
           </h2>
         </slot>
       </div>
@@ -108,7 +108,7 @@ onUnmounted(() => previousFocus?.focus())
               :class="turn.role === 'user' ? 'ml-8 border-brand-accent/20 bg-red-50/60' : 'mr-8 border-slate-200 bg-brand-dark'"
               class="rounded-md border p-3"
             >
-              <span class="mb-1 block text-xs text-slate-500">{{ turn.role === 'user' ? 'You' : 'Teacher' }}</span>
+              <span class="mb-1 block text-xs text-slate-500">{{ turn.role === 'user' ? '你' : '老师' }}</span>
               <DialogueText
                 :english="turn.text"
                 :chinese="turn.translation_zh || undefined"
@@ -116,6 +116,14 @@ onUnmounted(() => previousFocus?.focus())
               />
             </li>
           </ol>
+          <p
+            v-if="userPartial"
+            aria-live="polite"
+            class="ml-8 rounded-md border border-brand-accent/20 bg-red-50/60 p-3 text-sm leading-relaxed"
+          >
+            <span class="mb-1 block text-xs text-slate-500">你 · 识别中</span>
+            <span lang="en">{{ userPartial }}</span>
+          </p>
           <p
             v-if="partial"
             aria-live="polite"
@@ -129,7 +137,7 @@ onUnmounted(() => previousFocus?.focus())
             aria-label="对话复盘"
           >
             <h3 class="font-bold">
-              A quick takeaway
+              快速回顾
             </h3>
             <DialogueText
               :english="session.review.summary_en || 'Your conversation is saved.'"
@@ -139,7 +147,7 @@ onUnmounted(() => previousFocus?.focus())
               v-if="session.review.used_expressions.length"
               class="text-sm text-brand-accent"
             >
-              You used: {{ session.review.used_expressions.map(e => e.english).join(' · ') }}
+              你用到了：{{ session.review.used_expressions.map(e => e.english).join(' · ') }}
             </p>
             <div
               v-for="(point, index) in session.review.practice_points"
@@ -153,7 +161,7 @@ onUnmounted(() => previousFocus?.focus())
                 class="mt-2 inline-block text-brand-accent underline"
                 @click="evidence = point.source"
               >
-                View original practice
+                查看原练习
               </button>
             </div>
           </section>
@@ -170,12 +178,12 @@ onUnmounted(() => previousFocus?.focus())
           class="space-y-3"
         >
           <p class="text-xs text-slate-500">
-            Let’s talk about what you just practised, then try a real-life conversation.
+            先聊聊你刚练习的内容，再试着完成一段真实的对话。
           </p><RetroButton
             class="w-full rounded-md"
             @click="connect"
           >
-            Let’s talk
+            开始对话
           </RetroButton>
         </div>
         <div
@@ -187,14 +195,14 @@ onUnmounted(() => previousFocus?.focus())
             :disabled="!['ready', 'recording'].includes(status)"
             @click="status === 'recording' ? sendRecording() : record()"
           >
-            {{ status === 'recording' ? 'Send recording' : 'Tap to speak' }}
+            {{ status === 'recording' ? '发送录音' : '点击说话' }}
           </RetroButton><div class="flex justify-between text-xs text-slate-500">
-            <span>{{ remaining > 0 ? clock + ' left' : '' }}</span><button
+            <span>{{ remaining > 0 ? '剩余 ' + clock : '' }}</span><button
               :disabled="status === 'connecting'"
               class="underline disabled:opacity-40"
               @click="end"
             >
-              Finish conversation
+              结束对话
             </button>
           </div>
         </div>
@@ -206,7 +214,7 @@ onUnmounted(() => previousFocus?.focus())
           <label
             for="dialogue-reply"
             class="text-xs text-slate-500"
-          >Or type a reply</label>
+          >或输入文字回复</label>
           <textarea
             id="dialogue-reply"
             v-model="reply"
@@ -214,7 +222,7 @@ onUnmounted(() => previousFocus?.focus())
             maxlength="4000"
             :disabled="status !== 'ready'"
             class="w-full rounded-md border border-slate-200 bg-brand-dark px-3 py-2 text-sm outline-brand-accent"
-            placeholder="A short answer in English…"
+            placeholder="用英语简短回答…"
           />
           <RetroButton
             type="submit"
@@ -222,7 +230,7 @@ onUnmounted(() => previousFocus?.focus())
             class="ml-auto rounded-md"
             :disabled="status !== 'ready' || !reply.trim()"
           >
-            Send
+            发送
           </RetroButton>
         </form>
         <div ref="anchor" />
@@ -236,7 +244,7 @@ onUnmounted(() => previousFocus?.focus())
             class="rounded-md"
             @click="prepare"
           >
-            Try again
+            重试
           </RetroButton><template v-else>
             <RetroButton
               v-if="session.status !== 'finished'"
@@ -244,14 +252,14 @@ onUnmounted(() => previousFocus?.focus())
               class="rounded-md"
               @click="connect"
             >
-              Reconnect
+              重新连接
             </RetroButton><RetroButton
               variant="secondary"
               size="sm"
               class="rounded-md"
               @click="finishAndReview(false)"
             >
-              Finish conversation
+              结束对话
             </RetroButton>
           </template>
         </div>
@@ -261,12 +269,12 @@ onUnmounted(() => previousFocus?.focus())
           class="w-full rounded-md"
           @click="emit('close')"
         >
-          Done
+          完成
         </RetroButton>
         <span
           v-if="busy"
           class="sr-only"
-        >Please wait</span>
+        >请稍候</span>
       </slot>
     </main>
   </dialog>
