@@ -149,7 +149,8 @@ export function useDialogue(entry: DialogueEntry) {
       socket!.send(JSON.stringify({ type: 'audio_begin' }))
       recorder.start()
       status.value = 'recording'
-      recordingTimer = setTimeout(sendRecording, 89000)
+      // The realtime provider rejects input buffers longer than 30 seconds.
+      recordingTimer = setTimeout(sendRecording, 28000)
     } catch { if (!disposed && request === generation) { status.value = 'ready'; error.value = '无法使用麦克风，请检查浏览器权限后重试。' } }
   }
   function sendRecording() {

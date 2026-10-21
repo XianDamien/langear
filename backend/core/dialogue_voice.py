@@ -26,7 +26,7 @@ from core.repository import ContentRepository
 
 router = APIRouter(prefix='/api/v1/dialogue')
 logger = logging.getLogger(__name__)
-MAX_AUDIO_BYTES = 16000 * 2 * 90
+MAX_AUDIO_BYTES = 16000 * 2 * 29
 
 
 def provider_connection():
@@ -178,7 +178,7 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                     raise DomainError(422, 'DIALOGUE_AUDIO_INVALID', 'Audio format is invalid.') from None
                 audio_bytes += len(chunk)
                 if len(chunk) % 2 or audio_bytes > MAX_AUDIO_BYTES:
-                    raise DomainError(422, 'DIALOGUE_AUDIO_LIMIT', 'Please keep each turn under 90 seconds.')
+                    raise DomainError(422, 'DIALOGUE_AUDIO_LIMIT', 'Please keep each turn under 30 seconds.')
                 await send({'type': 'input_audio_buffer.append', 'audio': message['data']})
             elif kind == 'commit':
                 if not recording or audio_bytes < 3200:
@@ -217,7 +217,7 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 await send({'type': 'conversation.item.create', 'item': {'type': 'message', 'role': 'user',
                     'content': [{'type': 'input_text', 'text': 'Start my English practice conversation using the supplied lesson evidence. Ask me for a brief recap first; do not invent my recap.'}]}})
                 for turn in data['turns']:
-                    content_type = 'input_text' if turn['role'] == 'user' else 'text'
+                    content_type = 'input_text' if turn['role'] == 'user' else 'output_text'
                     await send({'type': 'conversation.item.create', 'item': {'type': 'message', 'role': turn['role'],
                         'content': [{'type': content_type, 'text': turn['text']}]}})
                 await browser.send_json({'type': 'connected', 'session': data, 'output_sample_rate': 24000})
@@ -291,11 +291,16 @@ async def bridge(browser, provider, collection_id, session_id, token, data, prac
                 detail = event.get('error') if isinstance(event.get('error'), dict) else {}
                 message = str(detail.get('message') or event.get('message') or '')
                 lowered = message.lower()
-                if kind.endswith('transcription.failed') or 'buffer too small' in lowered or 'no audio' in lowered or 'no speech' in lowered:
+                too_long = 'exceeded maximum duration' in lowered
+                if (kind.endswith('transcription.failed') or 'buffer too small' in lowered
+                        or 'no audio' in lowered or 'no speech' in lowered or too_long):
                     recording, pending_input, responding = False, False, False
                     turn_deadline = None
+                    if too_long:
+                        await send({'type': 'input_audio_buffer.clear'})
                     await browser.send_json({'type': 'ready', 'user_turns': user_turns})
-                    await browser.send_json({'type': 'notice', 'text': '没有听清，请再说一次。'})
+                    await browser.send_json({'type': 'notice', 'text': '单次录音不能超过 30 秒，请说完后稍作停顿再提交。'
+                        if too_long else '没有听清，请再说一次。'})
                     continue
                 logger.warning('Dialogue provider error type=%s message=%s', detail.get('type'), message[:300])
                 raise DomainError(502, 'DIALOGUE_PROVIDER_FAILED', 'Voice dialogue is unavailable. Please reconnect.')
