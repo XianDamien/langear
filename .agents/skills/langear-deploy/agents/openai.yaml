@@ -1,0 +1,5 @@
+interface:
+  display_name: "LanGear Deployment"
+  short_description: "Deploy and verify LanGear staging and production"
+policy:
+  allow_implicit_invocation: true
