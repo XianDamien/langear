@@ -110,7 +110,7 @@ GOOGLE_GEMINI_BASE_URL CORE_QWEN_OMNI_* CORE_OSS_* CORE_UPLOAD_PREFIX
 CORE_ASR_API_KEY CORE_REALTIME_ASR_*
 ```
 
-所有运行配置以 `CORE_` 前缀为准；`GOOGLE_GEMINI_BASE_URL` 是唯一保留的无前缀别名。
+`CORE_` 前缀优先。为兼容现有部署 env，core 同时接受无前缀的 `DASHSCOPE_API_KEY`、`GEMINI_*`、`QWEN_OMNI_*`、`OSS_*`、`AI_FEEDBACK_*`、`REALTIME_ASR_*` 和 `GOOGLE_GEMINI_BASE_URL`。
 
 在候选镜像上显式执行 core migration（不得由 Web 启动代跑）：
 

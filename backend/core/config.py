@@ -20,11 +20,28 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3002",
         "https://8.159.139.145:7145",
     ]
-    oss_access_key_id: SecretStr | None = None
-    oss_access_key_secret: SecretStr | None = None
-    oss_endpoint: str | None = None
-    oss_bucket_name: str | None = None
-    upload_prefix: str = "dev/staging/review"
+    # The deployment env keeps the historical unprefixed provider/OSS keys.
+    # CORE_-prefixed names win when both are present.
+    oss_access_key_id: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_ID"),
+    )
+    oss_access_key_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_OSS_ACCESS_KEY_SECRET", "OSS_ACCESS_KEY_SECRET"),
+    )
+    oss_endpoint: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_OSS_ENDPOINT", "OSS_ENDPOINT"),
+    )
+    oss_bucket_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_OSS_BUCKET_NAME", "OSS_BUCKET_NAME"),
+    )
+    upload_prefix: str = Field(
+        default="dev/staging/review",
+        validation_alias=AliasChoices("CORE_UPLOAD_PREFIX", "OSS_RECORDINGS_PREFIX"),
+    )
     cookie_secure: bool = True
     session_absolute_seconds: int = 604800
     session_idle_seconds: int = 86400
@@ -33,23 +50,65 @@ class Settings(BaseSettings):
     invitation_required: bool = False
     dashboard_heatmap_days: int = 90
     dashboard_trend_days: int = 7
-    asr_api_key: SecretStr | None = None
-    ai_feedback_provider: str = "gemini"
-    ai_feedback_prompt_version: str = "v1"
-    gemini_api_key: SecretStr | None = None
-    gemini_model_id: str = "gemini-3.1-flash-lite-preview"
-    # The deployment environment configures the relay without the CORE_ prefix.
+    asr_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_ASR_API_KEY", "DASHSCOPE_API_KEY"),
+    )
+    ai_feedback_provider: str = Field(
+        default="gemini",
+        validation_alias=AliasChoices("CORE_AI_FEEDBACK_PROVIDER", "AI_FEEDBACK_PROVIDER"),
+    )
+    ai_feedback_prompt_version: str = Field(
+        default="v1",
+        validation_alias=AliasChoices(
+            "CORE_AI_FEEDBACK_PROMPT_VERSION",
+            "AI_FEEDBACK_PROMPT_VERSION",
+            "GEMINI_PROMPT_VERSION",
+        ),
+    )
+    gemini_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_GEMINI_API_KEY", "GEMINI_API_KEY"),
+    )
+    gemini_model_id: str = Field(
+        default="gemini-3.1-flash-lite-preview",
+        validation_alias=AliasChoices("CORE_GEMINI_MODEL_ID", "GEMINI_MODEL_ID"),
+    )
+    # The relay endpoint is configured without the CORE_ prefix in deployments.
     gemini_base_url: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("GOOGLE_GEMINI_BASE_URL", "CORE_GEMINI_BASE_URL"),
+        validation_alias=AliasChoices("CORE_GEMINI_BASE_URL", "GOOGLE_GEMINI_BASE_URL"),
     )
-    qwen_omni_api_key: SecretStr | None = None
-    qwen_omni_model_id: str = "qwen3.8-omni-flash"
-    qwen_omni_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    realtime_asr_provider: str = "dashscope"
-    realtime_asr_model: str = "qwen3-asr-flash-realtime"
-    realtime_asr_language: str = "zh"
-    realtime_asr_ws_base_url: str | None = None
+    qwen_omni_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORE_QWEN_OMNI_API_KEY", "QWEN_OMNI_API_KEY"),
+    )
+    qwen_omni_model_id: str = Field(
+        default="qwen3.8-omni-flash",
+        validation_alias=AliasChoices("CORE_QWEN_OMNI_MODEL_ID", "QWEN_OMNI_MODEL_ID"),
+    )
+    qwen_omni_base_url: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        validation_alias=AliasChoices("CORE_QWEN_OMNI_BASE_URL", "QWEN_OMNI_BASE_URL"),
+    )
+    realtime_asr_provider: str = Field(
+        default="dashscope",
+        validation_alias=AliasChoices("CORE_REALTIME_ASR_PROVIDER", "REALTIME_ASR_PROVIDER"),
+    )
+    realtime_asr_model: str = Field(
+        default="qwen3-asr-flash-realtime",
+        validation_alias=AliasChoices("CORE_REALTIME_ASR_MODEL", "REALTIME_ASR_MODEL"),
+    )
+    realtime_asr_language: str = Field(
+        default="zh",
+        validation_alias=AliasChoices("CORE_REALTIME_ASR_LANGUAGE", "REALTIME_ASR_LANGUAGE"),
+    )
+    realtime_asr_ws_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "CORE_REALTIME_ASR_WS_BASE_URL", "REALTIME_ASR_WS_BASE_URL"
+        ),
+    )
 
     @field_validator("database_url")
     @classmethod
