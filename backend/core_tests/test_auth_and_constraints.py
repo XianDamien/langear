@@ -26,6 +26,7 @@ def test_empty_postgres_migration_seeds_idempotently_and_no_legacy_tables(engine
     from pathlib import Path
     from alembic import command
     from alembic.config import Config
+    from alembic.script import ScriptDirectory
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic-core.ini"))
     command.downgrade(config, "base")
@@ -57,8 +58,8 @@ def test_empty_postgres_migration_seeds_idempotently_and_no_legacy_tables(engine
         assert db.scalar(select(func.count()).select_from(NoteTypeField)) == 11
         assert db.scalar(select(func.count()).select_from(CardTemplate)) == 5
         assert db.scalar(select(func.count()).select_from(Collection)) == 1
-        assert (
-            db.scalar(text("SELECT version_num FROM alembic_version")) == "lan33_0011"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == (
+            ScriptDirectory.from_config(config).get_current_head()
         )
     for table in ["collections", "decks", "notes", "cards", "attempts", "sessions"]:
         assert all(
