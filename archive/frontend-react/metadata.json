@@ -1,7 +1,0 @@
-{
-  "name": "LanGear",
-  "description": "The language learning engine. AI-powered spaced repetition with an industrial gear aesthetic.",
-  "requestFramePermissions": [
-    "microphone"
-  ]
-}
