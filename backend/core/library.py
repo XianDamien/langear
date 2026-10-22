@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from core.content import LIBRARY_SOURCE, ContentService, is_library_copy
-from core.courses import deck_sort_key
+from core.courses import archived_deck_ids, deck_sort_key
 from core.errors import DomainError, missing
 from core.models import Card, CardTemplate, Collection, Deck, Note
 
@@ -28,6 +28,8 @@ def library_cards(db, deck_id, *, include_descendants=False, limit=100, offset=0
     library = shared_collection(db)
     deck = db.scalar(select(Deck).where(Deck.collection_id == library.id, Deck.id == deck_id))
     if deck is None or deck.kind != "standard":
+        missing()
+    if deck.id in archived_deck_ids(db, library):
         missing()
     service = ContentService(db, library)
     deck_ids = service.repo.descendants(deck.id) if include_descendants else [deck.id]
@@ -64,6 +66,8 @@ def library_selection(db, collection, deck_id):
         select(Deck).where(Deck.collection_id == library.id, Deck.id == deck_id)
     )
     if source is None or source.kind != "standard":
+        missing()
+    if source.id in archived_deck_ids(db, library):
         missing()
     decks = list(
         db.scalars(
@@ -145,6 +149,8 @@ def import_library_deck(db, collection, deck_id, note_guids=UNSET):
     by_id = {deck.id: deck for deck in source_decks}
     root = by_id.get(deck_id)
     if root is None:
+        missing()
+    if root.id in archived_deck_ids(db, library):
         missing()
 
     children = defaultdict(list)

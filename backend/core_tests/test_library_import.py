@@ -898,3 +898,26 @@ def test_parent_selection_is_distributed_across_child_decks(
             "/api/v1/cards", params={"deck_id": imported_b["id"], "study_only": True}
         ).json()["cards"]
     ] == ["lib:b-note"]
+
+
+def test_archived_library_root_is_hidden_and_not_accessible(client, account, engine):
+    """A retired course stays in the database but is absent from every read path."""
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        root = add_deck(db, shared, "Retired course", guid="lib:retired")
+        root.source_metadata = {"archived": True}
+        child = add_deck(db, shared, "Lesson", parent=root, guid="lib:retired:lesson")
+        note = add_note(
+            db,
+            shared,
+            {"english": "Hello.", "chinese": "你好。"},
+            guid="lib:retired:note",
+        )
+        add_card(db, shared, note, child, "sentence_translation", 1)
+        root_id, child_id = root.id, child.id
+
+    tree = client.get("/api/v1/library/decks/tree").json()["tree"]
+    assert find_node(tree, "Retired course") is None
+    assert client.get(f"/api/v1/library/decks/{child_id}/cards").status_code == 404
+    assert client.get(f"/api/v1/library/decks/{root_id}/selection").status_code == 404
+    assert client.post(f"/api/v1/library/decks/{root_id}/import").status_code == 404

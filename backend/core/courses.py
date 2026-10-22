@@ -188,9 +188,41 @@ def deck_tree(db, collection):
     return _deck_tree(db, collection, deck_statistics)
 
 
+def archived_deck_ids(db, collection):
+    """IDs of archived roots and their whole subtrees.
+
+    Archive state lives in ``Deck.source_metadata['archived']`` on the root, so
+    retiring a course is reversible and needs no destructive delete.
+    """
+    decks = list(
+        db.scalars(
+            select(Deck).where(
+                Deck.collection_id == collection.id, Deck.kind == "standard"
+            )
+        )
+    )
+    children = {}
+    for deck in decks:
+        children.setdefault(deck.parent_id, []).append(deck)
+    archived = set()
+    stack = [
+        deck
+        for deck in children.get(None, [])
+        if (deck.source_metadata or {}).get("archived")
+    ]
+    while stack:
+        deck = stack.pop()
+        archived.add(deck.id)
+        stack.extend(children.get(deck.id, []))
+    return archived
+
+
 def library_deck_tree(db, collection, user_collection=None):
     """Read-only content view for the shared library, without scheduling counts."""
     result = _deck_tree(db, collection, deck_content_statistics)
+    hidden = archived_deck_ids(db, collection)
+    result["tree"] = [node for node in result["tree"] if node["id"] not in hidden]
+    result["decks"] = [row for row in result["decks"] if row["id"] not in hidden]
     joined_guids = set()
     if user_collection is not None:
         joined_guids = set(
