@@ -71,7 +71,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CORE_GEMINI_API_KEY", "GEMINI_API_KEY"),
     )
     gemini_model_id: str = Field(
-        default="gemini-3.1-flash-lite-preview",
+        default="gemini-3.8-flash",
         validation_alias=AliasChoices("CORE_GEMINI_MODEL_ID", "GEMINI_MODEL_ID"),
     )
     # The relay endpoint is configured without the CORE_ prefix in deployments.
