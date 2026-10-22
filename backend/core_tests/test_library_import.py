@@ -176,7 +176,7 @@ def test_import_links_shared_media_and_keeps_it_after_copy_deletion(
         assert db.get(MediaAsset, audio_id).lifecycle == "ready"
 
 
-def test_import_child_then_parent_converges_on_one_tree(client, account, engine):
+def test_import_child_creates_its_course_path_and_converges_with_parent(client, account, engine):
     with Session(engine) as db, db.begin():
         shared = library(db)
         root = add_deck(db, shared, "Shared course", guid="lib:parent")
@@ -188,22 +188,25 @@ def test_import_child_then_parent_converges_on_one_tree(client, account, engine)
 
     first = client.post(f"/api/v1/library/decks/{child_id}/import")
     assert first.status_code == 200, first.text
-    standalone = first.json()["deck_id"]
+    imported_child = first.json()["deck_id"]
+    assert first.json()["created"]["decks"] == 2
     tree = imported_tree(client)
-    assert find_node(tree, "Lesson")["id"] == standalone
-    assert find_node(tree, "Shared course") is None
+    parent = find_node(tree, "Shared course")
+    assert parent is not None
+    assert [child["name"] for child in parent["children"]] == ["Lesson"]
+    assert parent["children"][0]["id"] == imported_child
+    assert parent["children"][0]["stats"]["total_cards"] == 1
 
     second = client.post(f"/api/v1/library/decks/{root_id}/import")
     assert second.status_code == 200, second.text
-    assert second.json()["created"]["decks"] == 1
+    assert second.json()["created"] == {"decks": 0, "notes": 0, "cards": 0}
+    assert second.json()["existing"] == {"decks": 2, "notes": 1, "cards": 1}
     tree = imported_tree(client)
     parents = [node for node in tree if node["id"] == second.json()["deck_id"]]
     assert parents and parents[0]["name"] == "Shared course"
     assert [child["name"] for child in parents[0]["children"]] == ["Lesson"]
-    moved = parents[0]["children"][0]
-    assert moved["id"] == standalone
-    assert moved["deck_guid"] == child_guid
-    assert moved["stats"]["total_cards"] == 1
+    assert parents[0]["children"][0]["id"] == imported_child
+    assert parents[0]["children"][0]["deck_guid"] == child_guid
 
     third = client.post(f"/api/v1/library/decks/{root_id}/import")
     assert third.status_code == 200, third.text
@@ -212,6 +215,38 @@ def test_import_child_then_parent_converges_on_one_tree(client, account, engine)
     user_decks = client.get("/api/v1/decks").json()["decks"]
     matching = [row for row in user_decks if row["deck_guid"] in {root_guid, child_guid}]
     assert len(matching) == 2
+
+
+def test_importing_same_named_units_keeps_each_course_hierarchy(client, account, engine):
+    with Session(engine) as db, db.begin():
+        shared = library(db)
+        first_course = add_deck(db, shared, "C18 English Conversation", guid="lib:c18")
+        first_unit = add_deck(
+            db, shared, "Unit 1", parent=first_course, guid="lib:c18-unit-1"
+        )
+        first_note = add_note(db, shared, {"english": "First."}, guid="lib:c18-note")
+        add_card(db, shared, first_note, first_unit, "sentence_translation")
+
+        second_course = add_deck(db, shared, "C19 English Conversation", guid="lib:c19")
+        second_unit = add_deck(
+            db, shared, "Unit 1", parent=second_course, guid="lib:c19-unit-1"
+        )
+        second_note = add_note(db, shared, {"english": "Second."}, guid="lib:c19-note")
+        add_card(db, shared, second_note, second_unit, "sentence_translation")
+        first_unit_id, second_unit_id = first_unit.id, second_unit.id
+
+    first = client.post(f"/api/v1/library/decks/{first_unit_id}/import")
+    assert first.status_code == 200, first.text
+    second = client.post(f"/api/v1/library/decks/{second_unit_id}/import")
+    assert second.status_code == 200, second.text
+
+    tree = imported_tree(client)
+    courses = {node["name"]: node for node in tree if node["name"].endswith("Conversation")}
+    assert set(courses) == {"C18 English Conversation", "C19 English Conversation"}
+    for name, course in courses.items():
+        assert [child["name"] for child in course["children"]] == ["Unit 1"]
+        assert course["children"][0]["stats"]["total_cards"] == 1
+    assert courses["C18 English Conversation"]["id"] != courses["C19 English Conversation"]["id"]
 
 
 def test_reimport_keeps_learner_moved_decks_without_creating_a_cycle(client, account, engine):

@@ -121,6 +121,11 @@ def library_selection(db, collection, deck_id):
 def import_library_deck(db, collection, deck_id, note_guids=UNSET):
     """Idempotently clone a shared deck and its complete descendant subtree.
 
+    A Deck opened from inside the Library also creates its Library ancestors so
+    it keeps its course hierarchy. Without them a name such as "Unit 1" would
+    become a top-level Deck and collide with the same-named unit of an
+    unrelated course.
+
     Re-imports only add what is missing. Learner-owned deck names, note fields,
     card scheduling and review history are never overwritten, and an existing
     card is never moved to another deck.
@@ -159,17 +164,34 @@ def import_library_deck(db, collection, deck_id, note_guids=UNSET):
 
     collect(root)
 
+    # Walk the Library parents first so a Deck picked from inside a course is
+    # placed under that course instead of being hoisted to the top level.
+    ancestors, seen_ancestors = [], set()
+    cursor = by_id.get(root.parent_id) if root.parent_id else None
+    while cursor is not None and cursor.id not in seen_ancestors:
+        seen_ancestors.add(cursor.id)
+        ancestors.append(cursor)
+        cursor = by_id.get(cursor.parent_id) if cursor.parent_id else None
+    ancestors.reverse()
+    ancestor_ids = {deck.id for deck in ancestors}
+    ordered_decks = [*ancestors, *subtree]
+
     existing_decks = {
         deck.deck_guid: deck
         for deck in db.scalars(select(Deck).where(Deck.collection_id == collection.id))
     }
     cloned_ids = {}
     created_decks = 0
-    for source in subtree:
+    for source in ordered_decks:
         target = existing_decks.get(source.deck_guid)
-        if source.id == root.id:
-            # The requested root keeps whatever position the learner chose.
-            parent_id = target.parent_id if target is not None else None
+        if source.id == root.id or source.id in ancestor_ids:
+            # The requested Deck and its ancestors keep whatever position the
+            # learner chose; only a missing path is created around them.
+            parent_id = (
+                target.parent_id
+                if target is not None
+                else cloned_ids.get(source.parent_id)
+            )
         else:
             # Descendants mirror the Library hierarchy so the subtree is whole.
             parent_id = cloned_ids.get(source.parent_id)
@@ -472,7 +494,7 @@ def import_library_deck(db, collection, deck_id, note_guids=UNSET):
             "cards": created_cards,
         },
         "existing": {
-            "decks": len(subtree) - created_decks,
+            "decks": len(ordered_decks) - created_decks,
             "notes": len(note_map) - created_notes,
             "cards": existing_card_count,
         },
