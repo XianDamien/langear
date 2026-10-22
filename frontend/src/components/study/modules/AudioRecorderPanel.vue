@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Mic, Square, Upload, Volume2, Play } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
-import RetellingMethodTips from './RetellingMethodTips.vue'
 
 defineProps<{
   audioPlaying: boolean
@@ -20,9 +19,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="relative mx-auto w-full max-w-md space-y-3">
-    <RetellingMethodTips class="xl:absolute xl:left-full xl:top-0 xl:ml-4 xl:w-64" />
-
+  <div class="mx-auto w-full max-w-md space-y-3">
     <!-- Play Reference button -->
     <div class="mb-4 mt-2 flex justify-center">
       <div

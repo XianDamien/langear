@@ -3,7 +3,7 @@ import AudioRecorderPanel from '@/components/study/modules/AudioRecorderPanel.vu
 import { mountWithApp } from '../../helpers/mountWithApp'
 
 describe('AudioRecorderPanel', () => {
-  it('shows the retelling label and method hint on the card front', () => {
+  it('shows only the retelling label on the card front', () => {
     const wrapper = mountWithApp(AudioRecorderPanel, {
       props: {
         audioPlaying: false,
@@ -16,7 +16,6 @@ describe('AudioRecorderPanel', () => {
     })
 
     expect(wrapper.text()).toContain('句子复述')
-    expect(wrapper.get('[data-testid="retelling-method-toggle"]').text()).toContain('句子复述有问题？')
     expect(wrapper.find('[data-testid="retelling-hint"]').exists()).toBe(false)
   })
 
