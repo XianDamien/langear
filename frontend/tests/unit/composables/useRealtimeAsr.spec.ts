@@ -33,6 +33,10 @@ describe('Review realtime transport', () => {
     expect(await committed).toBe(true)
     expect(asr.realtimeSessionId.value).toBe('stream-id')
     expect(asr.finalTranscript.value).toBe('Hello')
+    asr.clearTranscript()
+    expect(asr.partialTranscript.value).toBe('')
+    expect(asr.finalTranscript.value).toBe('')
+    expect(asr.realtimeSessionId.value).toBe('stream-id')
     asr.reset()
   })
   it.each(['onerror', 'onclose'] as const)('settles connection failure on %s so recording can continue', async event => {

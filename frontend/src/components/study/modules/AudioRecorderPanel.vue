@@ -43,7 +43,13 @@ const emit = defineEmits<{
     </div>
     
     <p class="text-slate-500 text-sm uppercase tracking-widest text-center">
-      听读跟读
+      句子复述
+    </p>
+    <p
+      class="mx-auto max-w-sm text-center text-xs leading-5 text-slate-500"
+      data-testid="retelling-hint"
+    >
+      先完整听完一遍原音频，再独立完整地说出这个句子，不要听一句、跟读一句。
     </p>
 
     <!-- Transcription area -->

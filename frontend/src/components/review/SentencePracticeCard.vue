@@ -64,6 +64,11 @@ watch(() => props.attempt?.media_asset_id, async id => {
 }, { immediate: true })
 onBeforeUnmount(() => { disposed = true; generation++; player.stop(); realtime.reset() })
 watch(() => props.isFlipped, flipped => { if (flipped) player.stop() })
+function playReference() {
+  // Replaying the reference must not leave the previous take's transcript on screen.
+  realtime.clearTranscript()
+  if (audioUrl.value) player.play(audioUrl.value)
+}
 async function toggleRecording() {
   if (recordingBusy.value || props.busy) return
   player.stop()
@@ -75,6 +80,8 @@ async function toggleRecording() {
   } else {
     recordingBusy.value = true
     try {
+      // A new take replaces the previous one; its transcript must not stay on the card.
+      realtime.reset()
       await realtime.connectReview(props.card.id, reviewHttp.defaults.baseURL || '/api/v1')
       if (disposed) { realtime.reset(); return }
       await recorder.startRecording(chunk => realtime.appendAudioChunk(chunk))
@@ -122,6 +129,7 @@ function flipRecording() {
     :is-recording="recorder.isRecording.value"
     :live-transcript="realtime.partialTranscript.value"
     :user-transcript="userTranscript"
+    :front-transcript="realtime.finalTranscript.value"
     :user-audio-url="recorder.audioUrl.value || savedRecordingUrl"
     :feedback="feedback"
     :async-submit-state="['pending', 'processing'].includes(attempt?.ai_status || '') ? 'processing' : attempt?.ai_status || 'idle'"
@@ -133,7 +141,7 @@ function flipRecording() {
     :controls-disabled="busy || recordingBusy"
     :flip-disabled="busy || recordingBusy || recorder.isRecording.value || !recorder.recordingBlob.value"
     class="h-full min-h-0 w-full"
-    @play-reference="audioUrl && player.play(audioUrl)"
+    @play-reference="playReference"
     @toggle-recording="toggleRecording"
     @flip="flipRecording"
     @show-translation="showTranslation = !showTranslation"

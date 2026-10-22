@@ -266,6 +266,11 @@ export function useRealtimeAsr() {
     endingSession = false
   }
 
+  function clearTranscript() {
+    partialTranscript.value = ''
+    finalTranscript.value = ''
+  }
+
   function reset() {
     resolveCommit(false)
     clearCommitTimer()
@@ -292,6 +297,7 @@ export function useRealtimeAsr() {
     appendAudioChunk,
     commit,
     endSession,
+    clearTranscript,
     reset,
   }
 }

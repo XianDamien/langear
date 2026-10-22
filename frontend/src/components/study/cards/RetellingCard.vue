@@ -20,6 +20,7 @@ const props = defineProps<{
   isRecording: boolean
   liveTranscript: string
   userTranscript: string
+  frontTranscript?: string
   userAudioUrl: string | null
   uploadState?: 'idle' | 'uploading' | 'uploaded' | 'failed'
   uploadProgress?: number
@@ -78,7 +79,7 @@ function handleTimestampClick(timestamp: number) {
         :audio-playing="audioPlaying"
         :is-recording="isRecording"
         :live-transcript="liveTranscript"
-        :user-transcript="userTranscript"
+        :user-transcript="frontTranscript ?? userTranscript"
         :upload-state="uploadState"
         :upload-progress="uploadProgress"
         :recording-disabled="recordingDisabled"
@@ -87,13 +88,6 @@ function handleTimestampClick(timestamp: number) {
       />
       
       <slot name="front-status" />
-      <p
-        v-if="audioPlaying && !isRecording"
-        data-testid="record-hint"
-        class="mt-3 text-center text-sm text-brand-alert"
-      >
-        建议完整听完原音频之后再录音
-      </p>
 
       <div class="mt-4 flex w-full justify-center border-t border-slate-200 pt-3">
         <RetroButton

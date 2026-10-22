@@ -41,6 +41,13 @@ export function useRecorder() {
       recordingSession = session
       chunks = []
 
+      // A new take always overwrites the cached recording.
+      recordingBlob.value = null
+      if (audioUrl.value) {
+        URL.revokeObjectURL(audioUrl.value)
+        audioUrl.value = null
+      }
+
       session.setOnDataAvailable((chunk) => {
         chunks.push(chunk)
       })
