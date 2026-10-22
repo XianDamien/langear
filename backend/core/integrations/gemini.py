@@ -21,8 +21,12 @@ class GeminiProvider(FeedbackAdapterBase):
             "api_key": settings.gemini_api_key.get_secret_value()
         }
         base_url = (settings.gemini_base_url or "").strip()
+        http_options: dict[str, Any] = {
+            "timeout": settings.gemini_request_timeout_ms
+        }
         if base_url:
-            kwargs["http_options"] = types.HttpOptions(base_url=base_url)
+            http_options["base_url"] = base_url
+        kwargs["http_options"] = types.HttpOptions(**http_options)
         self.client = genai.Client(**kwargs)
         self.model_id = settings.gemini_model_id.strip()
         self._base_url = base_url

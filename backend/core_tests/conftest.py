@@ -13,6 +13,9 @@ from core.models import Base
 from core.seed import seed_system
 
 
+LOCAL_TEST_HOSTS = {None, "", "localhost", "127.0.0.1", "::1"}
+
+
 @pytest.fixture(scope="session")
 def engine():
     url = os.environ.get("CORE_TEST_DATABASE_URL")
@@ -25,6 +28,18 @@ def engine():
     ):
         raise RuntimeError(
             "Core tests require a disposable lan30_test_* PostgreSQL database"
+        )
+    if parsed.host not in LOCAL_TEST_HOSTS:
+        raise RuntimeError(
+            "Core tests only run against a local disposable PostgreSQL database"
+        )
+    if os.environ.get("CORE_TEST_ALLOW_TRUNCATE") != "1":
+        raise RuntimeError(
+            "Set CORE_TEST_ALLOW_TRUNCATE=1 to allow per-test TRUNCATE"
+        )
+    if os.environ.get("CORE_DATABASE_URL") == url:
+        raise RuntimeError(
+            "CORE_TEST_DATABASE_URL must differ from the application database"
         )
     os.environ["CORE_DATABASE_URL"] = url
     os.environ["CORE_CONFIRMATION_SECRET"] = "isolated-core-test-secret-" + str(uuid4())
@@ -46,7 +61,7 @@ def engine():
 
 @pytest.fixture(autouse=True)
 def clean_database(engine):
-    # The session fixture has validated a disposable database name before TRUNCATE.
+    # The session fixture has validated a local disposable database and explicit opt-in.
     tables = ", ".join('"' + table + '"' for table in Base.metadata.tables)
     with engine.begin() as connection:
         connection.execute(text("TRUNCATE " + tables + " CASCADE"))

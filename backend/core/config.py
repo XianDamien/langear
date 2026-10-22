@@ -79,6 +79,14 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("CORE_GEMINI_BASE_URL", "GOOGLE_GEMINI_BASE_URL"),
     )
+    # google-genai expects milliseconds; an unbounded request blocks the outbox worker.
+    gemini_request_timeout_ms: int = Field(
+        default=180_000,
+        gt=0,
+        validation_alias=AliasChoices(
+            "CORE_GEMINI_REQUEST_TIMEOUT_MS", "GEMINI_REQUEST_TIMEOUT_MS"
+        ),
+    )
     qwen_omni_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("CORE_QWEN_OMNI_API_KEY", "QWEN_OMNI_API_KEY"),
