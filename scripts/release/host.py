@@ -280,7 +280,17 @@ class Deployment:
         # curl -k is limited to the known local staging self-signed endpoint.
         url = 'https://127.0.0.1:8445' if self.environment == 'staging' else 'http://127.0.0.1:8082'
         flags = ['-k'] if self.environment == 'staging' else []
-        value = run('curl', '-fsS', '--retry', '5', '--retry-connrefused', '--retry-delay', '1', *flags, url + '/release.json', capture=True)
+        # A recreated web container accepts TCP connections before nginx has
+        # finished its TLS handshake, and --retry-connrefused does not cover
+        # that SSL failure. Retry the transient curl exit codes as well.
+        for attempt in range(30):
+            try:
+                value = run('curl', '-fsS', '--retry', '5', '--retry-connrefused', '--retry-delay', '1', *flags, url + '/release.json', capture=True)
+                break
+            except subprocess.CalledProcessError as error:
+                if error.returncode not in (7, 35, 52, 56) or attempt == 29:
+                    raise
+                time.sleep(1)
         if json.loads(value) != {'sha': sha}:
             raise RuntimeError('Served frontend revision is wrong')
         for prefix in ('/api/v1', '/api/content/v1'):
