@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Mic, Square, Upload, Volume2, Play } from 'lucide-vue-next'
 import RetroButton from '@/components/ui/RetroButton.vue'
+import RetellingMethodTips from './RetellingMethodTips.vue'
 
 defineProps<{
   audioPlaying: boolean
@@ -19,7 +20,9 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-md space-y-3">
+  <div class="relative mx-auto w-full max-w-md space-y-3">
+    <RetellingMethodTips class="xl:absolute xl:left-full xl:top-0 xl:ml-4 xl:w-64" />
+
     <!-- Play Reference button -->
     <div class="mb-4 mt-2 flex justify-center">
       <div
@@ -44,12 +47,6 @@ const emit = defineEmits<{
     
     <p class="text-slate-500 text-sm uppercase tracking-widest text-center">
       句子复述
-    </p>
-    <p
-      class="mx-auto max-w-sm text-center text-xs leading-5 text-slate-500"
-      data-testid="retelling-hint"
-    >
-      先完整听完一遍原音频，再独立完整地说出这个句子，不要听一句、跟读一句。
     </p>
 
     <!-- Transcription area -->
