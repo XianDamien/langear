@@ -50,12 +50,25 @@ class RegistryTests(unittest.TestCase):
                         verify_bundle(self.root)
             self.manifest[key] = original
 
-    def test_image_digest_is_selected_from_the_pushed_repository(self):
+    def test_image_id_comes_from_registry_config_not_local_store(self):
         tag = 'ghcr.io/xiandamien/langear/backend:a'
-        info = [{'Id': self.manifest['image_id'], 'RepoDigests': [
+        # Some Docker image stores report the manifest digest as the local Id.
+        info = [{'Id': 'sha256:' + 'b' * 64, 'RepoDigests': [
             'unrelated/repo@sha256:' + 'f' * 64, self.manifest['image']]}]
-        with patch('registry.subprocess.check_output', return_value=json.dumps(info)):
+        registry_manifest = {'config': {'digest': self.manifest['image_id']}}
+        responses = iter([json.dumps(info), json.dumps(registry_manifest)])
+        with patch('registry.subprocess.check_output', side_effect=lambda *a, **k: next(responses)) as inspect:
             self.assertEqual(image(tag), (self.manifest['image'], self.manifest['image_id']))
+            self.assertEqual(inspect.call_args_list[1].args[0],
+                             ['docker', 'manifest', 'inspect', self.manifest['image']])
+
+    def test_multi_platform_registry_manifest_is_rejected(self):
+        tag = 'ghcr.io/xiandamien/langear/backend:a'
+        info = [{'Id': self.manifest['image_id'], 'RepoDigests': [self.manifest['image']]}]
+        responses = iter([json.dumps(info), json.dumps({'manifests': []})])
+        with patch('registry.subprocess.check_output', side_effect=lambda *a, **k: next(responses)):
+            with self.assertRaisesRegex(ValueError, 'single-platform'):
+                image(tag)
 
     def test_host_rejects_image_with_different_revision(self):
         info = [{'Id': self.manifest['image_id'], 'Config': {

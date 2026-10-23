@@ -3,9 +3,12 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 from host import verify_bundle
+
+CONFIG_DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
 
 
 def image(tag):
@@ -14,7 +17,14 @@ def image(tag):
     references = [ref for ref in info['RepoDigests'] if ref.startswith(repository + '@')]
     if len(references) != 1:
         raise ValueError('Expected exactly one pushed repository digest for ' + tag)
-    return references[0], info['Id']
+    reference = references[0]
+    # The local image Id is not stable across Docker image stores; the registry
+    # manifest's config digest is the image ID that classic-store hosts verify.
+    manifest = json.loads(subprocess.check_output(['docker', 'manifest', 'inspect', reference]))
+    config = manifest.get('config', {}).get('digest') if isinstance(manifest, dict) else None
+    if not isinstance(config, str) or not CONFIG_DIGEST.fullmatch(config):
+        raise ValueError('Expected a single-platform registry manifest for ' + reference)
+    return reference, config
 
 
 def main():
