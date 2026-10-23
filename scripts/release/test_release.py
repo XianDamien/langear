@@ -107,6 +107,27 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(destination.stat().st_mode & 0o777, 0o755)
         self.assertEqual((destination / 'index.html').read_text(), 'ok')
 
+    def test_preview_proxy_has_no_dead_upstream_or_unused_alias(self):
+        config = (Path(__file__).parents[2] / 'compose/nginx.preview.conf').read_text()
+        self.assertNotIn('core-library-api', config)
+        self.assertNotIn('location /content-api/', config)
+        self.assertIn('proxy_pass http://legacy-library-api:8000;', config)
+
+    def test_sync_config_installs_proxy_and_keeps_a_backup(self):
+        deployment = object.__new__(Deployment)
+        deployment.environment = 'staging'
+        deployment.root = self.root
+        (self.root / 'compose').mkdir()
+        (self.root / 'releases').mkdir()
+        (self.root / 'releases/nginx.preview.conf').write_text('server { listen 8445; }\n')
+        target = self.root / 'compose/nginx.preview.conf'
+        target.write_text('server { listen 1; }\n')
+        self.assertTrue(deployment.install_proxy())
+        self.assertEqual(target.read_text(), 'server { listen 8445; }\n')
+        backups = [path for path in (self.root / 'compose').iterdir() if '.bak-' in path.name]
+        self.assertEqual([path.read_text() for path in backups], ['server { listen 1; }\n'])
+        self.assertFalse(deployment.install_proxy())
+
     def test_fixed_release_removes_only_the_isolated_development_proxy(self):
         deployment = object.__new__(Deployment)
         deployment.environment = 'staging'

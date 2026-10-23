@@ -10,6 +10,7 @@ import tempfile
 HOSTS = {'staging': 'zhaohui-staging-server', 'prod': 'langear-prod'}
 ROOTS = {'staging': '/home/kemove/langear/dev', 'prod': '/srv/langear/prod'}
 SCRIPT = Path(__file__).with_name('host.py')
+PREVIEW_PROXY = SCRIPT.parents[2] / 'compose/nginx.preview.conf'
 
 
 def run(*args, capture=False):
@@ -26,6 +27,8 @@ def install_tool(environment):
     directory = ROOTS[environment] + '/releases'
     ssh(environment, 'mkdir', '-p', directory)
     run('scp', SCRIPT, HOSTS[environment] + ':' + directory + '/host.py')
+    if environment == 'staging':
+        run('scp', PREVIEW_PROXY, HOSTS[environment] + ':' + directory + '/nginx.preview.conf')
 
 
 def invoke(environment, action, *args):
@@ -101,6 +104,7 @@ def main():
     rollback.add_argument('environment', choices=HOSTS)
     rollback.add_argument('--execute', action='store_true')
     sub.add_parser('dev', help='Restore staging source mount and hot reload')
+    sub.add_parser('sync-config', help='Install the repository preview proxy on staging')
     status = sub.add_parser('status')
     status.add_argument('environment', choices=HOSTS)
     args = parser.parse_args()
@@ -119,6 +123,8 @@ def main():
         invoke(args.environment, 'rollback')
     elif args.action == 'dev':
         invoke('staging', 'dev')
+    elif args.action == 'sync-config':
+        invoke('staging', 'sync-config')
     else:
         # Read-only status does not install files on the target.
         source = SCRIPT.read_text()
