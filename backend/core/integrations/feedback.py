@@ -133,9 +133,9 @@ class FeedbackAdapterBase:
             with urlopen(url, timeout=timeout) as response:
                 data = response.read()
         except Exception:
-            raise AIFeedbackError("Failed to download audio") from None
+            raise AIFeedbackError("Failed to download audio", reason="audio_download") from None
         if not data:
-            raise AIFeedbackError("Empty audio content")
+            raise AIFeedbackError("Empty audio content", reason="audio_download")
         return data
 
     @staticmethod

@@ -36,7 +36,7 @@ def test_gemini_request_timeout_defaults_and_reads_repo_standard_env(monkeypatch
         confirmation_secret="x" * 40,
         _env_file=None,
     )
-    assert defaults.gemini_request_timeout_ms == 180_000
+    assert defaults.gemini_request_timeout_ms == 60_000
 
     monkeypatch.setenv("GEMINI_REQUEST_TIMEOUT_MS", "45000")
     configured = Settings(
@@ -71,6 +71,7 @@ def test_gemini_provider_applies_request_timeout(monkeypatch):
 
     options = captured["http_options"]
     assert isinstance(options, types.HttpOptions)
+    assert options.retry_options.attempts == 1
     assert options.timeout == 45000
     assert options.base_url == "https://relay.example/v1"
 

@@ -9,10 +9,10 @@ import os
 from pathlib import Path
 import time
 from datetime import timedelta
-from threading import Event, Thread
+from threading import Event, Thread, local
 from uuid import UUID
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from core.db import get_engine
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
 HEARTBEAT = Path("/tmp/langear-review-worker.heartbeat")
 HEARTBEAT_MAX_AGE = 600
+_providers = local()
 
 
 
@@ -33,7 +34,19 @@ def transcribe(url):
 
 def feedback_provider():
     from core.integrations.feedback import create_provider
-    return create_provider()
+    # Thread-local clients reuse connections without sharing SDK mutable state.
+    if not hasattr(_providers, "provider"):
+        _providers.provider = create_provider()
+    return _providers.provider
+
+
+def close_feedback_provider():
+    provider = getattr(_providers, "provider", None)
+    if provider is not None:
+        del _providers.provider
+        close = getattr(provider, "close", None)
+        if close is not None:
+            close()
 
 
 def audio_url(db, asset_id, collection_id):
@@ -59,6 +72,8 @@ def process_one(engine=None):
             job.status = "succeeded"
             return True
         job.retry_count += 1
+        started = time.monotonic()
+        age = (utcnow() - job.created_at).total_seconds()
         try:
             # The savepoint also rolls back partial results on provider errors.
             with db.begin_nested():
@@ -89,11 +104,18 @@ def process_one(engine=None):
                 job.next_attempt_at = None
         except Exception as exc:
             # Never persist provider exception bodies, signed URLs, or secrets.
-            logger.warning("Review processing failed: job=%s kind=%s error=%s", job.id, job.kind, type(exc).__name__)
+            logger.warning(
+                "Review processing failed: job=%s kind=%s error=%s reason=%s attempt=%s",
+                job.id, job.kind, type(exc).__name__, getattr(exc, "reason", None), job.retry_count,
+            )
             exhausted = job.retry_count >= MAX_ATTEMPTS
             setattr(attempt, field, "failed" if exhausted else "pending")
             job.status = "failed" if exhausted else "pending"
             job.next_attempt_at = None if exhausted else utcnow() + timedelta(seconds=5 * 2 ** (job.retry_count - 1))
+        logger.info(
+            "Review processing: job=%s kind=%s status=%s attempt=%s age_s=%.3f elapsed_s=%.3f",
+            job.id, job.kind, job.status, job.retry_count, age, time.monotonic() - started,
+        )
         return True
 
 
@@ -127,16 +149,26 @@ def healthcheck():
         raise RuntimeError("Worker heartbeat expired")
     with get_engine().connect() as connection:
         connection.execute(text("SELECT 1"))
+        from core.config import get_settings
+        cutoff = utcnow() - timedelta(seconds=get_settings().review_backlog_max_age_seconds)
+        stale = connection.scalar(select(func.count()).select_from(ProcessingOutbox).where(
+            ProcessingOutbox.status == "pending", ProcessingOutbox.created_at < cutoff,
+        ))
+        if stale:
+            raise RuntimeError(f"Review outbox backlog overdue: count={stale}")
 
 
 def process_loop(stop):
-    while not stop.is_set():
-        try:
-            if process_one():
-                continue
-        except Exception as exc:
-            logger.warning("Review worker transaction failed: %s", type(exc).__name__)
-        stop.wait(1)
+    try:
+        while not stop.is_set():
+            try:
+                if process_one():
+                    continue
+            except Exception as exc:
+                logger.warning("Review worker transaction failed: %s", type(exc).__name__)
+            stop.wait(1)
+    finally:
+        close_feedback_provider()
 
 
 def heartbeat_loop(stop):
@@ -171,11 +203,17 @@ def run():
 
 if __name__ == "__main__":
     import sys
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s [%(threadName)s] %(message)s",
+    )
     if sys.argv[1:] == ["--healthcheck"]:
         try:
             healthcheck()
-        except Exception:
+        except Exception as exc:
+            # Only our own health errors carry safe diagnostic text.
+            if isinstance(exc, RuntimeError):
+                logger.error("Review worker unhealthy: %s", exc)
             raise SystemExit(1) from None
     else:
         run()

@@ -81,21 +81,22 @@ class Settings(BaseSettings):
     )
     # google-genai expects milliseconds; an unbounded request blocks the outbox worker.
     gemini_request_timeout_ms: int = Field(
-        default=180_000,
+        default=60_000,
         gt=0,
         validation_alias=AliasChoices(
             "CORE_GEMINI_REQUEST_TIMEOUT_MS", "GEMINI_REQUEST_TIMEOUT_MS"
         ),
     )
-    # The relay currently allows about five concurrent Gemini requests.
+    # Leave headroom within the shared relay's 15-request allowance for API calls.
     review_worker_concurrency: int = Field(
-        default=5,
+        default=10,
         ge=1,
         le=32,
         validation_alias=AliasChoices(
             "CORE_REVIEW_WORKER_CONCURRENCY", "REVIEW_WORKER_CONCURRENCY"
         ),
     )
+    review_backlog_max_age_seconds: int = Field(default=300, gt=0)
     qwen_omni_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("CORE_QWEN_OMNI_API_KEY", "QWEN_OMNI_API_KEY"),

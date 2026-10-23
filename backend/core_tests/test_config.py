@@ -42,7 +42,7 @@ def test_review_worker_concurrency_defaults_and_reads_env(monkeypatch):
         confirmation_secret="x" * 40,
         _env_file=None,
     )
-    assert defaults.review_worker_concurrency == 5
+    assert defaults.review_worker_concurrency == 10
 
     monkeypatch.setenv("REVIEW_WORKER_CONCURRENCY", "3")
     configured = Settings(
