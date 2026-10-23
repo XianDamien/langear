@@ -8,6 +8,10 @@ import type { DashboardData } from '@/types/api'
 defineProps<{
   stats: DashboardData['stats']
 }>()
+
+const emit = defineEmits<{
+  reviewAll: []
+}>()
 </script>
 
 <template>
@@ -38,8 +42,9 @@ defineProps<{
         <RetroButton
           size="sm"
           variant="primary"
+          @click="emit('reviewAll')"
         >
-          全部复习
+          立即复习
         </RetroButton>
       </div>
     </RetroCard>
