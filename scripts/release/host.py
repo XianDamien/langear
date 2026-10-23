@@ -184,6 +184,41 @@ class Deployment:
             content = re.sub(r'(?ms)^    # BEGIN REVIEW DEVELOPMENT PROXY\n.*?^    # END REVIEW DEVELOPMENT PROXY\n', '', content)
             path.write_text(content)
 
+    def install_proxy(self):
+        if self.environment != 'staging':
+            raise RuntimeError('Preview proxy is staging-only')
+        source = self.root / 'releases/nginx.preview.conf'
+        target = self.root / 'compose/nginx.preview.conf'
+        if not source.is_file():
+            raise RuntimeError('Upload the repository preview proxy with manage.py before restoring staging')
+        content = source.read_text()
+        if target.exists() and target.read_text() == content:
+            return False
+        if target.exists():
+            backup = target.with_name(target.name + '.bak-' + time.strftime('%Y%m%d%H%M%S', time.gmtime()))
+            backup.write_text(target.read_text())
+        target.write_text(content)
+        return True
+
+    def sync_config(self):
+        changed = self.install_proxy()
+        action = ['up', '-d', '--no-deps']
+        if changed:
+            action.append('--force-recreate')
+        self.compose(*action, 'web')
+        url = 'https://127.0.0.1:8445/health'
+        for attempt in range(30):
+            try:
+                value = run('curl', '-fsS', '-k', url, capture=True)
+                break
+            except subprocess.CalledProcessError as error:
+                if error.returncode not in (7, 35, 52, 56) or attempt == 29:
+                    raise
+                time.sleep(1)
+        if json.loads(value).get('status') != 'healthy':
+            raise RuntimeError('Preview proxy health check failed')
+        print(json.dumps({'environment': self.environment, 'proxy_changed': changed, 'status': 'synced'}))
+
     def switch_web(self, path):
         link = self.root / 'web/.release-next'
         link.unlink(missing_ok=True)
@@ -265,6 +300,8 @@ class Deployment:
             self.start(overlay(manifest['image_id'], self.root, True))
             self.healthy()
             self.release_proxy()
+            if self.environment == 'staging':
+                self.install_proxy()
             self.switch_web(web)
             self.check_frontend(manifest['sha'])
             write_json(self.state_path, {'mode': 'release', 'sha': manifest['sha'],
@@ -342,6 +379,7 @@ class Deployment:
                 self.override.unlink(missing_ok=True)
                 self.compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '90', 'backend')
             self.healthy()
+            self.install_proxy()
             # Refresh Nginx's backend DNS binding after container recreation.
             self.compose('up', '-d', '--no-deps', '--force-recreate', 'web')
             write_json(self.state_path, {'mode': 'dev', 'frontend': previous['web']})
@@ -354,7 +392,7 @@ class Deployment:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('environment', choices=ROOTS)
-    parser.add_argument('action', choices=['deploy', 'approve', 'rollback', 'dev', 'status'])
+    parser.add_argument('action', choices=['deploy', 'approve', 'rollback', 'dev', 'status', 'sync-config'])
     parser.add_argument('--bundle', type=Path)
     parser.add_argument('--checks')
     args = parser.parse_args()
@@ -373,6 +411,8 @@ def main():
             if not args.checks or not args.checks.strip():
                 parser.error('--checks must describe completed acceptance checks')
             deployment.approve(args.checks)
+        elif args.action == 'sync-config':
+            deployment.sync_config()
         else:
             getattr(deployment, args.action)()
 
