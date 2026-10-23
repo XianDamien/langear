@@ -63,6 +63,14 @@ def stage(run_id):
             raise SystemExit('CI run and bundle revisions differ')
         from host import verify_bundle
         verify_bundle(directory)
+        if manifest['schema'] == 3:
+            # Registry releases are deployed by Actions, never by this Mac.
+            jobs = json.loads(run('gh', 'api', 'repos/{owner}/{repo}/actions/runs/' + run_id + '/jobs', capture=True))
+            job = next((job for job in jobs['jobs'] if job['name'] == 'deploy-staging'), None)
+            if not job:
+                raise SystemExit('This run has no staging deployment job; use a dev/staging release run')
+            run('gh', 'run', 'rerun', run_id, '--job', str(job['id']))
+            return
         target = upload('staging', directory, sha)
         invoke('staging', 'deploy', '--bundle', target)
 
@@ -82,6 +90,20 @@ def promote(sha, execute):
                           'staging_checks': approval['checks'], 'execute': execute}, indent=2), flush=True)
         if not execute:
             print('Plan only. After production release authorization, repeat with --execute.')
+            return
+        if manifest['schema'] == 3:
+            builds = json.loads(run('gh', 'run', 'list', '--workflow', 'frontend-dev-deploy.yml',
+                                    '--commit', sha, '--limit', '100',
+                                    '--json', 'databaseId,conclusion,event,headBranch', capture=True))
+            build = next((item for item in builds if item['conclusion'] == 'success'
+                          and item['event'] in ('push', 'workflow_dispatch')
+                          and item['headBranch'] in ('main', 'dev/staging')), None)
+            if not build:
+                raise SystemExit('No successful registry release run found for this SHA')
+            run('gh', 'workflow', 'run', 'frontend-dev-deploy.yml', '--ref', 'dev/staging',
+                '-f', 'operation=promote', '-f', 'run_id=' + str(build['databaseId']),
+                '-f', 'checks=' + approval['checks'])
+            print('Production workflow requested; GitHub Environment approval is still required.')
             return
         for name in ('frontend.tar.gz', 'backend-image.tar.gz'):
             run('scp', source + name, directory / name)

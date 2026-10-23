@@ -3,37 +3,52 @@ name: Verify and Package Release
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev/staging]
   workflow_dispatch:
     inputs:
+      operation:
+        description: Build/deploy staging or promote an accepted release
+        type: choice
+        options: [release, promote]
+        default: release
+      run_id:
+        description: Successful release CI run ID (promotion only)
+        type: string
+      checks:
+        description: Completed staging acceptance checks (promotion only)
+        type: string
       runtime:
         description: Release runtime contract
         required: true
-        default: core
+        default: core-v1
         type: choice
         options: [core, core-v1]
       api_base_url:
         description: Frontend VITE_API_BASE_URL
         required: true
-        default: /api/content/v1
+        default: /api/v1
         type: string
 
 permissions:
   contents: read
 
 env:
-  # Dispatched runs choose the contract; push/PR runs package Release A.
-  RELEASE_RUNTIME: ${{ github.event.inputs.runtime || 'core' }}
-  VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || '/api/content/v1' }}
+  RELEASE_RUNTIME: ${{ github.event.inputs.runtime || 'core-v1' }}
+  VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || '/api/v1' }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   UV_HTTP_TIMEOUT: '120'
   UV_HTTP_RETRIES: '3'
 
-# This workflow never mutates servers. Staging and production consume this
-# single frontend/backend bundle through scripts/release/manage.py.
+# Images go directly to GHCR. Only a small manifest is retained as an artifact.
 jobs:
   verify-and-package:
+    if: github.event_name != 'workflow_dispatch' || inputs.operation != 'promote'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha: ${{ github.sha }}
     services:
       core-postgres:
         image: postgres:16-alpine
@@ -88,18 +103,117 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm test:unit
           pnpm build
-      - name: Build immutable backend and package matching frontend
+      - name: Prepare image names and frontend revision
+        if: github.event_name != 'pull_request'
+        id: images
         env:
           RELEASE_SHA: ${{ github.sha }}
         run: |
-          docker build --label "org.opencontainers.image.revision=$RELEASE_SHA" \
-            -t "langear-release:$RELEASE_SHA" backend
-          mkdir -p release
-          docker save "langear-release:$RELEASE_SHA" | gzip > release/backend-image.tar.gz
-          python3 scripts/release/package.py "$RELEASE_SHA" frontend/dist release
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "backend=$repository/backend:$RELEASE_SHA-$RELEASE_RUNTIME" >> "$GITHUB_OUTPUT"
+          echo "frontend=$repository/frontend:$RELEASE_SHA-$RELEASE_RUNTIME" >> "$GITHUB_OUTPUT"
+          python3 -c 'import json, os; from pathlib import Path; Path("frontend/dist/release.json").write_text(json.dumps({"sha": os.environ["RELEASE_SHA"]}) + "\n")'
+      - uses: docker/setup-buildx-action@v3
+        if: github.event_name != 'pull_request'
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build backend image with layer cache
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          load: true
+          provenance: false
+          platforms: linux/amd64
+          tags: ${{ steps.images.outputs.backend }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Build matching frontend image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend/dist
+          file: scripts/release/Dockerfile.frontend
+          load: true
+          provenance: false
+          platforms: linux/amd64
+          tags: ${{ steps.images.outputs.frontend }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+      - name: Publish images and record immutable digests
+        if: github.event_name != 'pull_request'
+        env:
+          BACKEND_IMAGE: ${{ steps.images.outputs.backend }}
+          FRONTEND_IMAGE: ${{ steps.images.outputs.frontend }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          docker push "$BACKEND_IMAGE"
+          docker push "$FRONTEND_IMAGE"
+          python3 scripts/release/registry.py "$RELEASE_SHA" "$BACKEND_IMAGE" "$FRONTEND_IMAGE" release
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: langear-release-${{ github.sha }}
           path: release/
-          retention-days: 30
+          retention-days: 90
           if-no-files-found: error
+
+  deploy-staging:
+    needs: verify-and-package
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev/staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: langear-staging-runtime
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: langear-release-${{ github.sha }}
+          path: release
+      - name: Skip superseded automatic releases
+        id: current
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/dev/staging" --jq .object.sha)
+          if [ "$head_sha" = "$GITHUB_SHA" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer dev/staging commit exists; skipping this deployment.'
+          fi
+      - name: Deploy tested images directly from GHCR
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/release/actions.py staging deploy
+
+  promote:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'promote'
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    uses: ./.github/workflows/promote-release.yml
+    with:
+      run_id: ${{ inputs.run_id }}
+      checks: ${{ inputs.checks }}
+    secrets: inherit

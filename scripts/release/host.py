@@ -44,13 +44,20 @@ def write_json(path, data):
 def verify_bundle(bundle):
     manifest = json.loads((bundle / 'manifest.json').read_text())
     sha = manifest['sha']
-    if manifest.get('schema') != 2 or not re.fullmatch(r'[0-9a-f]{40}', sha):
+    if manifest.get('schema') not in (2, 3) or not re.fullmatch(r'[0-9a-f]{40}', sha):
         raise ValueError('Invalid manifest schema or Git SHA')
-    if manifest['image'] != f'langear-release:{sha}':
+    registry = manifest['schema'] == 3
+    if not registry and manifest['image'] != f'langear-release:{sha}':
         raise ValueError('Image tag must match Git SHA')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', manifest['image_id']):
         raise ValueError('Invalid image ID')
-    if set(manifest['files']) != {'frontend.tar.gz', 'backend-image.tar.gz'}:
+    if registry:
+        for key in ('image', 'frontend_image'):
+            if not re.fullmatch(r'ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}', manifest.get(key, '')):
+                raise ValueError('Registry images must use immutable GHCR digests')
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', manifest.get('frontend_image_id', '')):
+            raise ValueError('Invalid frontend image ID')
+    if set(manifest['files']) != (set() if registry else {'frontend.tar.gz', 'backend-image.tar.gz'}):
         raise ValueError('Unexpected bundle files')
     required = {
         'frontend-vitest', 'frontend-typecheck-build', 'release-tool-tests',
@@ -252,7 +259,8 @@ class Deployment:
         state = previous.get('state') or {}
         # A managed release must name its core runtime; only a dev snapshot may
         # omit it. This refuses pre-core release records instead of defaulting them.
-        runtime = state.get('runtime') if previous.get('override') else 'core'
+        runtime = ('core' if state.get('mode') == 'dev'
+                   else state.get('runtime') if previous.get('override') else 'core')
         if runtime not in RUNTIMES:
             raise RuntimeError('Rollback target predates the core-only release contract')
         if previous.get('core_db_revision') is not None and self.core_revision(previous['core_probe_image']) != previous['core_db_revision']:
@@ -271,8 +279,26 @@ class Deployment:
         manifest = verify_bundle(bundle)
         runtime = manifest['runtime']
         approval = verify_approval(bundle, manifest) if self.environment == 'prod' else None
+        if self.state_path.exists():
+            current = json.loads(self.state_path.read_text())
+            if current.get('mode') == 'release' and current.get('sha') == manifest['sha']:
+                snapshot = self.snapshot()
+                if (current.get('manifest_sha256') != digest(bundle / 'manifest.json')
+                        or snapshot['image_id'] != manifest['image_id']
+                        or snapshot.get('worker_image_id') != manifest['image_id']
+                        or snapshot.get('core_db_revision') != current.get('core_db_revision')):
+                    raise RuntimeError('Installed release differs from manifest or database record')
+                self.healthy()
+                self.check_frontend(manifest['sha'])
+                print('Exact release is already running; no changes needed')
+                return
         previous = self.snapshot()
-        run('docker', 'load', '-i', bundle / 'backend-image.tar.gz')
+        if manifest['schema'] == 3:
+            for key, id_key in (('image', 'image_id'), ('frontend_image', 'frontend_image_id')):
+                run('docker', 'pull', manifest[key])
+                self.verify_image(manifest[key], manifest[id_key], manifest['sha'])
+        else:
+            run('docker', 'load', '-i', bundle / 'backend-image.tar.gz')
         info = json.loads(run('docker', 'image', 'inspect', manifest['image'], capture=True))[0]
         if info['Id'] != manifest['image_id'] or info['Config']['Labels'].get('org.opencontainers.image.revision') != manifest['sha']:
             raise RuntimeError('Loaded backend does not match manifest')
@@ -291,7 +317,10 @@ class Deployment:
         if web.exists():
             raise RuntimeError('Release already installed; use rollback or a new commit, never overwrite artifacts')
         with tempfile.TemporaryDirectory(dir=web.parent, prefix='.prepare-') as tmp:
-            extract_frontend(bundle / 'frontend.tar.gz', Path(tmp))
+            if manifest['schema'] == 3:
+                self.extract_frontend_image(manifest['frontend_image'], Path(tmp))
+            else:
+                extract_frontend(bundle / 'frontend.tar.gz', Path(tmp))
             if json.loads((Path(tmp) / 'release.json').read_text()) != {'sha': manifest['sha']}:
                 raise RuntimeError('Frontend revision does not match backend')
             Path(tmp).rename(web)
@@ -312,6 +341,23 @@ class Deployment:
             self.restore(previous)
             raise
         print(json.dumps({'environment': self.environment, 'sha': manifest['sha'], 'status': 'deployed'}))
+
+    def verify_image(self, reference, expected_id, sha):
+        info = json.loads(run('docker', 'image', 'inspect', reference, capture=True))[0]
+        if info['Id'] != expected_id or (info['Config'].get('Labels') or {}).get('org.opencontainers.image.revision') != sha:
+            raise RuntimeError('Registry image identity or Git revision differs from manifest')
+
+    def extract_frontend_image(self, reference, destination):
+        # Copy static files without executing the frontend image or changing the
+        # existing host TLS/proxy contract. Docker caches unchanged image layers.
+        container = run('docker', 'create', reference, capture=True)
+        try:
+            run('docker', 'cp', container + ':/usr/share/nginx/html/.', str(destination))
+            destination.chmod(0o755)
+            if not (destination / 'index.html').is_file():
+                raise RuntimeError('Frontend image has no index.html')
+        finally:
+            run('docker', 'rm', container)
 
     def check_frontend(self, sha):
         # curl -k is limited to the known local staging self-signed endpoint.
@@ -395,7 +441,24 @@ def main():
     parser.add_argument('action', choices=['deploy', 'approve', 'rollback', 'dev', 'status', 'sync-config'])
     parser.add_argument('--bundle', type=Path)
     parser.add_argument('--checks')
+    parser.add_argument('--registry-user')
     args = parser.parse_args()
+    if args.registry_user:
+        # CI's short-lived token is sent on stdin, never as an argument or stored
+        # in the host user's persistent Docker configuration.
+        import sys
+        with tempfile.TemporaryDirectory(prefix='langear-registry-') as config:
+            os.environ['DOCKER_CONFIG'] = config
+            subprocess.run(['docker', 'login', 'ghcr.io', '--username', args.registry_user,
+                            '--password-stdin'], input=sys.stdin.read(), text=True, check=True,
+                           stdout=subprocess.DEVNULL)
+            args.registry_user = None
+            dispatch(args, parser)
+        return
+    dispatch(args, parser)
+
+
+def dispatch(args, parser):
     deployment = Deployment(args.environment)
     if args.action == 'status':
         print(json.dumps(deployment.snapshot(), indent=2))

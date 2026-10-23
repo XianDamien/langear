@@ -1,0 +1,3 @@
+# CI has already tested and built this exact dist. No second frontend build.
+FROM nginx:1.28-alpine
+COPY ./ /usr/share/nginx/html/

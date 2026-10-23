@@ -1,0 +1,121 @@
+name: Promote Accepted Release
+run-name: Promote CI run ${{ inputs.run_id }} to production
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        type: string
+        required: true
+      checks:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Verify and Package Release run ID
+        type: string
+        required: true
+      checks:
+        description: Completed staging acceptance checks and observed results
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: Require a successful trusted release build
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          run_id = os.environ['RUN_ID']
+          if not run_id.isdecimal():
+              raise SystemExit('run_id must be numeric')
+          run = json.loads(subprocess.check_output(['gh', 'api', 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs/' + run_id]))
+          if (run['conclusion'] != 'success' or run['event'] not in ('push', 'workflow_dispatch')
+                  or run['path'] != '.github/workflows/frontend-dev-deploy.yml'
+                  or run['head_branch'] not in ('dev/staging', 'main')):
+              raise SystemExit('Select a successful release build from dev/staging or main')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('sha=' + run['head_sha'] + '\n')
+          PY
+
+  accept-staging:
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: langear-staging-runtime
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: langear-release-${{ needs.resolve.outputs.sha }}
+          path: release
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify running staging version and record acceptance
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ACCEPTANCE_CHECKS: ${{ inputs.checks }}
+          EXPECTED_SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          python3 -c 'import json, os; assert json.load(open("release/manifest.json"))["sha"] == os.environ["EXPECTED_SHA"]'
+          python3 scripts/release/actions.py staging approve --checks "$ACCEPTANCE_CHECKS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: accepted-release-${{ needs.resolve.outputs.sha }}
+          path: release/
+          retention-days: 90
+          if-no-files-found: error
+
+  deploy-production:
+    needs: [resolve, accept-staging]
+    runs-on: ubuntu-latest
+    # Required reviewer protection is configured on this GitHub Environment.
+    environment: production
+    concurrency:
+      group: langear-production-runtime
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: accepted-release-${{ needs.resolve.outputs.sha }}
+          path: release
+      - name: Promote the accepted digests without rebuilding
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          python3 -c 'import json, os; assert json.load(open("release/manifest.json"))["sha"] == os.environ["EXPECTED_SHA"]'
+          python3 scripts/release/actions.py prod deploy
