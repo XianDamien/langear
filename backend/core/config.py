@@ -87,6 +87,15 @@ class Settings(BaseSettings):
             "CORE_GEMINI_REQUEST_TIMEOUT_MS", "GEMINI_REQUEST_TIMEOUT_MS"
         ),
     )
+    # The relay currently allows about five concurrent Gemini requests.
+    review_worker_concurrency: int = Field(
+        default=5,
+        ge=1,
+        le=32,
+        validation_alias=AliasChoices(
+            "CORE_REVIEW_WORKER_CONCURRENCY", "REVIEW_WORKER_CONCURRENCY"
+        ),
+    )
     qwen_omni_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("CORE_QWEN_OMNI_API_KEY", "QWEN_OMNI_API_KEY"),

@@ -3,7 +3,9 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
+from threading import Event, Thread, get_ident
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,3 +80,35 @@ def test_multiple_workers_share_the_outbox_without_duplicates(
         )
         assert len(jobs) == len(sentences)
         assert all(job.status == "succeeded" for job in jobs)
+
+
+def test_process_loop_runs_jobs_in_parallel(monkeypatch):
+    from core import processing
+
+    seen = []
+    started = Event()
+    release = Event()
+
+    def fake_process_one(engine=None):
+        seen.append(get_ident())
+        started.set()
+        release.wait(2)
+        return False
+
+    monkeypatch.setattr(processing, "process_one", fake_process_one)
+    stop = Event()
+    workers = [
+        Thread(target=processing.process_loop, args=(stop,), daemon=True)
+        for _ in range(2)
+    ]
+    for worker in workers:
+        worker.start()
+    assert started.wait(2)
+    deadline = time.monotonic() + 2
+    while len(set(seen)) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    release.set()
+    stop.set()
+    for worker in workers:
+        worker.join(5)
+    assert len(set(seen)) >= 2

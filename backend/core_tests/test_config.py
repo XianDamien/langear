@@ -34,6 +34,25 @@ def test_deployment_env_accepts_unprefixed_provider_keys(monkeypatch):
     assert settings.qwen_omni_api_key.get_secret_value() == "qwen-key"
 
 
+def test_review_worker_concurrency_defaults_and_reads_env(monkeypatch):
+    monkeypatch.delenv("CORE_REVIEW_WORKER_CONCURRENCY", raising=False)
+    monkeypatch.delenv("REVIEW_WORKER_CONCURRENCY", raising=False)
+    defaults = Settings(
+        database_url="postgresql+psycopg://user@localhost:5432/db",
+        confirmation_secret="x" * 40,
+        _env_file=None,
+    )
+    assert defaults.review_worker_concurrency == 5
+
+    monkeypatch.setenv("REVIEW_WORKER_CONCURRENCY", "3")
+    configured = Settings(
+        database_url="postgresql+psycopg://user@localhost:5432/db",
+        confirmation_secret="x" * 40,
+        _env_file=None,
+    )
+    assert configured.review_worker_concurrency == 3
+
+
 def test_core_prefixed_keys_take_precedence(monkeypatch):
     monkeypatch.setenv("CORE_DATABASE_URL", "postgresql+psycopg://test@localhost/test")
     monkeypatch.setenv("CORE_CONFIRMATION_SECRET", "a" * 32)

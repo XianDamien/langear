@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import time
 from datetime import timedelta
-from threading import Event
+from threading import Event, Thread
 from uuid import UUID
 
 from sqlalchemy import or_, select, text
@@ -129,19 +129,44 @@ def healthcheck():
         connection.execute(text("SELECT 1"))
 
 
-def run():
-    import signal
-    stop = Event()
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
+def process_loop(stop):
     while not stop.is_set():
         try:
-            heartbeat()
             if process_one():
                 continue
         except Exception as exc:
             logger.warning("Review worker transaction failed: %s", type(exc).__name__)
-        stop.wait(2)
+        stop.wait(1)
+
+
+def heartbeat_loop(stop):
+    while not stop.is_set():
+        heartbeat()
+        stop.wait(5)
+
+
+def run():
+    import signal
+    from core.config import get_settings
+
+    stop = Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    concurrency = get_settings().review_worker_concurrency
+    logger.info("Review worker started: concurrency=%s", concurrency)
+    heartbeat_thread = Thread(
+        target=heartbeat_loop, args=(stop,), name="review-heartbeat", daemon=True
+    )
+    heartbeat_thread.start()
+    workers = [
+        Thread(target=process_loop, args=(stop,), name=f"review-worker-{index}", daemon=True)
+        for index in range(concurrency)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    heartbeat_thread.join()
 
 
 if __name__ == "__main__":
