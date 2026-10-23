@@ -67,7 +67,7 @@ def test_invalid_json_is_distinct_from_upstream_failure(provider):
     provider.client.models.generate_content.return_value = SimpleNamespace(text='invalid secret-body')
     with pytest.raises(AIFeedbackError) as caught:
         provider.generate_translation_feedback("你好", "Hello", "Hi")
-    assert caught.value.reason == "feedback_validation"
+    assert caught.value.reason == "invalid_json"
     assert "secret-body" not in str(caught.value)
 
 

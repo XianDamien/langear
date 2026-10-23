@@ -259,7 +259,7 @@ class FeedbackAdapterBase:
                 )
             )
         except json.JSONDecodeError:
-            raise AIFeedbackError("Failed to parse JSON feedback") from None
+            raise AIFeedbackError("Failed to parse JSON feedback", reason="invalid_json") from None
         required = (
             "transcription_text",
             "pronunciation",
@@ -306,12 +306,12 @@ class FeedbackAdapterBase:
                 )
             )
         except (json.JSONDecodeError, ValueError):
-            raise AIFeedbackError("Invalid translation feedback") from None
+            raise AIFeedbackError("Invalid translation feedback", reason="invalid_json") from None
         if not all(
             isinstance(result.get(key), str)
             for key in ("summary", "completeness", "fluency")
         ):
-            raise AIFeedbackError("Invalid translation feedback")
+            raise AIFeedbackError("Invalid translation feedback", reason="feedback_validation")
         return {
             **{key: result[key] for key in ("summary", "completeness", "fluency")},
             "suggestions": self._normalize_suggestions(result.get("suggestions", [])),
@@ -333,7 +333,7 @@ class FeedbackAdapterBase:
                 self._extract_json_text(self._generate_text_only(prompt, config))
             )
         except json.JSONDecodeError:
-            raise AIFeedbackError("Failed to parse JSON summary") from None
+            raise AIFeedbackError("Failed to parse JSON summary", reason="invalid_json") from None
         for field in ("overall", "patterns", "prioritized_actions"):
             if field not in summary:
                 raise AIFeedbackError(f"Missing required summary field: {field}")

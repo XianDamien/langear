@@ -13,7 +13,7 @@ class ASRTranscriptionError(IntegrationError):
 
 
 class AIFeedbackError(IntegrationError):
-    def __init__(self, message: str, *, reason: str = "feedback_validation"):
+    def __init__(self, message: str, *, reason: str = "feedback_error"):
         super().__init__(message)
         self.reason = reason
 
