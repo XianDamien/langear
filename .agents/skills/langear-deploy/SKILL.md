@@ -243,6 +243,53 @@ acceptance. The promotion workflow records checks after verifying the running
 staging release; `manage.py approve --checks '<actual checks>'` remains available
 for explicitly recording local acceptance evidence.
 
+### Stalled GHCR image pulls
+
+`deploy-staging` can sit in "Deploy tested images directly from GHCR" for tens of
+minutes with `docker system df` unchanged. Separate auth from transport before
+rebuilding anything: token exchange and manifest fetches go to `ghcr.io` and are
+fast when authentication works, while layer blobs redirect to
+`pkg-containers.githubusercontent.com`.
+
+```bash
+getent ahostsv4 pkg-containers.githubusercontent.com
+ss -tan | grep -E ':443' | head
+```
+
+That DNS name returns several IPs whose throughput from the staging host can
+differ by more than 50x. Docker dials the first answer and has no read timeout,
+so one stalled IP hangs the pull forever even though nothing is wrong with the
+image or the token (observed 2026-10-24: `.108` stalled at 0-66 KB/s while
+`.109` delivered ~960 KB/s). If the manifest works but layer bytes do not flow,
+pin a fast IP in the host's `/etc/hosts`; the daemon resolves per request, so no
+Docker restart is needed:
+
+```bash
+echo "185.199.109.154 pkg-containers.githubusercontent.com" | sudo tee -a /etc/hosts
+```
+
+When the deploy user has no sudo but is in the `docker` group, the same edit can
+be made through a throwaway container (back up `/etc/hosts` first):
+
+```bash
+docker run --rm -v /etc/hosts:/host-hosts alpine:latest sh -c \
+  'grep -q pkg-containers /host-hosts || echo "185.199.109.154 pkg-containers.githubusercontent.com" >> /host-hosts'
+```
+
+Then kill any surviving `docker pull` / `host.py staging deploy` process on the
+host and rerun the failed `deploy-staging` job. If a fresh rebuild of the same SHA
+was needed instead, remove the stale `releases/<sha>` directory first (confirm it
+is not the one in `releases/current.json`). Remove the hosts pin once the pull
+succeeds unless the network problem persists:
+
+```bash
+sudo sed -i '/pkg-containers.githubusercontent.com/d' /etc/hosts
+```
+
+Do not work around this by downloading layers or image archives on the Mac, and
+do not rebuild a new SHA merely to dodge the block: the first violates the
+artifact path, the second produces new digests without fixing the route.
+
 ### Dev hot-reload mode
 
 Use this when you need the current checkout's backend code on staging:
@@ -422,9 +469,10 @@ After an automatic release, explicit source sync, or mode switch:
 | Worker unhealthy but API healthy | Hanging provider call; heartbeat stale | Check `/tmp/langear-review-worker.heartbeat`, restart the worker, then isolate the stuck `processing_outbox` job; see `langear-debugger` |
 | Staging DB looks empty or wrong | Connected to `langear_legacy_snapshot` or a retired test DB | Check `CORE_DATABASE_URL` in `env/review.env`; active DB is `langear_staging` |
 | CI passed but staging did not change | Only build passed, run was on `main`, or branch-head guard skipped an old SHA | Check event/ref and the actual deployment step; inspect `current.json` |
-| `Refusing to overwrite release file` | A rerun rebuilt the same SHA with different image/tooling metadata | Reuse the original manifest/deploy job; publish changed code under a new commit |
+| `Refusing to overwrite release file` | A rerun rebuilt the same SHA with different image/tooling metadata | Reuse the original manifest/deploy job; otherwise remove the stale non-current `releases/<sha>` directory and rerun, or publish changed code under a new commit |
 | Production job waits indefinitely | Required reviewer gate | Wait for explicit authorized human approval; do not bypass it |
 | Registry pull or SSH authentication fails | Missing Environment secrets, package access, connectivity, or host-key mismatch | Check the target Environment, GHCR access and trusted host key; never log credentials |
+| `deploy-staging` stuck at "Deploy tested images directly from GHCR", no layer bytes | GHCR blob CDN IP stalls; Docker has no read timeout | Compare per-IP throughput for `pkg-containers.githubusercontent.com`; pin a fast IP in the host `/etc/hosts`, kill the stale pull, then rerun; see "Stalled GHCR image pulls" |
 | Auto deployment interrupts dev hot reload | Both use the same shared staging runtime | Coordinate runtime ownership before push or manual mode switches; Actions concurrency does not reserve human dev sessions |
 | First production core rollout fails preflight | Legacy production has no core env/network/schema | Prepare the separately authorized configuration/database migration; do not weaken release guards |
 
