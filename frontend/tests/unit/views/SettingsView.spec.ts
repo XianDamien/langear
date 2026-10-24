@@ -26,7 +26,7 @@ async function renderCollection(settings: Record<string, unknown> = {}) {
   await router.push('/settings')
   const wrapper = mountWithApp(SettingsView, {
     pinia: { initialState: { settings: {
-      dailyNewLimit: 9999, desiredRetention: 0.9, learningSteps: '15', relearningSteps: '15',
+      dailyNewLimit: 9999, dailyReviewLimit: 200, desiredRetention: 0.9, learningSteps: '15', relearningSteps: '15',
       maximumInterval: 36500, defaultDeckScope: '',
       ...settings,
     } } },
@@ -40,7 +40,7 @@ describe('account new-card quota settings', () => {
     const { wrapper, store } = await renderCollection()
     expect(store.load).toHaveBeenCalledWith(undefined)
     expect(wrapper.get<HTMLInputElement>('#daily-new-limit').element.value).toBe('9999')
-    expect(wrapper.find('#daily-review-limit').exists()).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('#daily-review-limit').element.value).toBe('200')
     await wrapper.get('#daily-new-limit').setValue('12000')
     await wrapper.get('form').trigger('submit')
     expect(store.dailyNewLimit).toBe(12000)

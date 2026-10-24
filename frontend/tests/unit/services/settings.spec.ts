@@ -15,6 +15,7 @@ const deckScope = [
 const collection = {
   desired_retention: 0.92,
   new_limit: 9999,
+  review_limit: 200,
   learning_steps: [1, 15],
   relearning_steps: [10],
   maximum_review_interval: 1000,
@@ -22,6 +23,7 @@ const collection = {
 }
 const frontend = {
   dailyNewLimit: 9999,
+  dailyReviewLimit: 200,
   desiredRetention: 0.92,
   learningSteps: '1,15',
   relearningSteps: '10',
@@ -121,6 +123,11 @@ describe('core settings API contract', () => {
 
   it.each([-1, 10001, 1.5, undefined])('rejects invalid collection new limit %s', async dailyNewLimit => {
     await expect(saveSettings({ ...frontend, dailyNewLimit })).rejects.toThrow()
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it.each([-1, 10001, 1.5, undefined])('rejects invalid collection review limit %s', async dailyReviewLimit => {
+    await expect(saveSettings({ ...frontend, dailyReviewLimit })).rejects.toThrow()
     expect(put).not.toHaveBeenCalled()
   })
 
