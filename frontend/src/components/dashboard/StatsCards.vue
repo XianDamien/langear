@@ -62,9 +62,6 @@ const emit = defineEmits<{
     </RetroCard>
 
     <RetroCard title="今日目标">
-      <p class="text-sm text-slate-500 mb-2">
-        熟能生巧
-      </p>
       <ProgressBar
         :value="stats.dailyDone"
         :max="stats.dailyGoal"
