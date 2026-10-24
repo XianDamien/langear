@@ -20,6 +20,7 @@ SCOPE_KEY = "default_deck_scope"
 
 class SettingsUpdate(Body):
     new_limit: int | None = Field(default=None, ge=0, le=10000, strict=True)
+    review_limit: int | None = Field(default=None, ge=0, le=10000, strict=True)
     desired_retention: float | None = Field(default=None, ge=0.7, le=0.99, strict=True)
     learning_steps: list[Annotated[int, Field(gt=0, strict=True)]] | None = Field(
         default=None, max_length=100
@@ -46,6 +47,7 @@ def settings_data(collection):
     config = {**DEFAULT_SCHEDULING, **(collection.scheduling_config or {})}
     return {
         "new_limit": config["new_limit"],
+        "review_limit": config["review_limit"],
         "desired_retention": config["desired_retention"],
         "learning_steps": config["learning_steps"],
         "relearning_steps": config["relearning_steps"],
@@ -83,6 +85,7 @@ def save_settings(service, body):
     config = dict(collection.scheduling_config or {})
     mapping = {
         "new_limit": "new_limit",
+        "review_limit": "review_limit",
         "desired_retention": "desired_retention",
         "learning_steps": "learning_steps",
         "relearning_steps": "relearning_steps",
