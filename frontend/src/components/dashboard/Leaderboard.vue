@@ -29,11 +29,11 @@ defineProps<{ entries: DashboardLeaderboardEntry[] }>()
           ]"
         >
           <span>
-            <span class="font-pixel font-bold tabular-nums text-slate-900">{{ leader.rank }}</span>.
+            <span class="dashboard-number text-slate-900">{{ leader.rank }}</span>.
             {{ leader.name }}
           </span>
           <span :class="leader.is_user ? 'text-slate-900 font-bold' : 'text-brand-accent'">
-            <span class="font-pixel font-bold tabular-nums text-slate-900">{{ leader.points }}</span>
+            <span class="dashboard-number text-slate-900">{{ leader.points }}</span>
             积分
           </span>
         </div>

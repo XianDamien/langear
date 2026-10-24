@@ -14,9 +14,12 @@ const percentage = computed(() =>
 
 <template>
   <div class="w-full">
-    <div class="flex justify-between text-sm mb-1 uppercase text-slate-500">
-      <span>{{ label }}</span>
-      <span class="font-pixel text-base font-bold tabular-nums text-slate-900">{{ value }} / {{ max }}</span>
+    <div class="flex items-baseline justify-between mb-1">
+      <span class="text-sm uppercase text-slate-500">{{ label }}</span>
+      <span class="flex items-baseline gap-1 text-slate-900">
+        <span class="dashboard-number text-4xl">{{ value }}</span>
+        <span class="dashboard-number text-base text-slate-600">/ {{ max }}</span>
+      </span>
     </div>
     <div class="h-4 bg-slate-100 border border-slate-200 relative">
       <div

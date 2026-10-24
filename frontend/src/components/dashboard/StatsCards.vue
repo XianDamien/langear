@@ -23,7 +23,7 @@ const emit = defineEmits<{
           :size="32"
         />
         <div>
-          <div class="text-4xl font-bold font-pixel tabular-nums text-slate-900">
+          <div class="dashboard-number text-4xl text-slate-900">
             {{ stats.points.toLocaleString() }}
           </div>
           <div class="text-xs text-slate-500 uppercase">
@@ -35,8 +35,8 @@ const emit = defineEmits<{
 
     <RetroCard title="待复习">
       <div class="flex flex-col gap-2">
-        <div class="flex items-baseline gap-2 text-4xl font-bold text-slate-900">
-          <span class="font-pixel tabular-nums">{{ stats.reviewsPending }}</span>
+        <div class="flex items-baseline gap-2">
+          <span class="dashboard-number text-4xl text-slate-900">{{ stats.reviewsPending }}</span>
           <span class="text-base font-semibold text-slate-600">张卡</span>
         </div>
         <RetroButton
@@ -51,7 +51,7 @@ const emit = defineEmits<{
 
     <RetroCard title="连续学习">
       <div class="flex items-center gap-3">
-        <div class="text-4xl font-bold text-slate-900 font-pixel tabular-nums">
+        <div class="dashboard-number text-4xl text-slate-900">
           {{ stats.streakDays }}
         </div>
         <div class="flex flex-col">

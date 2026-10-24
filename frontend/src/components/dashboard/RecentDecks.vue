@@ -40,9 +40,9 @@ const emit = defineEmits<{
             {{ deck.name }}
           </div>
           <div class="text-sm text-slate-500">
-            <span class="font-pixel font-bold tabular-nums text-slate-900">{{ deck.newCards }}</span>
+            <span class="dashboard-number text-slate-900">{{ deck.newCards }}</span>
             新卡 •
-            <span class="font-pixel font-bold tabular-nums text-slate-900">{{ deck.reviewCards }}</span>
+            <span class="dashboard-number text-slate-900">{{ deck.reviewCards }}</span>
             复习
           </div>
         </div>
