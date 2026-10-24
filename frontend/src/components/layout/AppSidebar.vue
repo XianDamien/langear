@@ -15,11 +15,11 @@ const emit = defineEmits<{
 <template>
   <aside
     :class="[
-      'fixed inset-y-0 left-0 z-50 w-64 bg-brand-panel border-r border-slate-200 transform transition-transform duration-300 md:relative md:translate-x-0',
+      'fixed inset-y-0 left-0 z-50 w-64 bg-brand-panel border-r border-slate-200 transform transition-transform duration-300 md:sticky md:inset-y-auto md:top-0 md:h-screen md:self-start md:translate-x-0',
       open ? 'translate-x-0' : '-translate-x-full',
     ]"
   >
-    <div class="p-6 border-b border-slate-200 bg-white">
+    <div class="flex h-20 items-center border-b border-slate-200 bg-white px-6">
       <h1
         class="text-3xl font-bold text-brand-accent tracking-tighter flex items-center gap-2"
       >
@@ -43,7 +43,7 @@ const emit = defineEmits<{
       <SidebarNav
         to="/library"
         :icon="BookOpen"
-        label="题库资源"
+        label="课程资源"
         @navigate="emit('close')"
       />
       <SidebarNav
