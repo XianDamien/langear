@@ -7,9 +7,10 @@ const props = defineProps<{
   label?: string
 }>()
 
-const percentage = computed(() =>
-  Math.min(100, Math.max(0, (props.value / props.max) * 100)),
-)
+const percentage = computed(() => {
+  if (props.max <= 0) return 0
+  return Math.min(100, Math.max(0, (props.value / props.max) * 100))
+})
 </script>
 
 <template>

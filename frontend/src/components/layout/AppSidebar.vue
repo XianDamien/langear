@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Home, BookMarked, BookOpen, Settings as SettingsIcon } from 'lucide-vue-next'
 import SidebarNav from './SidebarNav.vue'
-import RetroButton from '../ui/RetroButton.vue'
 
 defineProps<{
   open: boolean
@@ -59,15 +58,5 @@ const emit = defineEmits<{
         @navigate="emit('close')"
       />
     </nav>
-
-    <div class="absolute bottom-8 left-0 w-full px-6">
-      <RetroButton
-        variant="primary"
-        class="w-full"
-        size="sm"
-      >
-        开通专业版
-      </RetroButton>
-    </div>
   </aside>
 </template>

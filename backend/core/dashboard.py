@@ -15,8 +15,8 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from core.models import Attempt, DailyActivity, Deck, utcnow
-from core.scheduling import effective, study_day
+from core.models import Attempt, Card, DailyActivity, Deck, utcnow
+from core.scheduling import study_day
 
 DAY = timedelta(days=1)
 EPOCH = date(1970, 1, 1)
@@ -124,6 +124,40 @@ def due_counts(db, collection):
     return result
 
 
+def joined_course_sentence_count(db, collection, decks):
+    """Count distinct sentences in joined courses, including their children."""
+    children = {}
+    for deck in decks:
+        children.setdefault(deck.parent_id, []).append(deck.id)
+
+    joined = set()
+
+    def include_children(deck_id):
+        if deck_id in joined:
+            return
+        joined.add(deck_id)
+        for child_id in children.get(deck_id, []):
+            include_children(child_id)
+
+    for deck in decks:
+        if deck.in_my_courses:
+            include_children(deck.id)
+
+    if not joined:
+        return 0
+    return len(
+        {
+            note_id
+            for note_id, deck_id in db.execute(
+                select(Card.note_id, Card.deck_id).where(
+                    Card.collection_id == collection.id,
+                    Card.deck_id.in_(joined),
+                )
+            )
+        }
+    )
+
+
 def dashboard_data(db, collection):
     from core.config import get_settings
 
@@ -134,11 +168,8 @@ def dashboard_data(db, collection):
     trend_days = settings.dashboard_trend_days
     window = [today - offset for offset in range(heatmap_days - 1, -1, -1)]
     daily = merged_days(db, collection, window)
-    config = effective(
-        collection,
-        None,
-        {d.id: d for d in db.scalars(select(Deck).where(Deck.collection_id == collection.id))},
-    )
+    decks = list(db.scalars(select(Deck).where(Deck.collection_id == collection.id)))
+    course_sentence_count = joined_course_sentence_count(db, collection, decks)
     completed = daily.get(today, dict(EMPTY))
     due = due_counts(db, collection)
     return {
@@ -149,7 +180,7 @@ def dashboard_data(db, collection):
             # number into the deck's total card count.
             "reviewsPending": due["review_due"],
             "streakDays": current_streak(daily, today),
-            "dailyGoal": config["new_limit"] + config["review_limit"],
+            "dailyGoal": course_sentence_count,
             "dailyDone": completed["reviews"],
             "todayNew": completed["new_cards"],
             "todayReview": completed["reviews"] - completed["new_cards"],
