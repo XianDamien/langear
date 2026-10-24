@@ -16,7 +16,7 @@ const percentage = computed(() =>
   <div class="w-full">
     <div class="flex justify-between text-sm mb-1 uppercase text-slate-500">
       <span>{{ label }}</span>
-      <span class="font-pixel text-brand-accent">{{ value }} / {{ max }}</span>
+      <span class="font-pixel text-base font-bold tabular-nums text-slate-900">{{ value }} / {{ max }}</span>
     </div>
     <div class="h-4 bg-slate-100 border border-slate-200 relative">
       <div
