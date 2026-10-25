@@ -35,9 +35,8 @@ def provider(monkeypatch):
     (errors.ClientError(429, {"error": {"message": "secret-body"}}), "ClientError", 429),
     (errors.ServerError(503, {"error": {"message": "secret-body"}}), "ServerError", 503),
 ])
-def test_upstream_failures_are_diagnosable_without_sensitive_data(provider, monkeypatch, caplog, mode, error, kind, status):
+def test_upstream_failures_are_diagnosable_without_sensitive_data(provider, caplog, mode, error, kind, status):
     provider.client.models.generate_content.side_effect = error
-    monkeypatch.setattr(provider, "_download_audio", lambda _: b"audio")
     with caplog.at_level(logging.INFO), pytest.raises(AIFeedbackError) as caught:
         if mode == "text":
             provider._generate_text_only("secret-prompt", GenerationConfig())
@@ -50,17 +49,24 @@ def test_upstream_failures_are_diagnosable_without_sensitive_data(provider, monk
         assert secret not in caplog.text + str(caught.value)
 
 
-def test_audio_timing_separates_download_from_generation(provider, monkeypatch, caplog):
+def test_audio_urls_are_passed_through_without_download(provider, caplog):
     provider.client.models.generate_content.return_value = SimpleNamespace(text='{}')
-    monkeypatch.setattr(provider, "_download_audio", lambda _: b"audio")
     with caplog.at_level(logging.INFO):
-        assert provider._generate_with_audio("prompt", "user.webm", "ref.mp3", GenerationConfig()) == '{}'
-    assert "reference_bytes=5 user_bytes=5 elapsed_s=" in caplog.text
+        assert provider._generate_with_audio(
+            "prompt",
+            "https://oss/user.webm?Signature=x",
+            "https://oss/ref.mp3?Signature=y",
+            GenerationConfig(),
+        ) == '{}'
     assert "Gemini request: mode=audio" in caplog.text
     call = provider.client.models.generate_content.call_args.kwargs
     assert call["config"].automatic_function_calling.disable is True
-    assert call["contents"][1].inline_data.mime_type == "audio/mpeg"
-    assert call["contents"][2].inline_data.mime_type == "audio/webm"
+    reference, user = call["contents"][1], call["contents"][2]
+    assert reference.file_data.file_uri == "https://oss/ref.mp3?Signature=y"
+    assert reference.file_data.mime_type == "audio/mpeg"
+    assert user.file_data.file_uri == "https://oss/user.webm?Signature=x"
+    assert user.file_data.mime_type == "audio/webm"
+    assert reference.inline_data is None and user.inline_data is None
 
 
 def test_invalid_json_is_distinct_from_upstream_failure(provider):

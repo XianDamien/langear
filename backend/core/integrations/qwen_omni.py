@@ -1,6 +1,5 @@
 """Alibaba Cloud Qwen Omni through its OpenAI-compatible HTTPS API."""
 
-import base64
 import json
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -41,15 +40,11 @@ class QwenOmniProvider(FeedbackAdapterBase):
         audio_format = Path(urlparse(audio_url).path).suffix.lower().lstrip(".")
         if audio_format not in {"wav", "mp3", "webm", "m4a", "ogg", "flac", "aac"}:
             raise AIFeedbackError("Unsupported Qwen Omni audio format")
-        mime_type = {
-            "mp3": "audio/mpeg",
-            "m4a": "audio/mp4",
-        }.get(audio_format, "audio/" + audio_format)
-        encoded = base64.b64encode(self._download_audio(audio_url)).decode("ascii")
+        # DashScope accepts the signed URL directly; no base64 copy is built here.
         return {
             "type": "input_audio",
             "input_audio": {
-                "data": f"data:{mime_type};base64,{encoded}",
+                "data": audio_url,
                 "format": audio_format,
             },
         }

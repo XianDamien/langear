@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
-from urllib.request import urlopen
 
 from core.config import get_settings
 from core.integrations.errors import AIFeedbackError
@@ -126,17 +125,6 @@ class FeedbackAdapterBase:
                 text = text[4:]
             text = text.strip()
         return text
-
-    @staticmethod
-    def _download_audio(url: str, timeout: int = 30) -> bytes:
-        try:
-            with urlopen(url, timeout=timeout) as response:
-                data = response.read()
-        except Exception:
-            raise AIFeedbackError("Failed to download audio", reason="audio_download") from None
-        if not data:
-            raise AIFeedbackError("Empty audio content", reason="audio_download")
-        return data
 
     @staticmethod
     def _mime_type(url: str) -> str:

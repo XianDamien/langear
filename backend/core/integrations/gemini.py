@@ -82,17 +82,18 @@ class GeminiProvider(FeedbackAdapterBase):
         reference_audio_url: str,
         generation_config: GenerationConfig,
     ) -> str:
-        started = monotonic()
-        reference = self._download_audio(reference_audio_url)
-        user = self._download_audio(user_audio_url)
-        logger.info(
-            "Gemini audio prepared: reference_bytes=%s user_bytes=%s elapsed_s=%.3f",
-            len(reference), len(user), monotonic() - started,
-        )
+        # The provider fetches the signed URL itself; audio never passes through
+        # this process, so worker slots stay free of transfer latency.
         return self._request(
             [prompt,
-             types.Part.from_bytes(data=reference, mime_type=self._mime_type(reference_audio_url)),
-             types.Part.from_bytes(data=user, mime_type=self._mime_type(user_audio_url))],
+             types.Part.from_uri(
+                 file_uri=reference_audio_url,
+                 mime_type=self._mime_type(reference_audio_url),
+             ),
+             types.Part.from_uri(
+                 file_uri=user_audio_url,
+                 mime_type=self._mime_type(user_audio_url),
+             )],
             generation_config, "audio",
         )
 
