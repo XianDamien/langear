@@ -230,10 +230,10 @@ async function submit() {
               v-model="form.password"
               :type="showPassword ? 'text' : 'password'"
               class="w-full border-2 border-slate-200 bg-slate-50/50 pl-9 pr-10 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-brand-accent focus:bg-white"
-              :placeholder="mode === 'register' ? '至少 12 位密码' : '请输入密码'"
+              :placeholder="mode === 'register' ? '至少 6 位密码' : '请输入密码'"
               autocomplete="current-password"
               required
-              :minlength="mode === 'register' ? 12 : undefined"
+              :minlength="mode === 'register' ? 6 : undefined"
             >
             <button
               type="button"
@@ -247,7 +247,7 @@ async function submit() {
             v-if="mode === 'register'"
             class="mt-1 block text-[11px] text-slate-500"
           >
-            密码长度至少为 12 位。
+            密码长度至少为 6 位。
           </span>
         </div>
 

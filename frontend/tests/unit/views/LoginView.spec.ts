@@ -32,10 +32,10 @@ describe('LoginView', () => {
     wrapper.unmount()
   })
 
-  it('uses the core invitation and twelve-character password rules when registering', async () => {
+  it('uses the core invitation and six-character password rules when registering', async () => {
     const { wrapper } = await mountLogin()
     await wrapper.get('button.mt-6').trigger('click')
-    expect(wrapper.get('input[type="password"]').attributes('minlength')).toBe('12')
+    expect(wrapper.get('input[type="password"]').attributes('minlength')).toBe('6')
     await wrapper.get('input[autocomplete="username"]').setValue('learner')
     await wrapper.get('input[autocomplete="email"]').setValue('learner@example.com')
     await wrapper.get('input[autocomplete="off"]').setValue('INVITE-1')

@@ -69,6 +69,19 @@ def test_empty_postgres_migration_seeds_idempotently_and_no_legacy_tables(engine
         )
 
 
+def test_registration_password_length_floor(client):
+    too_short = client.post(
+        "/api/v1/auth/register",
+        json={"username": "shorty", "password": "abc12"},
+    )
+    assert too_short.status_code == 422
+    accepted = client.post(
+        "/api/v1/auth/register",
+        json={"username": "sixchar", "password": "abc123"},
+    )
+    assert accepted.status_code == 201, accepted.text
+
+
 def test_registration_atomic_unique_email_cookie_flags_and_hashed_tokens(
     client, account, engine
 ):
