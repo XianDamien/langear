@@ -251,7 +251,7 @@ def test_imported_login_upgrades_hash_but_registration_stays_strong(
     assert (
         client.post(
             "/api/v1/auth/register",
-            json={"email": "new@example.com", "password": "test123"},
+            json={"email": "new@example.com", "password": "test1"},
         ).status_code
         == 422
     )
